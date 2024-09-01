@@ -703,22 +703,24 @@ void TestFactory_Set<TestClass>::call_testrunner(size_t items) {
         items, "btree_set");
 #else
     // just pick a few node sizes for quicker tests
-    if (g_slot_max == 4)
-        testrunner_loop<BtreeSet<4> >(items, "btree_set<4>");
-    if (g_slot_max == 8)
-        testrunner_loop<BtreeSet<8> >(items, "btree_set<8>");
-    if (g_slot_max == 16)
-        testrunner_loop<BtreeSet<16> >(items, "btree_set<16>");
-    if (g_slot_max == 32)
-        testrunner_loop<BtreeSet<32> >(items, "btree_set<32>");
-    if (g_slot_max == 64)
-        testrunner_loop<BtreeSet<64> >(items, "btree_set<64>");
-    if (g_slot_max == 128)
-        testrunner_loop<BtreeSet<128> >(items, "btree_set<128>");
-    if (g_slot_max == 256)
-        testrunner_loop<BtreeSet<256> >(items, "btree_set<256>");
-    if (g_use_cbtree)
+    if (g_use_cbtree) {
         testrunner_loop<CBtreeSet<64>>(items, "cbtree_set<64>");
+    } else {
+        if (g_slot_max == 4)
+            testrunner_loop<BtreeSet<4> >(items, "btree_set<4>");
+        if (g_slot_max == 8)
+            testrunner_loop<BtreeSet<8> >(items, "btree_set<8>");
+        if (g_slot_max == 16)
+            testrunner_loop<BtreeSet<16> >(items, "btree_set<16>");
+        if (g_slot_max == 32)
+            testrunner_loop<BtreeSet<32> >(items, "btree_set<32>");
+        if (g_slot_max == 64)
+            testrunner_loop<BtreeSet<64> >(items, "btree_set<64>");
+        if (g_slot_max == 128)
+            testrunner_loop<BtreeSet<128> >(items, "btree_set<128>");
+        if (g_slot_max == 256)
+            testrunner_loop<BtreeSet<256> >(items, "btree_set<256>");
+    }
 #endif
 }
 
