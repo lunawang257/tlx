@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 if [ "$1" == "-n" ]; then
     dryrun=1
 else
@@ -11,7 +13,7 @@ REPEAT=64
 MAX_THREAD=6
 N=1024000
 
-prog="../build/tests/tlx_container_btree_speedtest_concurrent"
+prog="$SCRIPT_DIR/../build/tests/tlx_container_btree_speedtest_concurrent"
 
 rm -f /tmp/out
 
