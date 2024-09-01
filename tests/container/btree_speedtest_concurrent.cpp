@@ -10,6 +10,7 @@
 
 #include <tlx/container/btree_set.hpp>
 #include <tlx/container/btree_map.hpp>
+#include <tlx/container/cbtree_set.hpp>
 
 #include <set>
 
@@ -17,6 +18,8 @@
 #include <tlx/timestamp.hpp>
 
 // *** Settings
+
+bool g_use_cbtree = false;
 
 //! starting number of items to insert
 size_t min_items = 125;
@@ -302,6 +305,8 @@ private:
         std::uniform_int_distribution<> key_dist(0, max_key);
         std::uniform_int_distribution<> dist(0, 99);
 
+        local_thread_id = id;
+
         auto old_val = num_running.fetch_add(1, std::memory_order_relaxed);
         if (old_val + 1 == total_threads) { // this is the last thread starts running
             ts_start = tlx::timestamp();
@@ -447,6 +452,24 @@ struct TestFactory_Set {
             : TestClass<tlx::btree_set<
                             size_t, std::less<size_t>,
                             struct btree_traits_speed<Slots, Slots> > >(n) { }
+    };
+
+    //! Test the B+ tree with a specific leaf/inner slots
+    template <int Slots>
+    struct CBtreeSet
+        : TestClass<tlx::cbtree_set<
+                        size_t, std::less<size_t>,
+                        struct tlx::cbtree_default_traits<
+                            size_t, size_t,
+                            Slots * (sizeof(size_t) + sizeof(void*)),
+                            Slots * sizeof(size_t)> > > {
+        CBtreeSet(size_t n)
+            : TestClass<tlx::cbtree_set<
+                            size_t, std::less<size_t>,
+                            struct tlx::cbtree_default_traits<
+                                size_t, size_t,
+                                Slots * (sizeof(size_t) + sizeof(void*)),
+                                Slots * sizeof(size_t)> > >(n) { }
     };
 
     //! Run tests on all set types
@@ -694,6 +717,8 @@ void TestFactory_Set<TestClass>::call_testrunner(size_t items) {
         testrunner_loop<BtreeSet<128> >(items, "btree_set<128>");
     if (g_slot_max == 256)
         testrunner_loop<BtreeSet<256> >(items, "btree_set<256>");
+    if (g_use_cbtree)
+        testrunner_loop<CBtreeSet<64>>(items, "cbtree_set<64>");
 #endif
 }
 
@@ -719,6 +744,7 @@ void TestFactory_Map<TestClass>::call_testrunner(size_t items) {
 void print_usage(const char *program_name) {
     std::cout << "Usage: " << program_name << " [options]\n"
               << "Options:\n"
+              << "  -c        Use CBtree from the BP-Tree paper\n"
               << "  -t <num>  Set BT_THREADS (default: 1)\n"
               << "  -m <num>  Set BT_MIN (default: 0)\n"
               << "  -M <num>  Set BT_MAX (default: 0)\n"
@@ -727,6 +753,8 @@ void print_usage(const char *program_name) {
               << "  -l <num>  Set BT_LOOKUP_P (default: 0)\n"
               << "  -L <root|no-root|all|none> Lock which nodes (default: all)\n"
               << "  -R <num>  Set expected root slot, -2 means slotmax-2 (default: 0)\n"
+              << "  -s        Skip std::set (now always skipped)\n"
+              << "  -S <num>  Set slotmax, must be one of 4, 8, 16, 32, 64, 128, 256\n"
               << "  -h        Print this help message and exit\n";
 }
 
@@ -734,8 +762,11 @@ void print_usage(const char *program_name) {
 int main(int argc, char *argv[]) {
     std::set<size_t> valid_max_slots = {4, 8, 16, 32, 64, 128, 256};
     int opt;
-    while ((opt = getopt(argc, argv, "t:m:M:r:R:i:l:L:sS:h")) != -1) {
+    while ((opt = getopt(argc, argv, "ct:m:M:r:R:i:l:L:sS:h")) != -1) {
         switch (opt) {
+        case 'c':
+            g_use_cbtree = true;
+            break;
         case 't':
             cur_numthreads = atol(optarg);
             break;

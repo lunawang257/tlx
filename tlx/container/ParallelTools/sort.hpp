@@ -74,7 +74,7 @@ void sort(RandomIt first, RandomIt last, Compare comp = std::less<>()) {
     ParallelTools::par_do([&]() { ParallelTools::sort(first, mid, comp); },
                           [&]() {
                             ParallelTools::sort(mid, last, comp);
-                            tmp = (E *)malloc((last - first) * sizeof(E));
+                            tmp = static_cast<E *>(malloc((last - first) * sizeof(E)));
                           });
 
     merge(first, mid, mid, last, tmp, comp);

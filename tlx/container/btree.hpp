@@ -58,6 +58,8 @@ extern std::string format_current_time(void);
 // Thread-local storage for each thread's debug information
 thread_local thread_debug_info local_debug_info;
 
+thread_local int local_thread_id;
+
 enum lock_requirement {
     lock_all,
     lock_root_only,
