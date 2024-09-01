@@ -28,6 +28,8 @@ size_t start_repeat = 1;
 
 ssize_t g_root_slot = 0;
 
+size_t g_slot_max = 64;
+
 //! number of threads operating at a time
 size_t cur_numthreads = 1;
 
@@ -635,9 +637,9 @@ void testrunner_loop(size_t items, const std::string& container_name) {
               << million_ops_per_sec
               << std::endl;
 
-    std::cout << "TreeName\tKeys(k)\tLevel\tRootSlt\tThreads\tLockReq\tMops/s\n"
+    std::cout << "TreeName\tSlotMax\tLevel\tRootSlt\tThreads\tLockReq\tMops/s\n"
               << container_name << "\t"
-              << (actual_items + 500) / 1000 << "\t"
+              << g_slot_max << "\t"
               << g_level << "\t"
               << g_slotuse << "\t"
               << cur_numthreads << "\t"
@@ -678,19 +680,20 @@ void TestFactory_Set<TestClass>::call_testrunner(size_t items) {
         items, "btree_set");
 #else
     // just pick a few node sizes for quicker tests
-    /*
-    testrunner_loop<BtreeSet<4> >(items, "btree_set<4>");
-    testrunner_loop<BtreeSet<8> >(items, "btree_set<8>");
-    testrunner_loop<BtreeSet<16> >(items, "btree_set<16>");
-    testrunner_loop<BtreeSet<32> >(items, "btree_set<32>");
-    */
-    testrunner_loop<BtreeSet<64> >(items, "btree_set<64>");
-    /*
-    testrunner_loop<BtreeSet<128> >(
-        items, "btree_set<128>");
-    testrunner_loop<BtreeSet<256> >(
-        items, "btree_set<256>");
-    */
+    if (g_slot_max == 4)
+        testrunner_loop<BtreeSet<4> >(items, "btree_set<4>");
+    if (g_slot_max == 8)
+        testrunner_loop<BtreeSet<8> >(items, "btree_set<8>");
+    if (g_slot_max == 16)
+        testrunner_loop<BtreeSet<16> >(items, "btree_set<16>");
+    if (g_slot_max == 32)
+        testrunner_loop<BtreeSet<32> >(items, "btree_set<32>");
+    if (g_slot_max == 64)
+        testrunner_loop<BtreeSet<64> >(items, "btree_set<64>");
+    if (g_slot_max == 128)
+        testrunner_loop<BtreeSet<128> >(items, "btree_set<128>");
+    if (g_slot_max == 256)
+        testrunner_loop<BtreeSet<256> >(items, "btree_set<256>");
 #endif
 }
 
@@ -729,8 +732,9 @@ void print_usage(const char *program_name) {
 
 //! Speed test them!
 int main(int argc, char *argv[]) {
+    std::set<size_t> valid_max_slots = {4, 8, 16, 32, 64, 128, 256};
     int opt;
-    while ((opt = getopt(argc, argv, "t:m:M:r:R:i:l:L:sh")) != -1) {
+    while ((opt = getopt(argc, argv, "t:m:M:r:R:i:l:L:sS:h")) != -1) {
         switch (opt) {
         case 't':
             cur_numthreads = atol(optarg);
@@ -778,6 +782,13 @@ int main(int argc, char *argv[]) {
             break;
         case 's':
             skip_std_set = true;
+            break;
+        case 'S':
+            g_slot_max = atol(optarg);
+            if (valid_max_slots.find(g_slot_max) == valid_max_slots.end()) {
+                std::cerr << "Invalid slot max " << optarg << std::endl;
+                return EXIT_FAILURE;
+            }
             break;
         case 'h':
             print_usage(argv[0]);
