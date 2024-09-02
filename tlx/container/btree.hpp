@@ -4983,7 +4983,6 @@ public:
 #ifdef TLX_BTREE_DEBUG
 
     void verify_one_node(const node* n) const {
-        if (!root_->childid[0]) return;
         if (root_->level == 0) {
             tlx_die_unless(root_->slotuse == 0);
             return;
