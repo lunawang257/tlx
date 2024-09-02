@@ -37,9 +37,9 @@
 #include <tlx/container/ParallelTools/Lock.hpp>
 
 //#define STD_LOCK
-//#define FAST_LOCK
+#define FAST_LOCK
 //#define DUMMY_LOCK
-#define BUSY_SPIN_LOCK
+//#define BUSY_SPIN_LOCK
 //#define HYBRID_SPIN_LOCK
 //#define BUSY_WAIT_LOCK
 //#define HYBRID_LOCK
