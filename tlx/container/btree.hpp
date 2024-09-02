@@ -36,8 +36,8 @@
 #include <tlx/container/ParallelTools/reducer.h>
 #include <tlx/container/ParallelTools/Lock.hpp>
 
-//#define STD_LOCK
-#define FAST_LOCK
+#define STD_LOCK
+//#define FAST_LOCK
 //#define DUMMY_LOCK
 //#define BUSY_SPIN_LOCK
 //#define HYBRID_SPIN_LOCK
@@ -73,17 +73,27 @@ enum lock_requirement {
 
 enum lock_type {
     lock_type_read = 1,
+    lock_type_read_notify_upgrader,
+    lock_type_read_notify_writer,
+    lock_type_read_wait,
     lock_type_read_got,
     lock_type_write,
     lock_type_write_got,
     lock_type_upgrade,
+    lock_type_upgrade_wait,
     lock_type_upgrade_got,
     lock_type_downgrade,
+    lock_type_downgrade_notify_reader,
     lock_type_read_unlock,
+    lock_type_read_unlock_notify_upgrader,
+    lock_type_read_unlock_notify_writer,
     lock_type_write_unlock,
+    lock_type_write_unlock_notify_upgrader,
+    lock_type_write_unlock_notify_writer,
+    lock_type_write_unlock_notify_reader,
 };
 
-enum { MAX_CPU = 6 };
+enum { MAX_CPU = 1 }; // 6
 
 enum { MAX_SPIN = 200 };
 
@@ -92,6 +102,12 @@ inline std::string lock_type_to_string(int lt) {
     switch (lt) {
         case lock_type_read:
             return "read_lock";
+        case lock_type_read_notify_upgrader:
+            return "read_lock_t_upgrader";
+        case lock_type_read_notify_writer:
+            return "read_lock_t_writer";
+        case lock_type_read_wait:
+            return "read_lock_wait";
         case lock_type_read_got:
             return "read_lock_got";
         case lock_type_write:
@@ -100,14 +116,28 @@ inline std::string lock_type_to_string(int lt) {
             return "write_lock_got";
         case lock_type_upgrade:
             return "upgrade_lock";
+        case lock_type_upgrade_wait:
+            return "upgrade_lock_wait";
         case lock_type_upgrade_got:
             return "upgrade_lock_got";
         case lock_type_downgrade:
             return "downgrade_lock";
+        case lock_type_downgrade_notify_reader:
+            return "downgrade_t_reader";
         case lock_type_read_unlock:
             return "read_unlock";
+        case lock_type_read_unlock_notify_upgrader:
+            return "read_unlock_t_upgrader";
+        case lock_type_read_unlock_notify_writer:
+            return "read_unlock_t_writer";
         case lock_type_write_unlock:
             return "write_unlock";
+        case lock_type_write_unlock_notify_upgrader:
+            return "write_unlock_t_upgrader";
+        case lock_type_write_unlock_notify_writer:
+            return "write_unlock_t_writer";
+        case lock_type_write_unlock_notify_reader:
+            return "write_unlock_t_reader";
         default:
             return "unknown_lock_type";
     }
@@ -651,17 +681,18 @@ public:
 
     struct InnerLockHelper {
         // TODO desc
-        std::atomic_flag writer{false};
-        partitioned_counter<MAX_CPU> readers{}; // max 6 CPUs for now
+
+        // true only if write-locked, or has writer/upgrader waiting
+        std::atomic_flag check_writer{false};
 
         mutex_type mutex;
         cv_type readcv;
         cv_type writecv;
         cv_type upgradecv;
-        unsigned int numreader = 0;
+        partitioned_counter<MAX_CPU> numreader{};
         bool haswriter = false;
         int writerswaiting = 0;
-        int readerswaiting = 0;
+        std::atomic<int> readerswaiting = 0;
         int upgradewaiting = 0;
 
         BTree *treep;
@@ -742,39 +773,82 @@ public:
 
         void readlock(bool verify __attribute__((unused)) = true) {
             if (!take_lock()) {
-                numreader++;
+                numreader.add(1, local_thread_id);
                 return;
             }
             log_lock(nodep, lock_type_read);
-            lock_type lock(mutex);
+
+            bool added_ref = false;
             addtoread();
-            if (haswriter || writerswaiting > 0
-                    || upgradewaiting > 0) {
-                readerswaiting++;
-                readcv.wait(lock, [this](){
-                        return !this->haswriter
-                        && this->writerswaiting == 0
-                        && this->upgradewaiting == 0;
-                });
-                readerswaiting--;
+            if (!check_writer.test(std::memory_order_acq_rel)) { // no writers
+                // race: writer may come in now, must re-check check_writer later
+                numreader.add(1, local_thread_id);
+                added_ref = true;
             }
-            numreader++;
+
+            // check again to avoid the race above
+            if (check_writer.test(std::memory_order_acq_rel)) {
+                lock_type lock(mutex);
+                if (added_ref) {
+                    numreader.add(-1, local_thread_id);
+                    added_ref = false;
+                    int64_t reader_count = numreader.get();
+                    TLX_BTREE_ASSERT(reader_count >= 0);
+                    if (reader_count == 0) {
+                        if (upgradewaiting > 0) {
+                            log_lock(nodep, lock_type_read_notify_upgrader);
+                            upgradecv.notify_one();
+                        } else if (writerswaiting > 0) {
+                            log_lock(nodep, lock_type_read_notify_writer);
+                            writecv.notify_one();
+                        }
+                    }
+                }
+                if (haswriter || writerswaiting > 0
+                    || upgradewaiting > 0) {
+                    readerswaiting++;
+                    log_lock(nodep, lock_type_read_wait);
+                    readcv.wait(lock, [this](){
+                        return !this->haswriter
+                            && this->writerswaiting == 0
+                            && this->upgradewaiting == 0;
+                    });
+                    readerswaiting--;
+                }
+                numreader.add(1, local_thread_id);
+                added_ref = true;
+            }
+            if (!added_ref) {
+                numreader.add(1, local_thread_id);
+            }
+
             VERIFY_NODE(verify, treep, nodep);
+            TLX_BTREE_ASSERT(numreader.get() > 0);
             log_lock(nodep, lock_type_read_got);
             DBGPRT();
         }
 
         void upgradelock() {
             log_lock(nodep, lock_type_upgrade);
+
+            // stops future readers
+            check_writer.test_and_set(std::memory_order_release);
+
             lock_type lock(mutex);
             delfromread(false);
             addtowrite();
 
-            numreader--;
-            if (numreader > 0 || haswriter) {
+            numreader.add(-1, local_thread_id);
+            while (true) {
+                int64_t reader_count = numreader.get();
+                TLX_BTREE_ASSERT(reader_count >= 0);
+                if (reader_count == 0 && !haswriter) break;
                 upgradewaiting++;
-                upgradecv.wait(lock, [this]() {
-                    return this->numreader == 0 && !this->haswriter;
+                log_lock(nodep, lock_type_upgrade_wait);
+                upgradecv.wait_for(lock, std::chrono::microseconds(1), [this]() {
+                    int64_t reader_count = numreader.get();
+                    TLX_BTREE_ASSERT(reader_count >= 0);
+                    return !this->haswriter && reader_count == 0;
                 });
                 upgradewaiting--;
             }
@@ -785,13 +859,23 @@ public:
 
         void writelock(bool verify __attribute__((unused)) = true) {
             log_lock(nodep, lock_type_write);
+
+            // stops future readers
+            check_writer.test_and_set(std::memory_order_release);
+
             lock_type lock(mutex);
             addtowrite();
-            if (numreader > 0 || haswriter || upgradewaiting > 0) {
+            while (true) {
+                int64_t reader_count = numreader.get();
+                TLX_BTREE_ASSERT(reader_count >= 0);
+                if (!haswriter && upgradewaiting <= 0 && reader_count == 0) break;
                 writerswaiting++;
-                writecv.wait(lock, [this](){
-                    return this->numreader == 0 && !this->haswriter
-                            && this->upgradewaiting == 0;
+                writecv.wait_for(lock, std::chrono::microseconds(1), [this](){
+                    int64_t reader_count = numreader.get();
+                    TLX_BTREE_ASSERT(reader_count >= 0);
+                    return !this->haswriter &&
+                        this->upgradewaiting == 0 &&
+                        reader_count == 0;
                 });
                 writerswaiting--;
             }
@@ -804,34 +888,51 @@ public:
 
         void read_unlock(bool verify __attribute__((unused)) = true) {
             if (!take_lock()) {
-                numreader--;
+                numreader.add(-1, local_thread_id);
                 return;
             }
             log_lock(nodep, lock_type_read_unlock);
-            lock_type lock(mutex);
+
             delfromread(verify);
-            TLX_BTREE_ASSERT(numreader >= 1);
-            numreader--;
-            if (numreader == 0) {
-                if (upgradewaiting > 0) upgradecv.notify_one();
-                else if (writerswaiting > 0) writecv.notify_one();
-                else readcv.notify_all();
+
+            if (check_writer.test(std::memory_order_acquire)) {
+                lock_type lock(mutex);
+                int64_t reader_count = numreader.get();
+                TLX_BTREE_ASSERT(reader_count >= 0);
+
+                if (reader_count == 1 /* use 1 because self count not decremented yet */) {
+                    if (upgradewaiting > 0) {
+                        log_lock(nodep, lock_type_read_unlock_notify_upgrader);
+                        upgradecv.notify_one();
+                    } else if (writerswaiting > 0) {
+                        log_lock(nodep, lock_type_read_unlock_notify_writer);
+                        writecv.notify_one();
+                    }
+                }
             }
 
             DBGPRT();
+
+            // can't check anything after this line because node can be deleted
+            numreader.add(-1, local_thread_id);
         }
 
         void write_unlock(bool verify = true) {
             log_lock(nodep, lock_type_write_unlock);
+
             lock_type lock(mutex);
             delfromwrite(verify);
             TLX_BTREE_ASSERT(haswriter);
             haswriter = false;
             if (upgradewaiting > 0) {
+                log_lock(nodep, lock_type_write_unlock_notify_upgrader);
                 upgradecv.notify_one();
             } else if (writerswaiting > 0) {
+                log_lock(nodep, lock_type_write_unlock_notify_writer);
                 writecv.notify_one();
             } else {
+                log_lock(nodep, lock_type_write_unlock_notify_reader);
+                check_writer.clear();
                 readcv.notify_all();
             }
             DBGPRT();
@@ -844,8 +945,12 @@ public:
             addtoread();
             delfromwrite(false);
             haswriter = false;
-            numreader++;
-            readcv.notify_all();
+            numreader.add(1, local_thread_id);
+            if (upgradewaiting == 0 && writerswaiting == 0) {
+                log_lock(nodep, lock_type_downgrade_notify_reader);
+                check_writer.clear();
+                readcv.notify_all();
+            }
             // ^ only works when theres no writers waiting
             DBGPRT();
         }
@@ -958,6 +1063,7 @@ public:
             if (haswriter || writerswaiting > 0
                     || upgradewaiting > 0) {
                 readerswaiting++;
+                log_lock(nodep, lock_type_read_wait);
                 readcv.wait(lock, [this](){
                         return !this->haswriter
                         && this->writerswaiting == 0
@@ -980,6 +1086,7 @@ public:
             numreader--;
             if (numreader > 0 || haswriter) {
                 upgradewaiting++;
+                log_lock(nodep, lock_type_upgrade_wait);
                 upgradecv.wait(lock, [this]() {
                     return this->numreader == 0 && !this->haswriter;
                 });

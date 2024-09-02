@@ -2007,7 +2007,7 @@ std::mutex printmtx;
 int seqnum = 0;
 set_type my_multi_thread_set;
 
-const int NUM_THREADS = 16;
+const int NUM_THREADS = 2;
 size_t cur_numthreads = 1;
 const int thread_start_idx = 2;
 const bool debug_print = false;
@@ -2037,6 +2037,7 @@ struct LogInfo {
             unsigned short slotuse;
             unsigned int numreader;
             bool haswriter;
+            int check_writer;
             int writerswaiting;
             int readerswaiting;
             int upgradewaiting;
@@ -2128,12 +2129,15 @@ void log_lock(void* node, int lock_type) {
         log_info.writerswaiting = 0;
         log_info.upgradewaiting = 0;
 
-        if (nodep->level == 0) { // leaf
+        if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
             set_type::btree_impl::LeafNode *leafp =
                 static_cast<set_type::btree_impl::LeafNode *>(nodep);
             if (leafp->lock) {
                 log_info.numreader = leafp->lock->numreader;
                 log_info.haswriter = leafp->lock->haswriter;
+                log_info.check_writer = leafp->lock->haswriter ||
+                    leafp->lock->writerswaiting ||
+                    leafp->lock->upgradewaiting;
                 log_info.readerswaiting = leafp->lock->readerswaiting;
                 log_info.writerswaiting = leafp->lock->writerswaiting;
                 log_info.upgradewaiting = leafp->lock->upgradewaiting;
@@ -2142,8 +2146,9 @@ void log_lock(void* node, int lock_type) {
             set_type::btree_impl::InnerNode *innerp =
                 static_cast<set_type::btree_impl::InnerNode *>(nodep);
             if (innerp->lock) {
-                log_info.numreader = innerp->lock->numreader;
+                log_info.numreader = innerp->lock->numreader.get();
                 log_info.haswriter = innerp->lock->haswriter;
+                log_info.check_writer = innerp->lock->check_writer.test();
                 log_info.readerswaiting = innerp->lock->readerswaiting;
                 log_info.writerswaiting = innerp->lock->writerswaiting;
                 log_info.upgradewaiting = innerp->lock->upgradewaiting;
@@ -2176,6 +2181,7 @@ void print_lock_record(const LogInfo& info) {
                   << " L" << info.level
                   << ") (r" << info.numreader
                   << "|w" << info.haswriter
+                  << "|cw" << info.check_writer
                   << " waiter:r" << info.readerswaiting
                   << "|w" << info.writerswaiting
                   << "|u" << info.upgradewaiting
@@ -2226,7 +2232,7 @@ void print_threads_states(void)
             << std::endl;
         if (global_thread_info[i].cur_node) {
             set_type::btree_impl::node *nodep = static_cast<set_type::btree_impl::node *>(global_thread_info[i].cur_node);
-            bool isleaf = nodep->level == 0;
+            bool isleaf = nodep->level == 0 && nodep->slotuse != 0;
             auto leaf_lock = static_cast<set_type::btree_impl::LeafNode *>(nodep)->lock;
             auto inner_lock = static_cast<set_type::btree_impl::InnerNode *>(nodep)->lock;
             if ((isleaf && leaf_lock == nullptr) ||
