@@ -243,6 +243,8 @@ public:
 
         if (g_root_slot != 0) { // insert more until reach the desired slots in root
             if (g_root_slot < 0) {
+                std::cout << "slotmax=" << my_set.inner_slotmax << ","
+                          << my_set.leaf_slotmax << " ";
                 std::cout << "adjust root_slot " << g_root_slot;
                 g_root_slot += my_set.leaf_slotmax;
                 std::cout << " to " << g_root_slot << "\n" << std::flush;
