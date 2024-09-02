@@ -638,7 +638,7 @@ public:
         cv_type readcv;
         cv_type writecv;
         cv_type upgradecv;
-        std::atomic<unsigned int> numreader = 0;
+        unsigned int numreader = 0;
         bool haswriter = false;
         int writerswaiting = 0;
         int readerswaiting = 0;
