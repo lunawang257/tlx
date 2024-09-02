@@ -2121,11 +2121,34 @@ void log_lock(void* node, int lock_type) {
         log_info.gen = nodep->gen;
         log_info.level = nodep->level;
         log_info.slotuse = nodep->slotuse;
-        log_info.numreader = nodep->lock->numreader;
-        log_info.haswriter = nodep->lock->haswriter;
-        log_info.readerswaiting = nodep->lock->readerswaiting;
-        log_info.writerswaiting = nodep->lock->writerswaiting;
-        log_info.upgradewaiting = nodep->lock->upgradewaiting;
+
+        log_info.numreader = 0;
+        log_info.haswriter = 0;
+        log_info.readerswaiting = 0;
+        log_info.writerswaiting = 0;
+        log_info.upgradewaiting = 0;
+
+        if (nodep->level == 0) { // leaf
+            set_type::btree_impl::LeafNode *leafp =
+                static_cast<set_type::btree_impl::LeafNode *>(nodep);
+            if (leafp->lock) {
+                log_info.numreader = leafp->lock->numreader;
+                log_info.haswriter = leafp->lock->haswriter;
+                log_info.readerswaiting = leafp->lock->readerswaiting;
+                log_info.writerswaiting = leafp->lock->writerswaiting;
+                log_info.upgradewaiting = leafp->lock->upgradewaiting;
+            }
+        } else {
+            set_type::btree_impl::InnerNode *innerp =
+                static_cast<set_type::btree_impl::InnerNode *>(nodep);
+            if (innerp->lock) {
+                log_info.numreader = innerp->lock->numreader;
+                log_info.haswriter = innerp->lock->haswriter;
+                log_info.readerswaiting = innerp->lock->readerswaiting;
+                log_info.writerswaiting = innerp->lock->writerswaiting;
+                log_info.upgradewaiting = innerp->lock->upgradewaiting;
+            }
+        }
         log_info.lock_type = lock_type;
 
         get_stack_addr(log_info.addrs);
@@ -2203,15 +2226,24 @@ void print_threads_states(void)
             << std::endl;
         if (global_thread_info[i].cur_node) {
             set_type::btree_impl::node *nodep = static_cast<set_type::btree_impl::node *>(global_thread_info[i].cur_node);
-            auto lock = nodep->lock;
-            if (lock == nullptr) {
+            bool isleaf = nodep->level == 0;
+            auto leaf_lock = static_cast<set_type::btree_impl::LeafNode *>(nodep)->lock;
+            auto inner_lock = static_cast<set_type::btree_impl::InnerNode *>(nodep)->lock;
+            if ((isleaf && leaf_lock == nullptr) ||
+                (!isleaf && inner_lock == nullptr)) {
                 std::cout << "  lock=null\n";
                 continue;
             }
             std::cout << "  curread: ";
             std::set<int> ids; // print all ids in order
-            for (auto id: lock->curread) {
-                ids.insert(thread_id_map[id]);
+            if (isleaf) {
+                for (auto id: leaf_lock->curread) {
+                    ids.insert(thread_id_map[id]);
+                }
+            } else {
+                for (auto id: inner_lock->curread) {
+                    ids.insert(thread_id_map[id]);
+                }
             }
             for (auto id: ids) {
                 std::cout << id << ' ';
@@ -2219,8 +2251,14 @@ void print_threads_states(void)
             ids.clear();
             std::cout << std::endl;
             std::cout << "  curwrite: ";
-            for (auto id: lock->curwrite) {
-                ids.insert(thread_id_map[id]);
+            if (isleaf) {
+                for (auto id: leaf_lock->curwrite) {
+                    ids.insert(thread_id_map[id]);
+                }
+            } else {
+                for (auto id: inner_lock->curwrite) {
+                    ids.insert(thread_id_map[id]);
+                }
             }
             for (auto id: ids) {
                 std::cout << id << ' ';
