@@ -462,14 +462,18 @@ struct TestFactory_Set {
                         struct tlx::cbtree_default_traits<
                             size_t, size_t,
                             Slots * (sizeof(size_t) + sizeof(void*)),
-                            Slots * sizeof(size_t)> > > {
+                            Slots * sizeof(size_t)>,
+                        std::allocator<size_t> /* Allocator */,
+                        true /* concurrent */> > {
         CBtreeSet(size_t n)
             : TestClass<tlx::cbtree_set<
                             size_t, std::less<size_t>,
                             struct tlx::cbtree_default_traits<
                                 size_t, size_t,
                                 Slots * (sizeof(size_t) + sizeof(void*)),
-                                Slots * sizeof(size_t)> > >(n) { }
+                                Slots * sizeof(size_t)>,
+                                std::allocator<size_t> /* Allocator */,
+                                true /* concurrent */> >(n) { }
     };
 
     //! Run tests on all set types
