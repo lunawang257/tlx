@@ -710,7 +710,7 @@ void TestFactory_Set<TestClass>::call_testrunner(size_t items) {
 #else
     // just pick a few node sizes for quicker tests
     if (g_use_cbtree) {
-        testrunner_loop<CBtreeSet<64>>(items, "cbtree_set<64>");
+        testrunner_loop<CBtreeSet<16>>(items, "cbtree_set<16>");
     } else {
         if (g_slot_max == 4)
             testrunner_loop<BtreeSet<4> >(items, "btree_set<4>");

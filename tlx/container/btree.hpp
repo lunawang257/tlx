@@ -36,8 +36,8 @@
 #include <tlx/container/ParallelTools/reducer.h>
 #include <tlx/container/ParallelTools/Lock.hpp>
 
-#define STD_LOCK
-//#define FAST_LOCK
+//#define STD_LOCK
+#define FAST_LOCK
 //#define DUMMY_LOCK
 //#define BUSY_SPIN_LOCK
 //#define HYBRID_SPIN_LOCK
@@ -93,7 +93,7 @@ enum lock_type {
     lock_type_write_unlock_notify_reader,
 };
 
-enum { MAX_CPU = 1 }; // 6
+enum { MAX_CPU = 6 }; // 6
 
 enum { MAX_SPIN = 200 };
 
@@ -397,6 +397,26 @@ public:
         while (!pred()) { // Evaluate predicate
             pthread_cond_wait(&cond_, lock.mutex()->native_handle());
         }
+    }
+
+    template <typename Predicate>
+    bool wait_for(std::unique_lock<FastLock>& lock,
+                  std::chrono::microseconds duration,
+                  Predicate pred) {
+        auto now = std::chrono::system_clock::now();
+        auto timeout_time = now + duration;
+
+        timespec ts;
+        ts.tv_sec = std::chrono::duration_cast<std::chrono::seconds>(timeout_time.time_since_epoch()).count();
+        ts.tv_nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_time.time_since_epoch() % std::chrono::seconds(1)).count();
+
+        while (!pred()) {
+            int res = pthread_cond_timedwait(&cond_, lock.mutex()->native_handle(), &ts);
+            if (res == ETIMEDOUT) {
+                return pred();
+            }
+        }
+        return true;
     }
 
     void notify_one() {
