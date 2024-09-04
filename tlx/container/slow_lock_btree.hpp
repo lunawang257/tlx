@@ -36,6 +36,8 @@
 #include <tlx/container/ParallelTools/reducer.h>
 #include <tlx/container/ParallelTools/Lock.hpp>
 
+#include <tlx/container/btree.hpp>
+
 //#define STD_LOCK
 #define FAST_LOCK
 //#define DUMMY_LOCK
@@ -471,42 +473,6 @@ namespace tlx {
 //! B+ tree variants
 //! \{
 
-// *** Debugging Macros
-#ifdef TLX_BTREE_DEBUG
-
-//! Print out debug information to std::cout if TLX_BTREE_DEBUG is defined.
-#define TLX_BTREE_PRINT(x) \
-    do { if (debug) (std::cout << x << std::endl); } while (0)
-
-//! Assertion only if TLX_BTREE_DEBUG is defined. This is not used in verify().
-#define TLX_BTREE_ASSERT(x) \
-    do { \
-        if (!(x)) { \
-            before_assert(); \
-            assert(false); \
-        } \
-    } while (0)
-
-#else
-
-//! Print out debug information to std::cout if TLX_BTREE_DEBUG is defined.
-#define TLX_BTREE_PRINT(x)          do { } while (0)
-
-//! Assertion only if TLX_BTREE_DEBUG is defined. This is not used in verify().
-#define TLX_BTREE_ASSERT(x)         do { } while (0)
-
-#endif
-
-//! The maximum of a and b. Used in some compile-time formulas.
-#define TLX_BTREE_MAX(a, b)          ((a) < (b) ? (b) : (a))
-
-#ifndef TLX_BTREE_FRIENDS
-//! The macro TLX_BTREE_FRIENDS can be used by outside class to access the B+
-//! tree internals. This was added for wxBTreeDemo to be able to draw the
-//! tree.
-#define TLX_BTREE_FRIENDS           friend class btree_friend
-#endif
-
 extern int seq; // TODO delete
 
 #define TAKE_LOCK(isleaf, node, func)                                   \
@@ -525,7 +491,7 @@ extern int seq; // TODO delete
  * leaf and inner node sizes by assuming a cache line multiple of 256 bytes.
 */
 template <typename Key, typename Value>
-struct btree_default_traits {
+struct slbtree_default_traits {
     //! If true, the tree will self verify its invariants after each insert() or
     //! erase(). The header must have been compiled with TLX_BTREE_DEBUG
     //! defined.
@@ -572,7 +538,7 @@ struct btree_default_traits {
 template <typename Key, typename Value,
           typename KeyOfValue,
           typename Compare = std::less<Key>,
-          typename Traits = btree_default_traits<Key, Value>,
+          typename Traits = slbtree_default_traits<Key, Value>,
           bool Duplicates = false,
           typename Allocator = std::allocator<Value>,
 #if defined(STD_LOCK)
@@ -600,7 +566,7 @@ template <typename Key, typename Value,
 #error "Must define one of STD_LOCK, FAST_LOCK, or DUMMY_LOCK"
 #endif
           typename UniqueLock = std::unique_lock<Mutex>>
-class BTree
+class SLBTree
 {
 public:
     //! \name Template Parameter Types
@@ -651,7 +617,7 @@ public:
     //! \{
 
     //! Typedef of our own type
-    typedef BTree<key_type, value_type, key_of_value, key_compare,
+    typedef SLBTree<key_type, value_type, key_of_value, key_compare,
                   traits, allow_duplicates, allocator_type, mutex_type,
                   cv_type, lock_type> Self;
 
@@ -715,7 +681,7 @@ public:
         std::atomic<int> readerswaiting = 0;
         int upgradewaiting = 0;
 
-        BTree *treep;
+        SLBTree *treep;
         node *nodep;
 
 #ifdef TLX_BTREE_DEBUG
@@ -996,7 +962,7 @@ public:
         int readerswaiting = 0;
         int upgradewaiting = 0;
 
-        BTree *treep;
+        SLBTree *treep;
         node *nodep;
 
 #ifdef TLX_BTREE_DEBUG
@@ -1226,7 +1192,7 @@ public: // XXX
             return (level == 0);
         }
 
-        node(BTree *tree __attribute__((unused))) {
+        node(SLBTree *tree __attribute__((unused))) {
         }
 
         ~node() {
@@ -1248,7 +1214,7 @@ public: // XXX
         //! Pointers to children
         node* childid[inner_slotmax + 1]; // NOLINT
 
-        InnerNode(BTree *tree) : node(tree) {
+        InnerNode(SLBTree *tree) : node(tree) {
             lock = new InnerLockHelper();
             lock->nodep = this;
             lock->treep = tree;
@@ -1302,7 +1268,7 @@ public: // XXX
         // TODO desc
         LockHelper* lock;
 
-        LeafNode(BTree *tree) : node(tree) {
+        LeafNode(SLBTree *tree) : node(tree) {
             lock = new LockHelper();
             lock->nodep = this;
             lock->treep = tree;
@@ -1367,10 +1333,10 @@ public:
         // *** Types
 
         //! The key type of the btree. Returned by key().
-        typedef typename BTree::key_type key_type;
+        typedef typename SLBTree::key_type key_type;
 
         //! The value type of the btree. Returned by operator*().
-        typedef typename BTree::value_type value_type;
+        typedef typename SLBTree::value_type value_type;
 
         //! Reference to the value_type. STL required.
         typedef value_type& reference;
@@ -1391,7 +1357,7 @@ public:
         // *** Members
 
         //! The currently referenced leaf node of the tree
-        typename BTree::LeafNode* curr_leaf;
+        typename SLBTree::LeafNode* curr_leaf;
 
         //! Current key/data slot referenced
         unsigned short curr_slot;
@@ -1410,7 +1376,7 @@ public:
 
         //! Also friendly to the base btree class, because erase_iter() needs
         //! to read the curr_leaf and curr_slot values directly.
-        friend class BTree<key_type, value_type, key_of_value, key_compare,
+        friend class SLBTree<key_type, value_type, key_of_value, key_compare,
                            traits, allow_duplicates, allocator_type>;
 
         // The macro TLX_BTREE_FRIENDS can be used by outside class to access
@@ -1427,7 +1393,7 @@ public:
         { }
 
         //! Initializing-Constructor of a mutable iterator
-        iterator(typename BTree::LeafNode* l, unsigned short s)
+        iterator(typename SLBTree::LeafNode* l, unsigned short s)
             : curr_leaf(l), curr_slot(s)
         { }
 
@@ -1542,10 +1508,10 @@ public:
         // *** Types
 
         //! The key type of the btree. Returned by key().
-        typedef typename BTree::key_type key_type;
+        typedef typename SLBTree::key_type key_type;
 
         //! The value type of the btree. Returned by operator*().
-        typedef typename BTree::value_type value_type;
+        typedef typename SLBTree::value_type value_type;
 
         //! Reference to the value_type. STL required.
         typedef const value_type& reference;
@@ -1566,7 +1532,7 @@ public:
         // *** Members
 
         //! The currently referenced leaf node of the tree
-        const typename BTree::LeafNode* curr_leaf;
+        const typename SLBTree::LeafNode* curr_leaf;
 
         //! Current key/data slot referenced
         unsigned short curr_slot;
@@ -1589,7 +1555,7 @@ public:
         { }
 
         //! Initializing-Constructor of a const iterator
-        const_iterator(const typename BTree::LeafNode* l, unsigned short s)
+        const_iterator(const typename SLBTree::LeafNode* l, unsigned short s)
             : curr_leaf(l), curr_slot(s)
         { }
 
@@ -1714,10 +1680,10 @@ public:
         // *** Types
 
         //! The key type of the btree. Returned by key().
-        typedef typename BTree::key_type key_type;
+        typedef typename SLBTree::key_type key_type;
 
         //! The value type of the btree. Returned by operator*().
-        typedef typename BTree::value_type value_type;
+        typedef typename SLBTree::value_type value_type;
 
         //! Reference to the value_type. STL required.
         typedef value_type& reference;
@@ -1738,7 +1704,7 @@ public:
         // *** Members
 
         //! The currently referenced leaf node of the tree
-        typename BTree::LeafNode* curr_leaf;
+        typename SLBTree::LeafNode* curr_leaf;
 
         //! One slot past the current key/data slot referenced.
         unsigned short curr_slot;
@@ -1769,7 +1735,7 @@ public:
         { }
 
         //! Initializing-Constructor of a mutable reverse iterator
-        reverse_iterator(typename BTree::LeafNode* l, unsigned short s)
+        reverse_iterator(typename SLBTree::LeafNode* l, unsigned short s)
             : curr_leaf(l), curr_slot(s)
         { }
 
@@ -1887,10 +1853,10 @@ public:
         // *** Types
 
         //! The key type of the btree. Returned by key().
-        typedef typename BTree::key_type key_type;
+        typedef typename SLBTree::key_type key_type;
 
         //! The value type of the btree. Returned by operator*().
-        typedef typename BTree::value_type value_type;
+        typedef typename SLBTree::value_type value_type;
 
         //! Reference to the value_type. STL required.
         typedef const value_type& reference;
@@ -1911,7 +1877,7 @@ public:
         // *** Members
 
         //! The currently referenced leaf node of the tree
-        const typename BTree::LeafNode* curr_leaf;
+        const typename SLBTree::LeafNode* curr_leaf;
 
         //! One slot past the current key/data slot referenced.
         unsigned short curr_slot;
@@ -1935,7 +1901,7 @@ public:
 
         //! Initializing-Constructor of a const reverse iterator.
         const_reverse_iterator(
-            const typename BTree::LeafNode* l, unsigned short s)
+            const typename SLBTree::LeafNode* l, unsigned short s)
             : curr_leaf(l), curr_slot(s)
         { }
 
@@ -2145,7 +2111,7 @@ public:
 
     //! Default constructor initializing an empty B+ tree with the standard key
     //! comparison function.
-    explicit BTree(const allocator_type& alloc = allocator_type())
+    explicit SLBTree(const allocator_type& alloc = allocator_type())
         : head_leaf_(nullptr), tail_leaf_(nullptr),
           allocator_(alloc)
     {
@@ -2154,7 +2120,7 @@ public:
 
     //! Constructor initializing an empty B+ tree with a special key
     //! comparison object.
-    explicit BTree(const key_compare& kcf,
+    explicit SLBTree(const key_compare& kcf,
                    const allocator_type& alloc = allocator_type())
         : head_leaf_(nullptr), tail_leaf_(nullptr),
           key_less_(kcf), allocator_(alloc)
@@ -2166,7 +2132,7 @@ public:
     //! range need not be sorted. To create a B+ tree from a sorted range, use
     //! bulk_load().
     template <class InputIterator>
-    BTree(InputIterator first, InputIterator last,
+    SLBTree(InputIterator first, InputIterator last,
           const allocator_type& alloc = allocator_type())
         : head_leaf_(nullptr), tail_leaf_(nullptr),
           allocator_(alloc) {
@@ -2178,7 +2144,7 @@ public:
     //! special key comparison object.  The range need not be sorted. To create
     //! a B+ tree from a sorted range, use bulk_load().
     template <class InputIterator>
-    BTree(InputIterator first, InputIterator last, const key_compare& kcf,
+    SLBTree(InputIterator first, InputIterator last, const key_compare& kcf,
           const allocator_type& alloc = allocator_type())
         : head_leaf_(nullptr), tail_leaf_(nullptr),
           key_less_(kcf), allocator_(alloc) {
@@ -2187,12 +2153,12 @@ public:
     }
 
     //! Frees up all used B+ tree memory pages
-    ~BTree() {
+    ~SLBTree() {
         clear();
     }
 
     //! Fast swapping of two identical B+ tree objects.
-    void swap(BTree& from) {
+    void swap(SLBTree& from) {
         std::swap(root_, from.root_);
         std::swap(head_leaf_, from.head_leaf_);
         std::swap(tail_leaf_, from.tail_leaf_);
@@ -2214,13 +2180,13 @@ public:
         //! Key comparison function from the template parameter
         key_compare key_comp;
 
-        //! Constructor called from BTree::value_comp()
+        //! Constructor called from SLBTree::value_comp()
         explicit value_compare(key_compare kc)
             : key_comp(kc)
         { }
 
         //! Friendly to the btree class so it may call the constructor
-        friend class BTree<key_type, value_type, key_of_value, key_compare,
+        friend class SLBTree<key_type, value_type, key_of_value, key_compare,
                            traits, allow_duplicates, allocator_type>;
 
     public:
@@ -2479,7 +2445,7 @@ private:
                 }
             }
 
-            TLX_BTREE_PRINT("BTree::find_lower: on " << n <<
+            TLX_BTREE_PRINT("SLBTree::find_lower: on " << n <<
                             " key " << key << " -> " << lo << " / " << hi);
 
             // verify result using simple linear search
@@ -2488,7 +2454,7 @@ private:
                 unsigned short i = 0;
                 while (i < n->slotuse && key_less(n->key(i), key)) ++i;
 
-                TLX_BTREE_PRINT("BTree::find_lower: testfind: " << i);
+                TLX_BTREE_PRINT("SLBTree::find_lower: testfind: " << i);
                 TLX_BTREE_ASSERT(i == lo);
             }
 
@@ -2526,7 +2492,7 @@ private:
                 }
             }
 
-            TLX_BTREE_PRINT("BTree::find_upper: on " << n <<
+            TLX_BTREE_PRINT("SLBTree::find_upper: on " << n <<
                             " key " << key << " -> " << lo << " / " << hi);
 
             // verify result using simple linear search
@@ -2535,7 +2501,7 @@ private:
                 unsigned short i = 0;
                 while (i < n->slotuse && key_lessequal(n->key(i), key)) ++i;
 
-                TLX_BTREE_PRINT("BTree::find_upper testfind: " << i);
+                TLX_BTREE_PRINT("SLBTree::find_upper testfind: " << i);
                 TLX_BTREE_ASSERT(i == hi);
             }
 
@@ -2816,36 +2782,36 @@ public:
     //! Equality relation of B+ trees of the same type. B+ trees of the same
     //! size and equal elements (both key and data) are considered equal. Beware
     //! of the random ordering of duplicate keys.
-    bool operator == (const BTree& other) const {
+    bool operator == (const SLBTree& other) const {
         return (size() == other.size()) &&
                std::equal(begin(), end(), other.begin());
     }
 
     //! Inequality relation. Based on operator==.
-    bool operator != (const BTree& other) const {
+    bool operator != (const SLBTree& other) const {
         return !(*this == other);
     }
 
     //! Total ordering relation of B+ trees of the same type. It uses
     //! std::lexicographical_compare() for the actual comparison of elements.
     // TODO lock help!!!
-    bool operator < (const BTree& other) const {
+    bool operator < (const SLBTree& other) const {
         return std::lexicographical_compare(
             begin(), end(), other.begin(), other.end());
     }
 
     //! Greater relation. Based on operator<.
-    bool operator > (const BTree& other) const {
+    bool operator > (const SLBTree& other) const {
         return other < *this;
     }
 
     //! Less-equal relation. Based on operator<.
-    bool operator <= (const BTree& other) const {
+    bool operator <= (const SLBTree& other) const {
         return !(other < *this);
     }
 
     //! Greater-equal relation. Based on operator<.
-    bool operator >= (const BTree& other) const {
+    bool operator >= (const SLBTree& other) const {
         return !(*this < other);
     }
 
@@ -2856,7 +2822,7 @@ public: // TODO skipping these two sections
     //! \{
 
     //! Assignment operator. All the key/data pairs are copied.
-    BTree& operator = (const BTree& other) {
+    SLBTree& operator = (const SLBTree& other) {
         if (this != &other)
         {
             clear();
@@ -2880,7 +2846,7 @@ public: // TODO skipping these two sections
 
     //! Copy constructor. The newly initialized B+ tree object will contain a
     //! copy of all key/data pairs.
-    BTree(const BTree& other)
+    SLBTree(const SLBTree& other)
         : head_leaf_(nullptr), tail_leaf_(nullptr),
           key_less_(other.key_comp()),
           allocator_(other.get_allocator()) {
@@ -3158,7 +3124,7 @@ private:
             }
 
             //TLX_BTREE_PRINT(
-                //"BTree::insert_descend into " << inner->childid[slot]);
+                //"SLBTree::insert_descend into " << inner->childid[slot]);
 
             n = inner->childid[slot];
             inner->lock->read_unlock();
@@ -3311,7 +3277,7 @@ private:
 
         unsigned short mid = (leaf->slotuse >> 1);
 
-        //TLX_BTREE_PRINT("BTree::split_leaf_node on " << leaf);
+        //TLX_BTREE_PRINT("SLBTree::split_leaf_node on " << leaf);
 
         LeafNode* newleaf = allocate_leaf();
         newleaf->lock->writelock(false);
@@ -3350,9 +3316,9 @@ private:
 
         unsigned short mid = (inner->slotuse >> 1);
 
-        //TLX_BTREE_PRINT("BTree::split_inner: mid " << mid);
+        //TLX_BTREE_PRINT("SLBTree::split_inner: mid " << mid);
 
-        //TLX_BTREE_PRINT("BTree::split_inner_node on " << inner <<
+        //TLX_BTREE_PRINT("SLBTree::split_inner_node on " << inner <<
                         //" into two nodes " << mid << " and " <<
                         //inner->slotuse - (mid + 1) << " sized");
 
@@ -3392,7 +3358,7 @@ public:
         size_t num_items = iend - ibegin;
         size_t num_leaves = (num_items + leaf_slotmax - 1) / leaf_slotmax;
 
-        /*TLX_BTREE_PRINT("BTree::bulk_load, level 0: " << stats_.size <<
+        /*TLX_BTREE_PRINT("SLBTree::bulk_load, level 0: " << stats_.size <<
                         " items into " << num_leaves <<
                         " leaves with up to " <<
                         ((iend - ibegin + num_leaves - 1) / num_leaves) <<
@@ -3436,7 +3402,7 @@ public:
         size_t num_parents =
             (num_leaves + (inner_slotmax + 1) - 1) / (inner_slotmax + 1);
 
-        /*TLX_BTREE_PRINT("BTree::bulk_load, level 1: " <<
+        /*TLX_BTREE_PRINT("SLBTree::bulk_load, level 1: " <<
                         num_leaves << " leaves in " <<
                         num_parents << " inner nodes with up to " <<
                         ((num_leaves + num_parents - 1) / num_parents) <<
@@ -3484,7 +3450,7 @@ public:
                 (num_children + (inner_slotmax + 1) - 1) / (inner_slotmax + 1);
 
             /*TLX_BTREE_PRINT(
-                "BTree::bulk_load, level " << level <<
+                "SLBTree::bulk_load, level " << level <<
                     ": " << num_children << " children in " <<
                     num_parents << " inner nodes with up to " <<
                     ((num_children + num_parents - 1) / num_parents) <<
@@ -3635,7 +3601,7 @@ public:
 
     //! Erase the key/data pair referenced by the iterator.
     void erase(iterator iter) {
-        TLX_BTREE_PRINT("BTree::erase_iter(" << iter.curr_leaf <<
+        TLX_BTREE_PRINT("SLBTree::erase_iter(" << iter.curr_leaf <<
                         "," << iter.curr_slot << ") on btree size " << size());
 
         if (self_verify) verify();
@@ -3677,7 +3643,7 @@ private:
     //! \{
 
     result_flags_t erase_one_start(const key_type& key) {
-        TLX_BTREE_PRINT("BTree::erase_one(" << key <<
+        TLX_BTREE_PRINT("SLBTree::erase_one(" << key <<
                         ") on btree size " << size());
 
         if (self_verify) verify();

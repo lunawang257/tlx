@@ -36,9 +36,9 @@ namespace tlx {
  */
 template <typename Key_,
           typename Compare_ = std::less<Key_>,
-          typename Traits_ = btree_default_traits<Key_, Key_>,
+          typename Traits_ = slbtree_default_traits<Key_, Key_>,
           typename Alloc_ = std::allocator<Key_> >
-class btree_set
+class slbtree_set
 {
 public:
     //! \name Template Parameter Types
@@ -73,7 +73,7 @@ public:
     typedef key_type value_type;
 
     //! Typedef of our own type
-    typedef btree_set<key_type, key_compare, traits, allocator_type> self;
+    typedef slbtree_set<key_type, key_compare, traits, allocator_type> self;
 
     //! Key Extractor Struct
     struct key_of_value {
@@ -82,7 +82,7 @@ public:
     };
 
     //! Implementation type of the btree_base
-    typedef BTree<key_type, value_type, key_of_value, key_compare,
+    typedef SLBTree<key_type, value_type, key_of_value, key_compare,
                   traits, false, allocator_type> btree_impl;
 
     //! Function class comparing two value_type keys.
@@ -166,20 +166,20 @@ public:
 
     //! Default constructor initializing an empty B+ tree with the standard key
     //! comparison function
-    explicit btree_set(const allocator_type& alloc = allocator_type())
+    explicit slbtree_set(const allocator_type& alloc = allocator_type())
         : tree_(alloc)
     { }
 
     //! Constructor initializing an empty B+ tree with a special key comparison
     //! object
-    explicit btree_set(const key_compare& kcf,
+    explicit slbtree_set(const key_compare& kcf,
                        const allocator_type& alloc = allocator_type())
         : tree_(kcf, alloc)
     { }
 
     //! Constructor initializing a B+ tree with the range [first,last)
     template <class InputIterator>
-    btree_set(InputIterator first, InputIterator last,
+    slbtree_set(InputIterator first, InputIterator last,
               const allocator_type& alloc = allocator_type())
         : tree_(alloc) {
         insert(first, last);
@@ -188,18 +188,18 @@ public:
     //! Constructor initializing a B+ tree with the range [first,last) and a
     //! special key comparison object
     template <class InputIterator>
-    btree_set(InputIterator first, InputIterator last, const key_compare& kcf,
+    slbtree_set(InputIterator first, InputIterator last, const key_compare& kcf,
               const allocator_type& alloc = allocator_type())
         : tree_(kcf, alloc) {
         insert(first, last);
     }
 
     //! Frees up all used B+ tree memory pages
-    ~btree_set()
+    ~slbtree_set()
     { }
 
     //! Fast swapping of two identical B+ tree objects.
-    void swap(btree_set& from) {
+    void swap(slbtree_set& from) {
         std::swap(tree_, from.tree_);
     }
 
@@ -409,33 +409,33 @@ public:
 
     //! Equality relation of B+ trees of the same type. B+ trees of the same
     //! size and equal elements are considered equal.
-    bool operator == (const btree_set& other) const {
+    bool operator == (const slbtree_set& other) const {
         return (tree_ == other.tree_);
     }
 
     //! Inequality relation. Based on operator==.
-    bool operator != (const btree_set& other) const {
+    bool operator != (const slbtree_set& other) const {
         return (tree_ != other.tree_);
     }
 
     //! Total ordering relation of B+ trees of the same type. It uses
     //! std::lexicographical_compare() for the actual comparison of elements.
-    bool operator < (const btree_set& other) const {
+    bool operator < (const slbtree_set& other) const {
         return (tree_ < other.tree_);
     }
 
     //! Greater relation. Based on operator<.
-    bool operator > (const btree_set& other) const {
+    bool operator > (const slbtree_set& other) const {
         return (tree_ > other.tree_);
     }
 
     //! Less-equal relation. Based on operator<.
-    bool operator <= (const btree_set& other) const {
+    bool operator <= (const slbtree_set& other) const {
         return (tree_ <= other.tree_);
     }
 
     //! Greater-equal relation. Based on operator<.
-    bool operator >= (const btree_set& other) const {
+    bool operator >= (const slbtree_set& other) const {
         return (tree_ >= other.tree_);
     }
 
@@ -446,7 +446,7 @@ public:
     //! \{
 
     //! Assignment operator. All the keys are copied
-    btree_set& operator = (const btree_set& other) {
+    slbtree_set& operator = (const slbtree_set& other) {
         if (this != &other)
             tree_ = other.tree_;
         return *this;
@@ -454,7 +454,7 @@ public:
 
     //! Copy constructor. The newly initialized B+ tree object will contain a
     //! copy of all keys.
-    btree_set(const btree_set& other)
+    slbtree_set(const slbtree_set& other)
         : tree_(other.tree_)
     { }
 

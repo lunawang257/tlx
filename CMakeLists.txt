@@ -18,6 +18,9 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/misc/cmake)
 # project
 project(tlx)
 
+include_directories("${PROJECT_SOURCE_DIR}/tlx")
+include_directories("${PROJECT_SOURCE_DIR}/tlx/container")
+
 # default to Debug building for single-config generators
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message("Defaulting CMAKE_BUILD_TYPE to Debug")

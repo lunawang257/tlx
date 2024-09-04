@@ -11,10 +11,27 @@
 #define TLX_BTREE_TEST
 #define TLX_BTREE_DEBUG
 
+#if __APPLE__
+extern thread_local int local_thread_id;
+
+// Apple M1 doesn't support sched_getcpu. Just use the thread in the thread local var
+inline int sched_getcpu() {
+    return local_thread_id;
+}
+#endif
+
+#ifdef TLX_BTREE_TEST
+void before_assert(void) {}
+#else
+inline void before_assert(void) {}
+#endif
+
 #include <tlx/container/slow_lock_btree_map.hpp>
 #include <tlx/container/btree_multimap.hpp>
 #include <tlx/container/btree_multiset.hpp>
 #include <tlx/container/slow_lock_btree_set.hpp>
+#include <tlx/container/btree_set.hpp>
+#include <tlx/container/btree_map.hpp>
 
 #include <tlx/die.hpp>
 
@@ -2293,7 +2310,7 @@ void before_assert(void)
 #else
 
 inline void print_all_lock_records() {}
-inline void  print_threads_states() {}
+inline void print_threads_states() {}
 
 #endif
 

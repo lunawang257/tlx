@@ -15,6 +15,15 @@
 #include <random>
 #include <string>
 
+#if __APPLE__
+extern thread_local int local_thread_id;
+
+// Apple M1 doesn't support sched_getcpu. Just use the thread in the thread local var
+inline int sched_getcpu() {
+    return local_thread_id;
+}
+#endif
+
 #include <set>
 #include <tlx/container/btree_multiset.hpp>
 #include <tlx/container/splay_tree.hpp>
@@ -43,7 +52,7 @@ const bool use_multi = false;
 
 //! Traits used for the speed tests, BTREE_DEBUG is not defined.
 template <int InnerSlots, int LeafSlots>
-struct btree_traits_speed : tlx::btree_default_traits<size_t, size_t> {
+struct btree_traits_speed : tlx::slbtree_default_traits<size_t, size_t> {
     static const bool self_verify = false;
     static const bool debug = false;
 
@@ -67,13 +76,13 @@ public:
     void run(size_t items) {
         SetType set;
 
-        if (use_multi) 
+        if (use_multi)
         {
             std::default_random_engine rng(seed);
             for (size_t i = 0; i < items; i++)
                 set.insert(rng());
         }
-        else 
+        else
         {
             std::mt19937 gen(seed);
 
@@ -85,7 +94,7 @@ public:
                 set.insert(num);
             }
         }
-        
+
         die_unless(set.size() == items);
     }
 };

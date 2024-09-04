@@ -8,8 +8,18 @@
 
 #define VTX_BTREE_CONCUR_TEST
 
+#if __APPLE__
+extern thread_local int local_thread_id;
+
+// Apple M1 doesn't support sched_getcpu. Just use the thread in the thread local var
+inline int sched_getcpu() {
+    return local_thread_id;
+}
+#endif
+
 #include <tlx/container/slow_lock_btree_set.hpp>
 #include <tlx/container/slow_lock_btree_map.hpp>
+
 #include <tlx/container/btree_set.hpp>
 
 #include <set>
@@ -19,7 +29,7 @@
 
 // *** Settings
 
-bool g_use_cbtree = false;
+bool g_use_slbtree = false;
 
 //! starting number of items to insert
 size_t min_items = 125;
@@ -446,31 +456,31 @@ struct TestFactory_Set {
 
     //! Test the B+ tree with a specific leaf/inner slots
     template <int Slots>
-    struct BtreeSet
-        : TestClass<tlx::btree_set<
+    struct SLBtreeSet
+        : TestClass<tlx::slbtree_set<
                         size_t, std::less<size_t>,
                         struct btree_traits_speed<Slots, Slots> > > {
-        BtreeSet(size_t n)
-            : TestClass<tlx::btree_set<
+        SLBtreeSet(size_t n)
+            : TestClass<tlx::slbtree_set<
                             size_t, std::less<size_t>,
                             struct btree_traits_speed<Slots, Slots> > >(n) { }
     };
 
     //! Test the B+ tree with a specific leaf/inner slots
     template <int Slots>
-    struct CBtreeSet
-        : TestClass<tlx::cbtree_set<
+    struct BtreeSet
+        : TestClass<tlx::btree_set<
                         size_t, std::less<size_t>,
-                        struct tlx::cbtree_default_traits<
+                        struct tlx::btree_default_traits<
                             size_t, size_t,
                             Slots * (sizeof(size_t) + sizeof(void*)),
                             Slots * sizeof(size_t)>,
                         std::allocator<size_t> /* Allocator */,
                         true /* concurrent */> > {
-        CBtreeSet(size_t n)
-            : TestClass<tlx::cbtree_set<
+        BtreeSet(size_t n)
+            : TestClass<tlx::btree_set<
                             size_t, std::less<size_t>,
-                            struct tlx::cbtree_default_traits<
+                            struct tlx::btree_default_traits<
                                 size_t, size_t,
                                 Slots * (sizeof(size_t) + sizeof(void*)),
                                 Slots * sizeof(size_t)>,
@@ -588,11 +598,11 @@ struct TestFactory_Map {
     //! Test the B+ tree with a specific leaf/inner slots
     template <int Slots>
     struct BtreeMap
-        : TestClass<tlx::btree_map<
+        : TestClass<tlx::slbtree_map<
                         size_t, size_t, std::less<size_t>,
                         struct btree_traits_speed<Slots, Slots> > > {
         BtreeMap(size_t n)
-            : TestClass<tlx::btree_map<
+            : TestClass<tlx::slbtree_map<
                             size_t, size_t, std::less<size_t>,
                             struct btree_traits_speed<Slots, Slots> > >(n) { }
     };
@@ -709,8 +719,8 @@ void TestFactory_Set<TestClass>::call_testrunner(size_t items) {
         items, "btree_set");
 #else
     // just pick a few node sizes for quicker tests
-    if (g_use_cbtree) {
-        testrunner_loop<CBtreeSet<16>>(items, "cbtree_set<16>");
+    if (g_use_slbtree) {
+        testrunner_loop<SLBtreeSet<16>>(items, "slbtree_set<16>");
     } else {
         if (g_slot_max == 4)
             testrunner_loop<BtreeSet<4> >(items, "btree_set<4>");
@@ -752,7 +762,7 @@ void TestFactory_Map<TestClass>::call_testrunner(size_t items) {
 void print_usage(const char *program_name) {
     std::cout << "Usage: " << program_name << " [options]\n"
               << "Options:\n"
-              << "  -c        Use CBtree from the BP-Tree paper\n"
+              << "  -o        Use old Slow Lock Btree\n"
               << "  -t <num>  Set BT_THREADS (default: 1)\n"
               << "  -m <num>  Set BT_MIN (default: 0)\n"
               << "  -M <num>  Set BT_MAX (default: 0)\n"
@@ -770,10 +780,10 @@ void print_usage(const char *program_name) {
 int main(int argc, char *argv[]) {
     std::set<size_t> valid_max_slots = {4, 8, 16, 32, 64, 128, 256};
     int opt;
-    while ((opt = getopt(argc, argv, "ct:m:M:r:R:i:l:L:sS:h")) != -1) {
+    while ((opt = getopt(argc, argv, "ot:m:M:r:R:i:l:L:sS:h")) != -1) {
         switch (opt) {
-        case 'c':
-            g_use_cbtree = true;
+        case 'o':
+            g_use_slbtree = true;
             break;
         case 't':
             cur_numthreads = atol(optarg);
@@ -797,6 +807,8 @@ int main(int argc, char *argv[]) {
             break;
         case 'R':
             g_root_slot = atol(optarg);
+            std::cerr << "Sorry do not support -R before get_root_info() is added\n";
+            return EXIT_FAILURE;
             break;
         case 'i':
             INSERT_PROP = atol(optarg);

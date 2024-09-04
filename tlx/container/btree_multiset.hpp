@@ -36,7 +36,7 @@ namespace tlx {
  */
 template <typename Key_,
           typename Compare_ = std::less<Key_>,
-          typename Traits_ = btree_default_traits<Key_, Key_>,
+          typename Traits_ = slbtree_default_traits<Key_, Key_>,
           typename Alloc_ = std::allocator<Key_> >
 class btree_multiset
 {
@@ -82,7 +82,7 @@ public:
     };
 
     //! Implementation type of the btree_base
-    typedef BTree<key_type, value_type, key_of_value, key_compare,
+    typedef SLBTree<key_type, value_type, key_of_value, key_compare,
                   traits, true, allocator_type> btree_impl;
 
     //! Function class comparing two value_type keys.
