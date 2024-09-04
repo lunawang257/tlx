@@ -8,8 +8,8 @@
 
 #define VTX_BTREE_CONCUR_TEST
 
-#include <tlx/container/btree_set.hpp>
-#include <tlx/container/btree_map.hpp>
+#include <tlx/container/slow_lock_btree_set.hpp>
+#include <tlx/container/slow_lock_btree_map.hpp>
 #include <tlx/container/cbtree_set.hpp>
 
 #include <set>

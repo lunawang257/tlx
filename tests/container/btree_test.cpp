@@ -11,10 +11,10 @@
 #define TLX_BTREE_TEST
 #define TLX_BTREE_DEBUG
 
-#include <tlx/container/btree_map.hpp>
+#include <tlx/container/slow_lock_btree_map.hpp>
 #include <tlx/container/btree_multimap.hpp>
 #include <tlx/container/btree_multiset.hpp>
-#include <tlx/container/btree_set.hpp>
+#include <tlx/container/slow_lock_btree_set.hpp>
 
 #include <tlx/die.hpp>
 

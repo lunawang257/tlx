@@ -11,7 +11,7 @@
 #ifndef TLX_CONTAINER_CBTREE_HEADER
 #define TLX_CONTAINER_CBTREE_HEADER
 
-#include <tlx/container/btree.hpp>
+#include <tlx/container/slow_lock_btree.hpp>
 
 #if __APPLE__
 // M1 doesn't support sched_getcpu. Just use the thread in the thread local var
