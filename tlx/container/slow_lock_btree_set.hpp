@@ -1,5 +1,5 @@
 /*******************************************************************************
- * tlx/container/btree_set.hpp
+ * tlx/container/slow_lock_btree_set.hpp
  *
  * Part of tlx - http://panthema.net/tlx
  *
@@ -8,8 +8,8 @@
  * All rights reserved. Published under the Boost Software License, Version 1.0
  ******************************************************************************/
 
-#ifndef TLX_CONTAINER_BTREE_SET_HEADER
-#define TLX_CONTAINER_BTREE_SET_HEADER
+#ifndef TLX_CONTAINER_SLOW_LOCK_BTREE_SET_HEADER
+#define TLX_CONTAINER_SLOW_LOCK_BTREE_SET_HEADER
 
 #include <functional>
 #include <memory>
@@ -566,6 +566,6 @@ public:
 
 } // namespace tlx
 
-#endif // !TLX_CONTAINER_BTREE_SET_HEADER
+#endif // !TLX_CONTAINER_SLOW_LOCK_BTREE_SET_HEADER
 
 /******************************************************************************/

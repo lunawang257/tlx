@@ -8,8 +8,8 @@
  * All rights reserved. Published under the Boost Software License, Version 1.0
  ******************************************************************************/
 
-#ifndef TLX_CONTAINER_CBTREE_HEADER
-#define TLX_CONTAINER_CBTREE_HEADER
+#ifndef TLX_CONTAINER_BTREE_HEADER
+#define TLX_CONTAINER_BTREE_HEADER
 
 #include <tlx/container/slow_lock_btree.hpp>
 
@@ -4198,6 +4198,6 @@ private:
 
 } // namespace tlx
 
-#endif // !TLX_CONTAINER_CBTREE_HEADER
+#endif // !TLX_CONTAINER_BTREE_HEADER
 
 /******************************************************************************/

@@ -8,8 +8,8 @@
  * All rights reserved. Published under the Boost Software License, Version 1.0
  ******************************************************************************/
 
-#ifndef TLX_CONTAINER_CBTREE_SET_HEADER
-#define TLX_CONTAINER_CBTREE_SET_HEADER
+#ifndef TLX_CONTAINER_BTREE_SET_HEADER
+#define TLX_CONTAINER_BTREE_SET_HEADER
 
 #include <functional>
 #include <memory>
@@ -580,6 +580,6 @@ public:
 
 } // namespace tlx
 
-#endif // !TLX_CONTAINER_CBTREE_SET_HEADER
+#endif // !TLX_CONTAINER_BTREE_SET_HEADER
 
 /******************************************************************************/
