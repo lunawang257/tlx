@@ -458,6 +458,8 @@ private:
         //! Array of (key, data) pairs
         value_type slotdata[leaf_slotmax]; // NOLINT
 
+        Mapl* mapl = nullptr;
+
         //! Set variables to initial values
         void initialize() {
             node::initialize(0);
