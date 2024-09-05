@@ -377,10 +377,10 @@ private:
             TLX_BTREE_ASSERT(new_slot < free_slot_end);
             if (new_slot < leaf_slotmax)
                 free_slot_head = *reinterpret_cast<idx_t*>(
-                    slotdatap + free_slot_head);
+                    &slotdatap[free_slot_head]);
             else
                 free_slot_head = *reinterpret_cast<idx_t*>(
-                    extra + free_slot_head);
+                    &extra[free_slot_head - leaf_slotmax]);
 
             slices[slice].expand(new_slot);
             (*slotusep)++;
@@ -397,7 +397,12 @@ private:
             }
 
             idx_t to_del = slice.index_array[slice.size - 1];
-            *reinterpret_cast<idx_t*>(&extra[to_del]) = free_slot_head;
+            if (to_del < leaf_slotmax)
+                *reinterpret_cast<idx_t*>(&slotdatap[to_del]) =
+                    free_slot_head;
+            else
+                *reinterpret_cast<idx_t*>(&extra[to_del - leaf_slotmax]) =
+                    free_slot_head;
             free_slot_head = to_del;
 
             slice.size--;
