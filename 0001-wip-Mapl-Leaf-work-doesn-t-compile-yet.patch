@@ -1,0 +1,781 @@
+From c4bc135fc346c239aa097f8c5eb27286aa21a1f9 Mon Sep 17 00:00:00 2001
+From: Luna Wang <lunawang257@gmail.com>
+Date: Sat, 31 Aug 2024 16:12:29 -0700
+Subject: [PATCH] wip Mapl Leaf work, doesn't compile yet
+
+---
+ tlx/container/btree.hpp        | 631 ++++++++++++++++++++++++++++-----
+ 2 files changed, 534 insertions(+), 99 deletions(-)
+
+diff --git a/tlx/container/btree.hpp b/tlx/container/btree.hpp
+index 7754472..dd3638e 100644
+--- a/tlx/container/btree.hpp
++++ b/tlx/container/btree.hpp
+@@ -600,6 +600,140 @@ public:
+
+     //! \}
+
++private:
++    //! \name Helper classes for MAPL Leaf
++    //! \{
++    static const int slice_size = 8;
++    static const int mapl_size = static_cast<int>(leaf_slotmax * 1.5);
++
++    struct Slice {
++        LockHelper lock;
++        int* index_array = nullptr;
++        int initial;
++        int size;
++
++        void init(int startsize) {
++            initial = startsize;
++            size = initial;
++            index_array = new int[mapl_size];
++        }
++
++        int get_ind(int i) const {
++            TLX_BTREE_ASSERT(i < size && i >= 0);
++            return index_array[i];
++            /*i -= initial;
++            int chunk_num = i / chunk_size;
++            i -= chunk_num * chunk_size;
++            return chunk_arr[chunk_num][i];*/
++        }
++
++        void expand(int slot_ind) {
++            index_array[size] = slot_ind;
++            size++;
++        }
++    };
++
++    struct Mapl {
++        Slice* slices = nullptr;
++        uint16_t free_slot_head;
++        mutex_type free_slot_mtx;
++        int free_slot_end = mapl_size; // right now not taking into account end of slotdata TODO
++        key_type* slice_boundary = nullptr;
++        value_type extra[mapl_size];
++        int numslices;
++        unsigned short* slotusep;
++
++        /*void free_slot(int slot) {
++            *static_cast<uint16_t*>(&extra[slot]) = free_slot_head;
++            free_slot_head = slot;
++        }*/
++
++        Mapl(value_type* slotdata, const unsigned short& slotuse) {
++            slotusep = &slotuse;
++            numslices = (slotuse + slice_size - 1) / slice_size;
++            TLX_BTREE_ASSERT(numslices > 1);
++
++            slices = new Slice[numslices];
++            for (int i = 0; i < numslices - 1; i++) {
++                slices[i].init(slice_size);
++            }
++            slices[numslices - 1].init(slotuse % slice_size);
++
++            slice_boundary = new key_type[numslices - 1];
++            for (int i = 0; i < numslices - 1; i++) {
++                slice_boundary[i] = slotdata[slice_size * (i + 1) - 1];
++            }
++
++            for (int i = slotuse; i < free_slot_end; i++) {
++                value_type& val = i < leaf_slotmax ?
++                    slotdata[i] : extra[i - leaf_slotmax];
++                *static_cast<uint16_t*>(&val) = i + 1;
++            }
++            free_slot_head = slotuse;
++        }
++
++        void readlock_slice(const key_type& key) {
++            int slice_num = get_slicenum(key);
++            Slice& slice = slices[slice_num];
++            slice.lock.readlock();
++        }
++
++        void writelock_slice(const key_type& key) {
++            int slice_num = get_slicenum(key);
++            Slice& slice = slices[slice_num];
++            slice.lock.writelock();
++        }
++
++        void read_unlock_slice(const key_type& key) {
++            int slice_num = get_slicenum(key);
++            Slice& slice = slices[slice_num];
++            slice.lock.read_unlock();
++        }
++
++        int get_slicenum(const key_type& key) const {
++            key_compare mapl_key_less;
++            unsigned short slice = 0;
++            while (slice < numslices - 1
++                    && mapl_key_less(slice_boundary[slice], key)) ++slice;
++
++            return slice;
++        }
++
++        bool is_full() {
++            lock_type lock(free_slot_mtx);
++            return free_slot_head == free_slot_end;
++        }
++
++        bool expand(int slice) {
++            lock_type lock(free_slot_mtx);
++            if (free_slot_head == free_slot_end) return false;
++
++            uint16_t new_slot = free_slot_head;
++            TLX_BTREE_ASSERT(new_slot < free_slot_end);
++            free_slot_head = *reinterpret_cast<uint16_t*>(extra + free_slot_head);
++
++            slices[slice].expand(new_slot);
++            (*slotusep)++;
++            return true;
++        }
++
++        bool shrink(int s) {
++            lock_type lock(free_slot_mtx);
++            Slice& slice = slices[s];
++            if (*slotusep == 0) return false;
++
++            uint16_t to_del = slice.index_array[slice.size - 1];
++            *reinterpret_cast<uint16_t*>(&extra[to_del]) = free_slot_head;
++            free_slot_head = to_del;
++
++            slice.size--;
++            (*slotusep)--;
++            return true;
++        }
++    };
++
++    //! \}
++
+ private:
+     //! \name Node Classes for In-Memory Nodes
+     //! \{
+@@ -702,6 +836,8 @@ public: // XXX
+         //! Array of (key, data) pairs
+         value_type slotdata[leaf_slotmax]; // NOLINT
+
++        Mapl* mapl = nullptr;
++
+         LeafNode(BTree *tree) : node(tree) {}
+
+         //! Set variables to initial values
+@@ -712,12 +848,16 @@ public: // XXX
+
+         //! Return key in slot s.
+         const key_type& key(size_t s) const {
+-            return key_of_value::get(slotdata[s]);
++            if (!mapl) return key_of_value::get(slotdata[s]);
++            else return key_of_value::get(get_overall(s));
+         }
+
+         //! True if the node's slots are full.
+         bool is_full() const {
+-            return (node::slotuse == leaf_slotmax);
++            if (!mapl)
++                return (node::slotuse == leaf_slotmax);
++            else
++                return (mapl->is_full());
+         }
+
+         //! True if few used entries, less than half full.
+@@ -727,7 +867,11 @@ public: // XXX
+
+         //! True if node has too few entries.
+         bool is_underflow() const {
+-            return (node::slotuse < leaf_slotmin);
++            if (!mapl)
++                return (node::slotuse < leaf_slotmin);
++            else
++                lock_type lock(mapl->free_slot_mtx);
++                return (node::slotuse < leaf_slotmin);
+         }
+
+         //! Set the (key,data) pair in slot. Overloaded function used by
+@@ -736,6 +880,82 @@ public: // XXX
+             TLX_BTREE_ASSERT(slot < node::slotuse);
+             slotdata[slot] = value;
+         }
++
++        void maplize() {
++            tlx_die_unless(false);
++        }
++
++        void unmaplize() {
++            TLX_BTREE_ASSERT(mapl);
++            TLX_BTREE_ASSERT(slotuse <= leaf_slotmax); // technically gotta lock before this
++            TLX_BTREE_ASSERT(lock->writelocked());
++
++            value_type ordered[node::slotuse];
++            for (int i = 0; i < node::slotuse; i++) {
++                ordered[i] = get_overall(i);
++            }
++            for (int i = 0; i < node::slotuse; i++) {
++                slotdata[i] = ordered[i];
++            }
++            mapl = nullptr;
++        }
++
++        /*void readlock() {
++            if (!mapl) lock->readlock();
++            else {
++                lock->readlock();
++                mapl->slices[mapl->get_slice]
++            }
++        }
++
++        void upgradelock() {
++            if (!mapl) lock->upgradelock();
++        }
++
++        void writelock() {
++            if (!mapl) lock->writelock();
++        }
++
++        void read_unlock() {
++            if (!mapl) lock->read_unlock();
++        }
++
++        void write_unlock() {
++            if (!mapl) lock->write_unlock();
++        }
++
++        void downgrade_lock() {
++            if (!mapl) lock->downgrade_lock();
++        }*/
++
++        const value_type& get_overall(int i) const {
++            int slice = i / slice_size;
++            i -= slice * slice_size;
++            return get(slice, i);
++        }
++
++        void set_overall(int i, const value_type& val) {
++            int slice = i / slice_size;
++            i -= slice * slice_size;
++            set(slice, i, val);
++        }
++
++        const value_type& get(int slice, int i) const {
++            if (i < mapl->slices[slice].initial) {
++                return slotdata[i];
++            } else {
++                return mapl->extra[mapl->slices[slice].get_ind(i)];
++            }
++        }
++
++        void set(int slice, int i, const value_type& val) {
++            TLX_BTREE_ASSERT(i < mapl->slices[slice].size);
++            if (i < mapl->slices[slice].initial) {
++                slotdata[i] = val;
++            } else {
++                mapl->extra[mapl->slices[slice].get_ind(i)] = val;
++            }
++        }
+     };
+
+     //! \}
+@@ -2495,10 +2715,20 @@ private:
+             InnerNode* inner = static_cast<InnerNode*>(n);
+             unsigned short slot = find_lower(inner, key);
+
++            inner->childid[slot]->lock->readlock();
+             bool childisleaf = inner->level == 1;
+-            if (childisleaf) inner->childid[slot]->lock->writelock();
+-            else inner->childid[slot]->lock->readlock();
+-
++            if (childisleaf) {
++                LeafNode* leaf = static_cast<LeafNode*>(inner->childid[slot]);
++                if (leaf->mapl) {
++                    leaf->mapl->writelock_slice(key);
++                    if (!leaf->mapl) {
++                        leaf->lock->read_unlock();
++                        return insert_res();
++                    }
++                } else {
++                    leaf->lock->upgradelock();
++                }
++            }
+             check_split_res res = check_split_child(inner, inner->childid[slot], slot);
+             if (res == retry) return insert_res(); // unlocked in check_split_child
+
+@@ -2529,30 +2759,68 @@ private:
+         else // n->is_leafnode() == true
+         {
+             LeafNode* leaf = static_cast<LeafNode*>(n);
++            if (!leaf->mapl) {
++                TLX_BTREE_ASSERT(leaf->lock->writelocked());
++                unsigned short slot = find_lower(leaf, key);
+
+-            unsigned short slot = find_lower(leaf, key);
++                if (!allow_duplicates &&
++                    slot < leaf->slotuse && key_equal(key, leaf->key(slot))) {
+
+-            if (!allow_duplicates &&
+-                slot < leaf->slotuse && key_equal(key, leaf->key(slot))) {
++                    leaf->lock->write_unlock();
++                    return insert_res(iterator(leaf, slot), false);
++                }
++
++                // move items and put data item into correct data slot
++                TLX_BTREE_ASSERT(slot >= 0 && slot <= leaf->slotuse);
++                // leaf will not overflow
++                TLX_BTREE_ASSERT(leaf->slotuse + 1 <= leaf_slotmax);
++
++                std::copy_backward(
++                    leaf->slotdata + slot, leaf->slotdata + leaf->slotuse,
++                    leaf->slotdata + leaf->slotuse + 1);
++                leaf->slotdata[slot] = value;
++                leaf->slotuse++;
+
++                insert_res ret_val = insert_res(iterator(leaf, slot), true);
+                 leaf->lock->write_unlock();
+-                return insert_res(iterator(leaf, slot), false);
+-            }
++                return ret_val;
++            } else {
++                TLX_BTREE_ASSERT(leaf->lock->readlocked());
++
++                int slice_num = leaf->mapl->get_slicenum(key);
++                Slice& slice = leaf->mapl->slices[slice_num];
++                slice.lock.writelock();
++
++                TLX_BTREE_ASSERT(!leaf->mapl->is_full());
+
+-            // move items and put data item into correct data slot
+-            TLX_BTREE_ASSERT(slot >= 0 && slot <= leaf->slotuse);
+-            // leaf will not overflow
+-            TLX_BTREE_ASSERT(leaf->slotuse + 1 <= leaf_slotmax);
++                unsigned short ind = 0; // searching for stuff--TODO make function w/ binary search
++                while (ind < slice.size
++                        && key_less(leaf->key(ind), key)) ++ind;
+
+-            std::copy_backward(
+-                leaf->slotdata + slot, leaf->slotdata + leaf->slotuse,
+-                leaf->slotdata + leaf->slotuse + 1);
+-            leaf->slotdata[slot] = value;
+-            leaf->slotuse++;
++                if (key_equal(leaf->key(ind), key)) {
++                    slice.lock.write_unlock();
++                    leaf->lock->read_unlock();
++                    return insert_res(iterator(leaf, ind), false);
++                }
++
++                bool successful = leaf->mapl->expand(slice_num);
++                if (!successful) {
++                    slice.lock.write_unlock();
++                    leaf->lock->read_unlock();
++                    return insert_res();
++                }
+
+-            insert_res ret_val = insert_res(iterator(leaf, slot), true);
+-            leaf->lock->write_unlock();
+-            return ret_val;
++                for (int i = slice.size - 1; i > ind; i--) {
++                    leaf->set(slice_num, i, leaf->get(slice_num, i -1));
++                }
++                leaf->set(slice_num, ind, value);
++
++                insert_res ret_val =
++                        insert_res(iterator(leaf, slice_num * slice_size + ind), true);
++                slice.lock.write_unlock();
++                leaf->lock->read_unlock();
++                return ret_val;
++            }
+         }
+     }
+
+@@ -2564,49 +2832,97 @@ private:
+
+         if (c->is_leafnode())
+         {
+-            TLX_BTREE_ASSERT(c->lock->writelocked());
+             LeafNode* child = static_cast<LeafNode*>(c);
+-            if (child->is_full())
+-            {
+-                int oldgen = parent->gen;
+-                child->lock->write_unlock();
+-                parent->lock->upgradelock();
++            if (child->mapl) {
++                TLX_BTREE_ASSERT(child->lock->readlocked());
++                if (child->mapl->is_full()) {
++                    int oldgen = parent->gen;
++                    child->lock->read_unlock();
++                    parent->lock->upgradelock();
+
+-                if (parent->gen != oldgen) {
+-                    parent->lock->write_unlock();
+-                    return retry;
+-                }
++                    if (parent->gen != oldgen) {
++                        parent->lock->write_unlock();
++                        return retry;
++                    }
+
+-                child->lock->writelock();
++                    child->lock->writelock();
+
+-                if (parent->childid[slot] != child
+-                        || !child->is_full()) {
+-                    parent->lock->write_unlock();
+-                    child->lock->write_unlock();
+-                    return retry;
++                    if (parent->childid[slot] != child
++                            || !child->is_full()) {
++                        parent->lock->write_unlock();
++                        child->lock->write_unlock();
++                        return retry;
++                    }
++
++                    key_type newkey = key_type();
++                    LeafNode* newleaf = nullptr;
++
++                    split_mapl_leaf(child, &newkey, &newleaf);
++
++                    child->gen++;
++                    parent->gen++;
++
++                    std::copy_backward(
++                        parent->slotkey + slot, parent->slotkey + parent->slotuse,
++                        parent->slotkey + parent->slotuse + 1);
++                    std::copy_backward(
++                        parent->childid + slot, parent->childid + parent->slotuse + 1,
++                        parent->childid + parent->slotuse + 2);
++
++                    parent->slotkey[slot] = newkey;
++                    parent->childid[slot + 1] = newleaf;
++                    parent->slotuse++;
++
++                    parent->lock->downgrade_lock();
++                    return did_split;
+                 }
++            }
++            else // !child->mapl
++            {
++                TLX_BTREE_ASSERT(child->lock->writelocked());
+
+-                key_type newkey = key_type();
+-                LeafNode* newleaf = nullptr;
++                if (child->is_full())
++                {
++                    int oldgen = parent->gen;
++                    child->lock->write_unlock();
++                    parent->lock->upgradelock();
+
+-                split_leaf_node(child, &newkey, &newleaf);
++                    if (parent->gen != oldgen) {
++                        parent->lock->write_unlock();
++                        return retry;
++                    }
+
+-                child->gen++;
+-                parent->gen++;
++                    child->lock->writelock();
+
+-                std::copy_backward(
+-                    parent->slotkey + slot, parent->slotkey + parent->slotuse,
+-                    parent->slotkey + parent->slotuse + 1);
+-                std::copy_backward(
+-                    parent->childid + slot, parent->childid + parent->slotuse + 1,
+-                    parent->childid + parent->slotuse + 2);
++                    if (parent->childid[slot] != child
++                            || !child->is_full()) {
++                        parent->lock->write_unlock();
++                        child->lock->write_unlock();
++                        return retry;
++                    }
+
+-                parent->slotkey[slot] = newkey;
+-                parent->childid[slot + 1] = newleaf;
+-                parent->slotuse++;
++                    key_type newkey = key_type();
++                    LeafNode* newleaf = nullptr;
+
+-                parent->lock->downgrade_lock();
+-                return did_split;
++                    split_leaf_node(child, &newkey, &newleaf);
++
++                    child->gen++;
++                    parent->gen++;
++
++                    std::copy_backward(
++                        parent->slotkey + slot, parent->slotkey + parent->slotuse,
++                        parent->slotkey + parent->slotuse + 1);
++                    std::copy_backward(
++                        parent->childid + slot, parent->childid + parent->slotuse + 1,
++                        parent->childid + parent->slotuse + 2);
++
++                    parent->slotkey[slot] = newkey;
++                    parent->childid[slot + 1] = newleaf;
++                    parent->slotuse++;
++
++                    parent->lock->downgrade_lock();
++                    return did_split;
++                }
+             }
+         }
+         else
+@@ -2696,6 +3012,38 @@ private:
+         *out_newleaf = newleaf;
+     }
+
++    void split_mapl_leaf(LeafNode* leaf,
++                         key_type* out_newkey, LeafNode** out_newleaf) {
++        TLX_BTREE_ASSERT(leaf->mapl->is_full());
++        TLX_BTREE_ASSERT(leaf->lock->writelocked());
++
++        LeafNode* newleaf = allocate_leaf();
++        newleaf->lock->writelock(false);
++
++        newleaf->slotuse = leaf_slotmax - 1;
++
++        newleaf->next_leaf = leaf->next_leaf;
++        if (newleaf->next_leaf == nullptr) {
++            TLX_BTREE_ASSERT(leaf == tail_leaf_);
++            tail_leaf_ = newleaf;
++        }
++        else {
++            newleaf->next_leaf->prev_leaf = newleaf;
++        }
++
++        for (int i = leaf_slotmax - 1; i < leaf_slotmax * 2 - 2; i++) {
++            newleaf->set_overall(0, leaf->get_overall(i));
++        }
++
++        leaf->slotuse = leaf_slotmax - 1;
++        leaf->next_leaf = newleaf;
++        leaf->mapl = nullptr;
++        newleaf->prev_leaf = leaf;
++
++        *out_newkey = leaf->key(leaf->slotuse - 1);
++        *out_newleaf = newleaf;
++    }
++
+     //! Split up an inner node into two equally-filled sibling nodes. Returns
+     //! the new nodes and its insertion key in the two parameters. The new
+     //! node is read locked.
+@@ -3048,38 +3396,75 @@ private:
+
+         // checking edge case (must do this when root_ is locked)
+         if (root_->slotuse == 0) {
++            TLX_BTREE_ASSERT(root_->level == 1);
+             root_->childid[0]->lock->readlock();
+             LeafNode* child = static_cast<LeafNode*>(root_->childid[0]);
+
+             if (child->slotuse == 1) {
+-                if (key_equal(child->key(0), key)) {
+-                    child->lock->read_unlock();
++                if (!child->mapl) {
++                    if (key_equal(child->key(0), key)) {
++                        child->lock->read_unlock();
++
++                        int oldgen = root_->gen;
++                        root_->lock->upgradelock();
++                        if (root_->gen != oldgen) {
++                            root_->lock->write_unlock();
++                            return restart;
++                        }
++                        child->lock->writelock();
+
+-                    int oldgen = root_->gen;
+-                    root_->lock->upgradelock();
+-                    if (root_->gen != oldgen) {
+-                        root_->lock->write_unlock();
+-                        return restart;
+-                    }
+-                    child->lock->writelock();
++                        if (child->slotuse != 1) {
++                            child->lock->write_unlock();
++                            root_->lock->write_unlock();
++                            return restart;
++                        }
++
++                        free_node(child);
++                        root_->gen++;
++                        root_->level = 0;
++                        stats_.size--;
+
+-                    if (child->slotuse != 1) {
+-                        child->lock->write_unlock();
+                         root_->lock->write_unlock();
+-                        return restart;
++                        return btree_ok;
++                    } else {
++                        root_->lock->read_unlock();
++                        root_->childid[0]->lock->read_unlock();
++                        return btree_not_found;
+                     }
++                }
++                else // child->mapl != nullptr
++                {
++                    child->mapl->readlock_slice(key);
++                    if (key_equal(child->key(0), key)) {
++                        child->mapl->read_unlock_slice(key);
++                        child->lock->read_unlock();
++
++                        int oldgen = root_->gen;
++                        root_->lock->upgradelock();
++                        if (root_->gen != oldgen) {
++                            root_->lock->write_unlock();
++                            return restart;
++                        }
++                        child->lock->writelock();
+
+-                    free_node(child);
+-                    root_->gen++;
+-                    root_->level = 0;
+-                    stats_.size--;
++                        if (child->slotuse != 1) {
++                            child->lock->write_unlock();
++                            root_->lock->write_unlock();
++                            return restart;
++                        }
+
+-                    root_->lock->write_unlock();
+-                    return btree_ok;
+-                } else {
+-                    root_->lock->read_unlock();
+-                    root_->childid[0]->lock->read_unlock();
+-                    return btree_not_found;
++                        free_node(child);
++                        root_->gen++;
++                        root_->level = 0;
++                        stats_.size--;
++
++                        root_->lock->write_unlock();
++                        return btree_ok;
++                    } else {
++                        root_->lock->read_unlock();
++                        root_->childid[0]->lock->read_unlock();
++                        return btree_not_found;
++                    }
+                 }
+             } else {
+                 root_->childid[0]->lock->read_unlock();
+@@ -3130,6 +3515,9 @@ private:
+                     LeafNode* leftleaf = static_cast<LeafNode*>(leftchild);
+                     LeafNode* rightleaf = static_cast<LeafNode*>(rightchild);
+
++                    if (leftleaf->mapl) leftleaf->unmaplize();
++                    if (rightleaf->mapl) rightleaf->unmaplize();
++
+                     merge_leaves(leftleaf, rightleaf, root_);
+                     free_node(rightleaf);
+
+@@ -3169,7 +3557,11 @@ private:
+
+         if (root_->slotuse == 0) {
+             if (root_->level > 1) root_->childid[0]->lock->readlock();
+-            else root_->childid[0]->lock->writelock();
++            else if (static_cast<LeafNode*>(root_->childid[0])->mapl) {
++                root_->childid[0]->lock->readlock();
++            } else {
++                root_->childid[0]->lock->writelock();
++            }
+             root_->lock->read_unlock();
+             to_descendin = root_->childid[0];
+         }
+@@ -3209,37 +3601,80 @@ private:
+
+         if (curr->is_leafnode())
+         {
+-            TLX_BTREE_ASSERT(curr->lock->writelocked());
+-
+             LeafNode* leaf = static_cast<LeafNode*>(curr);
+
+-            TLX_BTREE_PRINT("erase one descend LeafNode" << leaf);
++            if (!leaf->mapl) {
++                TLX_BTREE_ASSERT(leaf->lock->writelocked());
+
+-            if (stats_.size > leaf->slotuse && leaf->is_underflow()) {
+-                TLX_BTREE_ASSERT(cur_numthreads > 1);
+-                leaf->lock->write_unlock();
+-                return restart;
+-            }
++                TLX_BTREE_PRINT("erase one descend LeafNode" << leaf);
+
+-            unsigned short slot = find_lower(leaf, key);
++                if (stats_.size > leaf->slotuse && leaf->is_underflow()) {
++                    tlx_die_unless(false); // bc i dont think this if statement is necessary
++                    TLX_BTREE_ASSERT(cur_numthreads > 1);
++                    leaf->lock->write_unlock();
++                    return restart;
++                }
+
+-            if (slot >= leaf->slotuse || !key_equal(key, leaf->key(slot)))
+-            {
+-                TLX_BTREE_PRINT("Could not find key " << key << " to erase.");
++                unsigned short slot = find_lower(leaf, key);
+
++                if (slot >= leaf->slotuse || !key_equal(key, leaf->key(slot)))
++                {
++                    TLX_BTREE_PRINT("Could not find key " << key << " to erase.");
++
++                    leaf->lock->write_unlock();
++                    return btree_not_found;
++                }
++
++                TLX_BTREE_PRINT(
++                    "Found key in leaf " << curr << " at slot " << slot);
++
++                std::copy(leaf->slotdata + slot + 1, leaf->slotdata + leaf->slotuse,
++                          leaf->slotdata + slot);
++
++                leaf->slotuse--;
+                 leaf->lock->write_unlock();
+-                return btree_not_found;
++                return btree_ok;
+             }
++            else // leaf->mapl
++            {
++                TLX_BTREE_ASSERT(leaf->lock->readlocked());
+
+-            TLX_BTREE_PRINT(
+-                "Found key in leaf " << curr << " at slot " << slot);
++                if (stats_.size > leaf->slotuse && leaf->is_underflow()) {
++                    tlx_die_unless(false); // bc i dont think ^ is necessary
++                    TLX_BTREE_ASSERT(cur_numthreads > 1);
++                    leaf->lock->write_unlock();
++                    return restart;
++                }
+
+-            std::copy(leaf->slotdata + slot + 1, leaf->slotdata + leaf->slotuse,
+-                      leaf->slotdata + slot);
++                int slicenum = leaf->mapl->get_slicenum(key);
++                Slice& slice = leaf->mapl->slices[slicenum];
++                leaf->mapl->writelock_slice(key);
++
++                unsigned short ind = 0; // searching for stuff--TODO make function w/ binary search
++                while (ind < slice.size
++                        && key_less(leaf->key(ind), key)) ++ind;
++
++                if (ind >= leaf->slotuse || !key_equal(leaf->key(ind), key)) {
++                    slice.lock.write_unlock();
++                    leaf->lock->read_unlock();
++                    return restart;
++                }
+
+-            leaf->slotuse--;
+-            leaf->lock->write_unlock();
+-            return btree_ok;
++                bool successful = leaf->mapl->shrink(slicenum);
++                if (!successful) {
++                    slice.lock.write_unlock();
++                    leaf->lock->read_unlock();
++                    return restart;
++                }
++
++                for (int i = ind; i < slice.size; i++) {
++                    leaf->set(slicenum, i, leaf->get(slicenum, i + 1));
++                }
++
++                slice.lock.write_unlock();
++                leaf->lock->read_unlock();
++                return btree_ok;
++            }
+         }
+         else // !curr->is_leafnode()
+         {
+--
+2.46.0

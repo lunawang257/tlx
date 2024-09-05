@@ -239,140 +239,6 @@ public:
     //! \}
 
 private:
-    //! \name Helper classes for MAPL Leaf
-    //! \{
-    static const int slice_size = 8;
-    static const int mapl_size = static_cast<int>(leaf_slotmax * 1.5);
-
-    struct Slice {
-        LockHelper lock;
-        int* index_array = nullptr;
-        int initial;
-        int size;
-
-        void init(int startsize) {
-            initial = startsize;
-            size = initial;
-            index_array = new int[mapl_size];
-        }
-
-        int get_ind(int i) const {
-            TLX_BTREE_ASSERT(i < size && i >= 0);
-            return index_array[i];
-            /*i -= initial;
-            int chunk_num = i / chunk_size;
-            i -= chunk_num * chunk_size;
-            return chunk_arr[chunk_num][i];*/
-        }
-
-        void expand(int slot_ind) {
-            index_array[size] = slot_ind;
-            size++;
-        }
-    };
-
-    struct Mapl {
-        Slice* slices = nullptr;
-        uint16_t free_slot_head;
-        mutex_type free_slot_mtx;
-        int free_slot_end = mapl_size; // right now not taking into account end of slotdata TODO
-        key_type* slice_boundary = nullptr;
-        value_type extra[mapl_size];
-        int numslices;
-        unsigned short* slotusep;
-
-        /*void free_slot(int slot) {
-            *static_cast<uint16_t*>(&extra[slot]) = free_slot_head;
-            free_slot_head = slot;
-        }*/
-
-        Mapl(value_type* slotdata, const unsigned short& slotuse) {
-            slotusep = &slotuse;
-            numslices = (slotuse + slice_size - 1) / slice_size;
-            TLX_BTREE_ASSERT(numslices > 1);
-
-            slices = new Slice[numslices];
-            for (int i = 0; i < numslices - 1; i++) {
-                slices[i].init(slice_size);
-            }
-            slices[numslices - 1].init(slotuse % slice_size);
-
-            slice_boundary = new key_type[numslices - 1];
-            for (int i = 0; i < numslices - 1; i++) {
-                slice_boundary[i] = slotdata[slice_size * (i + 1) - 1];
-            }
-
-            for (int i = slotuse; i < free_slot_end; i++) {
-                value_type& val = i < leaf_slotmax ?
-                    slotdata[i] : extra[i - leaf_slotmax];
-                *static_cast<uint16_t*>(&val) = i + 1;
-            }
-            free_slot_head = slotuse;
-        }
-
-        void readlock_slice(const key_type& key) {
-            int slice_num = get_slicenum(key);
-            Slice& slice = slices[slice_num];
-            slice.lock.readlock();
-        }
-
-        void writelock_slice(const key_type& key) {
-            int slice_num = get_slicenum(key);
-            Slice& slice = slices[slice_num];
-            slice.lock.writelock();
-        }
-
-        void read_unlock_slice(const key_type& key) {
-            int slice_num = get_slicenum(key);
-            Slice& slice = slices[slice_num];
-            slice.lock.read_unlock();
-        }
-
-        int get_slicenum(const key_type& key) const {
-            key_compare mapl_key_less;
-            unsigned short slice = 0;
-            while (slice < numslices - 1
-                    && mapl_key_less(slice_boundary[slice], key)) ++slice;
-
-            return slice;
-        }
-
-        bool is_full() {
-            lock_type lock(free_slot_mtx);
-            return free_slot_head == free_slot_end;
-        }
-
-        bool expand(int slice) {
-            lock_type lock(free_slot_mtx);
-            if (free_slot_head == free_slot_end) return false;
-
-            uint16_t new_slot = free_slot_head;
-            TLX_BTREE_ASSERT(new_slot < free_slot_end);
-            free_slot_head = *reinterpret_cast<uint16_t*>(extra + free_slot_head);
-
-            slices[slice].expand(new_slot);
-            (*slotusep)++;
-            return true;
-        }
-
-        bool shrink(int s) {
-            lock_type lock(free_slot_mtx);
-            Slice& slice = slices[s];
-            if (*slotusep == 0) return false;
-
-            uint16_t to_del = slice.index_array[slice.size - 1];
-            *reinterpret_cast<uint16_t*>(&extra[to_del]) = free_slot_head;
-            free_slot_head = to_del;
-
-            slice.size--;
-            (*slotusep)--;
-            return true;
-        }
-    };
-
-    //! \}
-
-private:
     //! \name Node Classes for In-Memory Nodes
     //! \{
 
@@ -468,16 +334,12 @@ private:
 
         //! Return key in slot s.
         const key_type& key(size_t s) const {
-            if (!mapl) return key_of_value::get(slotdata[s]);
-            else return key_of_value::get(get_overall(s));
+            return key_of_value::get(slotdata[s]);
         }
 
         //! True if the node's slots are full.
         bool is_full() const {
-            if (!mapl)
-                return (node::slotuse == leaf_slotmax);
-            else
-                return (mapl->is_full());
+            return (node::slotuse == leaf_slotmax);
         }
 
         //! True if few used entries, less than half full.
@@ -487,11 +349,7 @@ private:
 
         //! True if node has too few entries.
         bool is_underflow() const {
-            if (!mapl)
-                return (node::slotuse < leaf_slotmin);
-            else
-                lock_type lock(mapl->free_slot_mtx);
-                return (node::slotuse < leaf_slotmin);
+            return (node::slotuse < leaf_slotmin);
         }
 
         bool soon_underflow() const {
@@ -690,82 +548,6 @@ public:
         //! Inequality of iterators.
         bool operator != (const iterator& x) const {
             return (x.curr_leaf != curr_leaf) || (x.curr_slot != curr_slot);
-        }
-
-        void maplize() {
-            tlx_die_unless(false);
-        }
-
-        void unmaplize() {
-            TLX_BTREE_ASSERT(mapl);
-            TLX_BTREE_ASSERT(slotuse <= leaf_slotmax); // technically gotta lock before this
-            TLX_BTREE_ASSERT(lock->writelocked());
-
-            value_type ordered[node::slotuse];
-            for (int i = 0; i < node::slotuse; i++) {
-                ordered[i] = get_overall(i);
-            }
-            for (int i = 0; i < node::slotuse; i++) {
-                slotdata[i] = ordered[i];
-            }
-            mapl = nullptr;
-        }
-
-        /*void readlock() {
-            if (!mapl) lock->readlock();
-            else {
-                lock->readlock();
-                mapl->slices[mapl->get_slice]
-            }
-        }
-
-        void upgradelock() {
-            if (!mapl) lock->upgradelock();
-        }
-
-        void writelock() {
-            if (!mapl) lock->writelock();
-        }
-
-        void read_unlock() {
-            if (!mapl) lock->read_unlock();
-        }
-
-        void write_unlock() {
-            if (!mapl) lock->write_unlock();
-        }
-
-        void downgrade_lock() {
-            if (!mapl) lock->downgrade_lock();
-        }*/
-
-        const value_type& get_overall(int i) const {
-            int slice = i / slice_size;
-            i -= slice * slice_size;
-            return get(slice, i);
-        }
-
-        void set_overall(int i, const value_type& val) {
-            int slice = i / slice_size;
-            i -= slice * slice_size;
-            set(slice, i, val);
-        }
-
-        const value_type& get(int slice, int i) const {
-            if (i < mapl->slices[slice].initial) {
-                return slotdata[i];
-            } else {
-                return mapl->extra[mapl->slices[slice].get_ind(i)];
-            }
-        }
-
-        void set(int slice, int i, const value_type& val) {
-            TLX_BTREE_ASSERT(i < mapl->slices[slice].size);
-            if (i < mapl->slices[slice].initial) {
-                slotdata[i] = val;
-            } else {
-                mapl->extra[mapl->slices[slice].get_ind(i)] = val;
-            }
         }
     };
 
@@ -1876,7 +1658,7 @@ public:
             leaf->mutex_.read_lock(cpuid);
             parent_lock->read_unlock(cpuid);
         }
-
+        
         unsigned short start_slot;
         unsigned short end_slot;
 
@@ -1885,7 +1667,7 @@ public:
             start_slot = find_lower(leaf, start);
             // get first key greator or equal to end, if == n, get next leaf
             end_slot = find_lower(leaf, end);
-
+            
             for (int i = start_slot; i < end_slot; i++) {
                 std::apply(f, std::forward_as_tuple(leaf->slotdata[i]));
             }
@@ -1949,7 +1731,7 @@ public:
             leaf->mutex_.read_lock(cpuid);
             parent_lock->read_unlock(cpuid);
         }
-
+        
         unsigned short start_slot;
 
         uint64_t count = 0;
@@ -2054,7 +1836,7 @@ public:
         else
         {
             const InnerNode* innernode = static_cast<const InnerNode*>(n);
-		if (n->level > PSUM_HEIGHT_CUTOFF) {
+		if (n->level > PSUM_HEIGHT_CUTOFF) {	
       // parallel_for(0, innernode->slotuse + 1, [&](const unsigned short &slot) {
 		  for (unsigned short slot = 0; slot < innernode->slotuse + 1; ++slot)
 			{
@@ -2068,7 +1850,7 @@ public:
 		}
         }
     }
-
+ 
     //! Tries to locate a key in the B+ tree and returns an iterator to the
     //! key/data slot if found. If unsuccessful it returns end().
     iterator find(const key_type& key) {
@@ -2756,38 +2538,6 @@ private:
         *out_newleaf = newleaf;
     }
 
-    void split_mapl_leaf(LeafNode* leaf,
-                         key_type* out_newkey, LeafNode** out_newleaf) {
-        TLX_BTREE_ASSERT(leaf->mapl->is_full());
-        TLX_BTREE_ASSERT(leaf->lock->writelocked());
-
-        LeafNode* newleaf = allocate_leaf();
-        newleaf->lock->writelock(false);
-
-        newleaf->slotuse = leaf_slotmax - 1;
-
-        newleaf->next_leaf = leaf->next_leaf;
-        if (newleaf->next_leaf == nullptr) {
-            TLX_BTREE_ASSERT(leaf == tail_leaf_);
-            tail_leaf_ = newleaf;
-        }
-        else {
-            newleaf->next_leaf->prev_leaf = newleaf;
-        }
-
-        for (int i = leaf_slotmax - 1; i < leaf_slotmax * 2 - 2; i++) {
-            newleaf->set_overall(0, leaf->get_overall(i));
-        }
-
-        leaf->slotuse = leaf_slotmax - 1;
-        leaf->next_leaf = newleaf;
-        leaf->mapl = nullptr;
-        newleaf->prev_leaf = leaf;
-
-        *out_newkey = leaf->key(leaf->slotuse - 1);
-        *out_newleaf = newleaf;
-    }
-
     //! Split up an inner node into two equally-filled sibling nodes. Returns
     //! the new nodes and it's insertion key in the two parameters. Requires the
     //! slot of the item will be inserted, so the nodes will be the same size
@@ -3164,7 +2914,7 @@ private:
                                node* curr,
                                node* left, node* right,
                                InnerNode* left_parent, InnerNode* right_parent,
-                               InnerNode* parent, unsigned int parentslot, ReaderWriterLock ** parent_lock,
+                               InnerNode* parent, unsigned int parentslot, ReaderWriterLock ** parent_lock, 
 int cpu_id) {
         if (curr->is_leafnode())
         {
@@ -3188,7 +2938,7 @@ int cpu_id) {
                 return {btree_not_found, false};
             }
 
-            // in this case the parent needs to do something
+            // in this case the parent needs to do something 
             // so in optimism mode we just fail back to the top
             if constexpr (concurrent && optimism) {
                 if (slot == leaf->slotuse) {
@@ -3391,7 +3141,7 @@ int cpu_id) {
                             lock_p->read_unlock(cpu_id);
                         }
                     }
-                }
+                } 
                 return {result, false};
             }
 
@@ -3469,7 +3219,7 @@ int cpu_id) {
                                 lock_p->read_unlock(cpu_id);
                             }
                         }
-                    }
+                    } 
                     return {btree_ok, false};
                 }
                 // case : if both left and right leaves would underflow in case
@@ -3538,7 +3288,7 @@ int cpu_id) {
                         lock_p->read_unlock(cpu_id);
                     }
                 }
-            }
+            } 
             return {myres, false};
         }
     }
