@@ -1785,7 +1785,7 @@ std::ostream& operator<<(std::ostream& os, const TestData& d)
 struct TestCompare {
     unsigned int somevalue;
 
-    inline TestCompare(unsigned int sv)
+    inline TestCompare(unsigned int sv = 0)
         : somevalue(sv)
     { }
 

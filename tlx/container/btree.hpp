@@ -313,13 +313,13 @@ private:
         void readlock_slice(const key_type& key) {
             int slice_num = get_slicenum(key);
             Slice& slice = slices[slice_num];
-            slice.lock.readlock();
+            slice.lock.read_lock(sched_getcpu());
         }
 
         void writelock_slice(const key_type& key) {
             int slice_num = get_slicenum(key);
             Slice& slice = slices[slice_num];
-            slice.lock.writelock();
+            slice.lock.write_lock();
         }
 
         void read_unlock_slice(const key_type& key) {
@@ -2427,6 +2427,21 @@ public:
       return sum;
     }
 
+    // XXX added to fix compile error, should be removed
+    struct insert_res {
+        iterator it;
+        bool inserted;
+        bool retry;
+
+        insert_res(iterator i, bool in):
+            it(i), inserted(in), retry(false)
+        {}
+
+        insert_res():
+            it(nullptr, 0), inserted(false), retry(true)
+        {}
+    };
+
 private:
     //! \name Private Insertion Functions
     //! \{
@@ -2670,11 +2685,13 @@ private:
         else // n->is_leafnode() == true
         {
             LeafNode* leaf = static_cast<LeafNode*>(n);
+            leaf->mutex_.read_lock();
             if (!leaf->mapl) {
                 LeafNode* original_leaf = leaf;
                 if constexpr (concurrent) {
                     // printf("trying to lock leaf lock from %p\n", leaf);
-                    leaf->mutex_.write_lock();
+                    if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) // XXX should upgrade, if fail, unlock and retry
+                        leaf->mutex_.write_lock();
                     if constexpr (optimism) {
                         if (!leaf->is_full()) {
                             (*parent_lock)->read_unlock(cpu_id);
@@ -2739,18 +2756,11 @@ private:
                 }
                 return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
             } else { // MAPL leaf
-                leaf->lock->readlock(); // lock MAPL node to avoid SMO
                 leaf->mapl->writelock_slice(key);
-                if (!leaf->mapl) { // XXX is this possible?
-                    leaf->lock->read_unlock();
-                    return insert_res();
-                } else {
-                    leaf->lock->upgradelock(); // XXX is this possible? maybe retry here
-                }
 
                 int slice_num = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slice_num];
-                slice.lock.writelock();
+                slice.lock.write_lock();
 
                 TLX_BTREE_ASSERT(!leaf->mapl->is_full());
 
@@ -2760,15 +2770,15 @@ private:
 
                 if (key_equal(leaf->key(ind), key)) {
                     slice.lock.write_unlock();
-                    leaf->lock->read_unlock();
-                    return insert_res(iterator(leaf, ind), false);
+                    leaf->mutex_.read_unlock();
+                    return std::tuple<iterator, bool, bool>(iterator(leaf, ind), false, false);
                 }
 
                 bool successful = leaf->mapl->expand(slice_num);
                 if (!successful) {
                     slice.lock.write_unlock();
-                    leaf->lock->read_unlock();
-                    return insert_res();
+                    leaf->mutex_.read_unlock();
+                    return {{},{},true};
                 }
 
                 for (int i = slice.size - 1; i > ind; i--) {
@@ -2776,10 +2786,11 @@ private:
                 }
                 leaf->set(slice_num, ind, value);
 
-                insert_res ret_val =
-                        insert_res(iterator(leaf, slice_num * slice_size + ind), true);
+                std::tuple<iterator, bool, bool> ret_val =
+                        std::tuple<iterator, bool, bool>(iterator(leaf, slice_num * slice_size + ind),
+                                                         true, false);
                 slice.lock.write_unlock();
-                leaf->lock->read_unlock();
+                leaf->mutex_.read_unlock();
                 return ret_val;
             }
         }
@@ -2820,12 +2831,12 @@ private:
     }
 
     void split_mapl_leaf(LeafNode* leaf,
-                         key_type* out_newkey, LeafNode** out_newleaf) {
+                         key_type* out_newkey, node** out_newleaf) {
         TLX_BTREE_ASSERT(leaf->mapl->is_full());
         TLX_BTREE_ASSERT(leaf->lock->writelocked());
 
         LeafNode* newleaf = allocate_leaf();
-        newleaf->lock->writelock(false);
+        newleaf->mutex_.write_lock();
 
         newleaf->slotuse = leaf_slotmax - 1;
 
@@ -3065,7 +3076,9 @@ private:
 
         //! Deletion successful, children nodes were merged and the parent needs
         //! to remove the empty node.
-        btree_fixmerge = 4
+        btree_fixmerge = 4,
+
+        restart // XXX temp fix compile error, to be removed
     };
 
     //! B+ tree recursive deletion has much information which is needs to be
@@ -3780,10 +3793,11 @@ int cpu_id) {
                 if (stats_.size > leaf->slotuse && leaf->is_underflow()) {
                     tlx_die_unless(false); // bc i dont think ^ is necessary
                     TLX_BTREE_ASSERT(cur_numthreads > 1);
-                    leaf->lock->write_unlock();
+                    leaf->mutex_.write_unlock();
                     return restart;
                 }
 
+                key_type key = key_type(); // XXX temp fix of compile error, to be removed
                 int slicenum = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slicenum];
                 leaf->mapl->writelock_slice(key);
@@ -3794,14 +3808,14 @@ int cpu_id) {
 
                 if (ind >= leaf->slotuse || !key_equal(leaf->key(ind), key)) {
                     slice.lock.write_unlock();
-                    leaf->lock->read_unlock();
+                    leaf->mutex_.read_unlock();
                     return restart;
                 }
 
                 bool successful = leaf->mapl->shrink(slicenum);
                 if (!successful) {
                     slice.lock.write_unlock();
-                    leaf->lock->read_unlock();
+                    leaf->mutex_.read_unlock();
                     return restart;
                 }
 
@@ -3810,7 +3824,7 @@ int cpu_id) {
                 }
 
                 slice.lock.write_unlock();
-                leaf->lock->read_unlock();
+                leaf->mutex_.read_unlock();
                 return btree_ok;
             }
         }
