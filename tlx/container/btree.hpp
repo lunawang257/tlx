@@ -2658,69 +2658,107 @@ private:
         else // n->is_leafnode() == true
         {
             LeafNode* leaf = static_cast<LeafNode*>(n);
-            LeafNode* original_leaf = leaf;
-            if constexpr (concurrent) {
-                // printf("trying to lock leaf lock from %p\n", leaf);
-                leaf->mutex_.write_lock();
-                if constexpr (optimism) {
-                    if (!leaf->is_full()) {
-                        (*parent_lock)->read_unlock(cpu_id);
-                        *parent_lock = nullptr;
-                    }
-                }
-                // printf("locked leaf lock from %p\n", leaf);
-            }
-            unsigned short slot = find_lower(leaf, key);
-
-            if (!allow_duplicates &&
-                slot < leaf->slotuse && key_equal(key, leaf->key(slot))) {
+            if (!leaf->mapl) {
+                LeafNode* original_leaf = leaf;
                 if constexpr (concurrent) {
-                    // printf("unlcoked leaf lock %p\n", leaf);
-                    leaf->mutex_.write_unlock();
-                }
-                return std::tuple<iterator, bool, bool>(iterator(leaf, slot), false, false);
-            }
-
-            if (leaf->is_full())
-            {
-                if constexpr (concurrent) {
+                    // printf("trying to lock leaf lock from %p\n", leaf);
+                    leaf->mutex_.write_lock();
                     if constexpr (optimism) {
+                        if (!leaf->is_full()) {
+                            (*parent_lock)->read_unlock(cpu_id);
+                            *parent_lock = nullptr;
+                        }
+                    }
+                    // printf("locked leaf lock from %p\n", leaf);
+                }
+                unsigned short slot = find_lower(leaf, key);
+
+                if (!allow_duplicates &&
+                    slot < leaf->slotuse && key_equal(key, leaf->key(slot))) {
+                    if constexpr (concurrent) {
                         // printf("unlcoked leaf lock %p\n", leaf);
                         leaf->mutex_.write_unlock();
-                        return {{},{},true};
+                    }
+                    return std::tuple<iterator, bool, bool>(iterator(leaf, slot), false, false);
+                }
+
+                if (leaf->is_full())
+                {
+                    if constexpr (concurrent) {
+                        if constexpr (optimism) {
+                            // printf("unlcoked leaf lock %p\n", leaf);
+                            leaf->mutex_.write_unlock();
+                            return {{},{},true};
+                        }
+                    }
+                    split_leaf_node(leaf, splitkey, splitnode);
+
+                    // check if insert slot is in the split sibling node
+                    if (slot >= leaf->slotuse)
+                    {
+                        slot -= leaf->slotuse;
+                        leaf = static_cast<LeafNode*>(*splitnode);
                     }
                 }
-                split_leaf_node(leaf, splitkey, splitnode);
 
-                // check if insert slot is in the split sibling node
-                if (slot >= leaf->slotuse)
+                // move items and put data item into correct data slot
+                TLX_BTREE_ASSERT(slot >= 0 && slot <= leaf->slotuse);
+
+                std::copy_backward(
+                    leaf->slotdata + slot, leaf->slotdata + leaf->slotuse,
+                    leaf->slotdata + leaf->slotuse + 1);
+
+                leaf->slotdata[slot] = value;
+                leaf->slotuse++;
+
+                if (splitnode && leaf != *splitnode && slot == leaf->slotuse - 1)
                 {
-                    slot -= leaf->slotuse;
-                    leaf = static_cast<LeafNode*>(*splitnode);
+                    // special case: the node was split, and the insert is at the
+                    // last slot of the old node. then the splitkey must be updated.
+                    *splitkey = key;
                 }
+                if constexpr (concurrent) {
+                    // printf("unlocked leaf lock %p\n", leaf);
+                    original_leaf->mutex_.write_unlock();
+                }
+                return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
+            } else {
+                TLX_BTREE_ASSERT(leaf->lock->readlocked());
+
+                int slice_num = leaf->mapl->get_slicenum(key);
+                Slice& slice = leaf->mapl->slices[slice_num];
+                slice.lock.writelock();
+
+                TLX_BTREE_ASSERT(!leaf->mapl->is_full());
+
+                unsigned short ind = 0; // searching for stuff--TODO make function w/ binary search
+                while (ind < slice.size
+                        && key_less(leaf->key(ind), key)) ++ind;
+
+                if (key_equal(leaf->key(ind), key)) {
+                    slice.lock.write_unlock();
+                    leaf->lock->read_unlock();
+                    return insert_res(iterator(leaf, ind), false);
+                }
+
+                bool successful = leaf->mapl->expand(slice_num);
+                if (!successful) {
+                    slice.lock.write_unlock();
+                    leaf->lock->read_unlock();
+                    return insert_res();
+                }
+
+                for (int i = slice.size - 1; i > ind; i--) {
+                    leaf->set(slice_num, i, leaf->get(slice_num, i -1));
+                }
+                leaf->set(slice_num, ind, value);
+
+                insert_res ret_val =
+                        insert_res(iterator(leaf, slice_num * slice_size + ind), true);
+                slice.lock.write_unlock();
+                leaf->lock->read_unlock();
+                return ret_val;
             }
-
-            // move items and put data item into correct data slot
-            TLX_BTREE_ASSERT(slot >= 0 && slot <= leaf->slotuse);
-
-            std::copy_backward(
-                leaf->slotdata + slot, leaf->slotdata + leaf->slotuse,
-                leaf->slotdata + leaf->slotuse + 1);
-
-            leaf->slotdata[slot] = value;
-            leaf->slotuse++;
-
-            if (splitnode && leaf != *splitnode && slot == leaf->slotuse - 1)
-            {
-                // special case: the node was split, and the insert is at the
-                // last slot of the old node. then the splitkey must be updated.
-                *splitkey = key;
-            }
-            if constexpr (concurrent) {
-                // printf("unlocked leaf lock %p\n", leaf);
-                original_leaf->mutex_.write_unlock();
-            }
-            return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
         }
     }
 
