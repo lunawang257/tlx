@@ -256,13 +256,14 @@ private:
     struct Slice {
         ReaderWriterLock lock;
         idx_t* index_array = nullptr;
-        int initial;
         int size;
 
-        void init(idx_t startsize) {
-            initial = startsize;
-            size = initial;
+        void init(idx_t off, idx_t startsize) {
+            size = startsize;
             index_array = new idx_t[mapl_size];
+            for (idx_t i = 0; i < startsize; ++i) {
+                index_array[i] = off + i;
+            }
         }
 
         int get_ind(idx_t i) const {
@@ -302,9 +303,10 @@ private:
 
             slices = new Slice[numslices];
             for (int i = 0; i < numslices - 1; i++) {
-                slices[i].init(slice_size);
+                slices[i].init(i * slice_size, slice_size);
             }
-            slices[numslices - 1].init(slotuse % slice_size);
+            slices[numslices - 1].init((numslices - 1) * slice_size,
+                                       slotuse % slice_size);
 
             slice_boundary = new key_type[numslices - 1];
             for (int i = 0; i < numslices - 1; i++) {
@@ -588,21 +590,23 @@ private:
             set(slice, i, val);
         }
 
-        const value_type& get(int slice, int i) const {
-            if (i < mapl->slices[slice].initial) {
-                return slotdata[i];
+        const value_type& get(int slice, idx_t i) const {
+            TLX_BTREE_ASSERT(i < mapl->slices[slice].size);
+            idx_t idx = mapl->slices[slice].get_ind(i);
+            if (idx < leaf_slotmax) {
+                return slotdata[idx];
             } else {
-                return mapl->extra[mapl->slices[slice].get_ind(i)];
+                return mapl->extra[idx - leaf_slotmax];
             }
         }
 
-        void set(int slice, int i, const value_type& val) {
+        void set(int slice, idx_t i, const value_type& val) {
             TLX_BTREE_ASSERT(i < mapl->slices[slice].size);
-            if (i < mapl->slices[slice].initial) {
-                slotdata[i] = val;
-            } else {
-                mapl->extra[mapl->slices[slice].get_ind(i)] = val;
-            }
+            idx_t idx = mapl->slices[slice].get_ind(i);
+            if (idx < leaf_slotmax)
+                slotdata[idx] = val;
+            else
+                mapl->extra[idx - leaf_slotmax] = val;
         }
     };
 
