@@ -31,6 +31,12 @@
 #include <ParallelTools/reducer.h>
 #include <ParallelTools/Lock.hpp>
 
+#if __APPLE__
+enum { CACHE_LINE_SIZE = 128 };
+#else
+enum { CACHE_LINE_SIZE = 64 };
+#endif
+
 #define PSUM_HEIGHT_CUTOFF 2
 
 namespace tlx {
@@ -244,19 +250,22 @@ private:
     static const int slice_size = 8;
     static const int mapl_size = static_cast<int>(leaf_slotmax * 1.5);
 
+    // if uint8_t is used, max slotuse will be about 255 / 1.5 ~ 170
+    using idx_t = uint16_t;
+
     struct Slice {
         ReaderWriterLock lock;
-        int* index_array = nullptr;
+        idx_t* index_array = nullptr;
         int initial;
         int size;
 
-        void init(int startsize) {
+        void init(idx_t startsize) {
             initial = startsize;
             size = initial;
-            index_array = new int[mapl_size];
+            index_array = new idx_t[mapl_size];
         }
 
-        int get_ind(int i) const {
+        int get_ind(idx_t i) const {
             TLX_BTREE_ASSERT(i < size && i >= 0);
             return index_array[i];
             /*i -= initial;
@@ -265,24 +274,24 @@ private:
             return chunk_arr[chunk_num][i];*/
         }
 
-        void expand(int slot_ind) {
+        void expand(idx_t slot_ind) {
             index_array[size] = slot_ind;
             size++;
         }
-    };
+    } __attribute__((__aligned__(CACHE_LINE_SIZE)));
 
     struct Mapl {
         Slice* slices = nullptr;
-        uint16_t free_slot_head;
+        idx_t free_slot_head;
         ReaderWriterLock2 free_slot_mtx;
         int free_slot_end = mapl_size; // right now not taking into account end of slotdata TODO
         key_type* slice_boundary = nullptr;
         value_type extra[mapl_size];
         int numslices;
-        unsigned short* slotusep;
+        idx_t* slotusep;
 
         /*void free_slot(int slot) {
-            *static_cast<uint16_t*>(&extra[slot]) = free_slot_head;
+            *static_cast<idx_t*>(&extra[slot]) = free_slot_head;
             free_slot_head = slot;
         }*/
 
@@ -305,7 +314,7 @@ private:
             for (int i = slotuse; i < free_slot_end; i++) {
                 value_type& val = i < leaf_slotmax ?
                     slotdata[i] : extra[i - leaf_slotmax];
-                *static_cast<uint16_t*>(&val) = i + 1;
+                *static_cast<idx_t*>(&val) = i + 1;
             }
             free_slot_head = slotuse;
         }
@@ -351,9 +360,9 @@ private:
                 return false;
             }
 
-            uint16_t new_slot = free_slot_head;
+            idx_t new_slot = free_slot_head;
             TLX_BTREE_ASSERT(new_slot < free_slot_end);
-            free_slot_head = *reinterpret_cast<uint16_t*>(extra + free_slot_head);
+            free_slot_head = *reinterpret_cast<idx_t*>(extra + free_slot_head);
 
             slices[slice].expand(new_slot);
             (*slotusep)++;
@@ -369,8 +378,8 @@ private:
                 return false;
             }
 
-            uint16_t to_del = slice.index_array[slice.size - 1];
-            *reinterpret_cast<uint16_t*>(&extra[to_del]) = free_slot_head;
+            idx_t to_del = slice.index_array[slice.size - 1];
+            *reinterpret_cast<idx_t*>(&extra[to_del]) = free_slot_head;
             free_slot_head = to_del;
 
             slice.size--;
