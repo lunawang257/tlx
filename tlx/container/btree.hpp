@@ -3616,149 +3616,191 @@ int cpu_id) {
         if (curr->is_leafnode())
         {
             LeafNode* leaf = static_cast<LeafNode*>(curr);
-            LeafNode* left_leaf = static_cast<LeafNode*>(left);
-            LeafNode* right_leaf = static_cast<LeafNode*>(right);
+            if (!leaf->mapl) {
+                LeafNode* left_leaf = static_cast<LeafNode*>(left);
+                LeafNode* right_leaf = static_cast<LeafNode*>(right);
 
-            // if this is not the correct leaf, get next step in recursive
-            // search
-            if (leaf != iter.curr_leaf)
-            {
-                return btree_not_found;
-            }
-
-            if (iter.curr_slot >= leaf->slotuse)
-            {
-                TLX_BTREE_PRINT("Could not find iterator (" <<
-                                iter.curr_leaf << "," << iter.curr_slot <<
-                                ") to erase. Invalid leaf node?");
-
-                return btree_not_found;
-            }
-
-            unsigned short slot = iter.curr_slot;
-
-            TLX_BTREE_PRINT("Found iterator in leaf " <<
-                            curr << " at slot " << slot);
-
-            std::copy(leaf->slotdata + slot + 1, leaf->slotdata + leaf->slotuse,
-                      leaf->slotdata + slot);
-
-            leaf->slotuse--;
-
-            result_t myres = btree_ok;
-
-            // if the last key of the leaf was changed, the parent is notified
-            // and updates the key of this leaf
-            if (slot == leaf->slotuse)
-            {
-                if (parent && parentslot < parent->slotuse)
+                // if this is not the correct leaf, get next step in recursive
+                // search
+                if (leaf != iter.curr_leaf)
                 {
-                    TLX_BTREE_ASSERT(parent->childid[parentslot] == curr);
-                    parent->slotkey[parentslot] = leaf->key(leaf->slotuse - 1);
+                    return btree_not_found;
                 }
-                else
+
+                if (iter.curr_slot >= leaf->slotuse)
                 {
-                    if (leaf->slotuse >= 1)
+                    TLX_BTREE_PRINT("Could not find iterator (" <<
+                                    iter.curr_leaf << "," << iter.curr_slot <<
+                                    ") to erase. Invalid leaf node?");
+
+                    return btree_not_found;
+                }
+
+                unsigned short slot = iter.curr_slot;
+
+                TLX_BTREE_PRINT("Found iterator in leaf " <<
+                                curr << " at slot " << slot);
+
+                std::copy(leaf->slotdata + slot + 1, leaf->slotdata + leaf->slotuse,
+                          leaf->slotdata + slot);
+
+                leaf->slotuse--;
+
+                result_t myres = btree_ok;
+
+                // if the last key of the leaf was changed, the parent is notified
+                // and updates the key of this leaf
+                if (slot == leaf->slotuse)
+                {
+                    if (parent && parentslot < parent->slotuse)
                     {
-                        TLX_BTREE_PRINT("Scheduling lastkeyupdate: key " <<
-                                        leaf->key(leaf->slotuse - 1));
-                        myres |= result_t(
-                            btree_update_lastkey, leaf->key(leaf->slotuse - 1));
+                        TLX_BTREE_ASSERT(parent->childid[parentslot] == curr);
+                        parent->slotkey[parentslot] = leaf->key(leaf->slotuse - 1);
                     }
                     else
+                    {
+                        if (leaf->slotuse >= 1)
+                        {
+                            TLX_BTREE_PRINT("Scheduling lastkeyupdate: key " <<
+                                            leaf->key(leaf->slotuse - 1));
+                            myres |= result_t(
+                                btree_update_lastkey, leaf->key(leaf->slotuse - 1));
+                        }
+                        else
+                        {
+                            TLX_BTREE_ASSERT(leaf == root_);
+                        }
+                    }
+                }
+
+                if (leaf->is_underflow() && !(leaf == root_ && leaf->slotuse >= 1))
+                {
+                    // determine what to do about the underflow
+
+                    // case : if this empty leaf is the root, then delete all nodes
+                    // and set root to nullptr.
+                    if (left_leaf == nullptr && right_leaf == nullptr)
                     {
                         TLX_BTREE_ASSERT(leaf == root_);
+                        TLX_BTREE_ASSERT(leaf->slotuse == 0);
+
+                        free_node(root_);
+
+                        root_ = leaf = nullptr;
+                        head_leaf_ = tail_leaf_ = nullptr;
+
+                        // will be decremented soon by insert_start()
+                        TLX_BTREE_ASSERT(stats_.size == 1);
+                        TLX_BTREE_ASSERT(stats_.leaves == 0);
+                        TLX_BTREE_ASSERT(stats_.inner_nodes == 0);
+
+                        return btree_ok;
                     }
-                }
-            }
-
-            if (leaf->is_underflow() && !(leaf == root_ && leaf->slotuse >= 1))
-            {
-                // determine what to do about the underflow
-
-                // case : if this empty leaf is the root, then delete all nodes
-                // and set root to nullptr.
-                if (left_leaf == nullptr && right_leaf == nullptr)
-                {
-                    TLX_BTREE_ASSERT(leaf == root_);
-                    TLX_BTREE_ASSERT(leaf->slotuse == 0);
-
-                    free_node(root_);
-
-                    root_ = leaf = nullptr;
-                    head_leaf_ = tail_leaf_ = nullptr;
-
-                    // will be decremented soon by insert_start()
-                    TLX_BTREE_ASSERT(stats_.size == 1);
-                    TLX_BTREE_ASSERT(stats_.leaves == 0);
-                    TLX_BTREE_ASSERT(stats_.inner_nodes == 0);
-
-                    return btree_ok;
-                }
-                // case : if both left and right leaves would underflow in case
-                // of a shift, then merging is necessary. choose the more local
-                // merger with our parent
-                else if ((left_leaf == nullptr || left_leaf->is_few()) &&
-                         (right_leaf == nullptr || right_leaf->is_few()))
-                {
-                    if (left_parent == parent)
-                        myres |= merge_leaves(left_leaf, leaf, left_parent);
+                    // case : if both left and right leaves would underflow in case
+                    // of a shift, then merging is necessary. choose the more local
+                    // merger with our parent
+                    else if ((left_leaf == nullptr || left_leaf->is_few()) &&
+                             (right_leaf == nullptr || right_leaf->is_few()))
+                    {
+                        if (left_parent == parent)
+                            myres |= merge_leaves(left_leaf, leaf, left_parent);
+                        else
+                            myres |= merge_leaves(leaf, right_leaf, right_parent);
+                    }
+                    // case : the right leaf has extra data, so balance right with
+                    // current
+                    else if ((left_leaf != nullptr && left_leaf->is_few()) &&
+                             (right_leaf != nullptr && !right_leaf->is_few()))
+                    {
+                        if (right_parent == parent) {
+                            myres |= shift_left_leaf(
+                                leaf, right_leaf, right_parent, parentslot);
+                        }
+                        else {
+                            myres |= merge_leaves(left_leaf, leaf, left_parent);
+                        }
+                    }
+                    // case : the left leaf has extra data, so balance left with
+                    // current
+                    else if ((left_leaf != nullptr && !left_leaf->is_few()) &&
+                             (right_leaf != nullptr && right_leaf->is_few()))
+                    {
+                        if (left_parent == parent) {
+                            shift_right_leaf(
+                                left_leaf, leaf, left_parent, parentslot - 1);
+                        }
+                        else {
+                            myres |= merge_leaves(leaf, right_leaf, right_parent);
+                        }
+                    }
+                    // case : both the leaf and right leaves have extra data and our
+                    // parent, choose the leaf with more data
+                    else if (left_parent == right_parent)
+                    {
+                        if (left_leaf->slotuse <= right_leaf->slotuse) {
+                            myres |= shift_left_leaf(
+                                leaf, right_leaf, right_parent, parentslot);
+                        }
+                        else {
+                            shift_right_leaf(
+                                left_leaf, leaf, left_parent, parentslot - 1);
+                        }
+                    }
                     else
-                        myres |= merge_leaves(leaf, right_leaf, right_parent);
-                }
-                // case : the right leaf has extra data, so balance right with
-                // current
-                else if ((left_leaf != nullptr && left_leaf->is_few()) &&
-                         (right_leaf != nullptr && !right_leaf->is_few()))
-                {
-                    if (right_parent == parent) {
-                        myres |= shift_left_leaf(
-                            leaf, right_leaf, right_parent, parentslot);
-                    }
-                    else {
-                        myres |= merge_leaves(left_leaf, leaf, left_parent);
+                    {
+                        if (left_parent == parent) {
+                            shift_right_leaf(
+                                left_leaf, leaf, left_parent, parentslot - 1);
+                        }
+                        else {
+                            myres |= shift_left_leaf(
+                                leaf, right_leaf, right_parent, parentslot);
+                        }
                     }
                 }
-                // case : the left leaf has extra data, so balance left with
-                // current
-                else if ((left_leaf != nullptr && !left_leaf->is_few()) &&
-                         (right_leaf != nullptr && right_leaf->is_few()))
-                {
-                    if (left_parent == parent) {
-                        shift_right_leaf(
-                            left_leaf, leaf, left_parent, parentslot - 1);
-                    }
-                    else {
-                        myres |= merge_leaves(leaf, right_leaf, right_parent);
-                    }
-                }
-                // case : both the leaf and right leaves have extra data and our
-                // parent, choose the leaf with more data
-                else if (left_parent == right_parent)
-                {
-                    if (left_leaf->slotuse <= right_leaf->slotuse) {
-                        myres |= shift_left_leaf(
-                            leaf, right_leaf, right_parent, parentslot);
-                    }
-                    else {
-                        shift_right_leaf(
-                            left_leaf, leaf, left_parent, parentslot - 1);
-                    }
-                }
-                else
-                {
-                    if (left_parent == parent) {
-                        shift_right_leaf(
-                            left_leaf, leaf, left_parent, parentslot - 1);
-                    }
-                    else {
-                        myres |= shift_left_leaf(
-                            leaf, right_leaf, right_parent, parentslot);
-                    }
-                }
-            }
 
-            return myres;
+                return myres;
+            }
+            else // MAPL leaf
+            {
+                TLX_BTREE_ASSERT(leaf->lock->readlocked());
+
+                if (stats_.size > leaf->slotuse && leaf->is_underflow()) {
+                    tlx_die_unless(false); // bc i dont think ^ is necessary
+                    TLX_BTREE_ASSERT(cur_numthreads > 1);
+                    leaf->lock->write_unlock();
+                    return restart;
+                }
+
+                int slicenum = leaf->mapl->get_slicenum(key);
+                Slice& slice = leaf->mapl->slices[slicenum];
+                leaf->mapl->writelock_slice(key);
+
+                unsigned short ind = 0; // searching for stuff--TODO make function w/ binary search
+                while (ind < slice.size
+                        && key_less(leaf->key(ind), key)) ++ind;
+
+                if (ind >= leaf->slotuse || !key_equal(leaf->key(ind), key)) {
+                    slice.lock.write_unlock();
+                    leaf->lock->read_unlock();
+                    return restart;
+                }
+
+                bool successful = leaf->mapl->shrink(slicenum);
+                if (!successful) {
+                    slice.lock.write_unlock();
+                    leaf->lock->read_unlock();
+                    return restart;
+                }
+
+                for (int i = ind; i < slice.size; i++) {
+                    leaf->set(slicenum, i, leaf->get(slicenum, i + 1));
+                }
+
+                slice.lock.write_unlock();
+                leaf->lock->read_unlock();
+                return btree_ok;
+            }
         }
         else // !curr->is_leafnode()
         {
