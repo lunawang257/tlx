@@ -286,11 +286,11 @@ private:
         Slice* slices = nullptr;
         idx_t free_slot_head;
         ReaderWriterLock2 free_slot_mtx;
-        int free_slot_end = mapl_size; // right now not taking into account end of slotdata TODO
+        idx_t free_slot_end = leaf_slotmax + mapl_size;
         key_type* slice_boundary = nullptr;
         value_type extra[mapl_size];
         int numslices;
-        idx_t* slotusep;
+        unsigned short* slotusep;
 
         /*void free_slot(int slot) {
             *static_cast<idx_t*>(&extra[slot]) = free_slot_head;
@@ -314,6 +314,7 @@ private:
                 slice_boundary[i] = slotdata[slice_size * (i + 1) - 1];
             }
 
+            // add all free slots to the free list
             for (int i = slotuse; i < free_slot_end; i++) {
                 value_type& val = i < leaf_slotmax ?
                     slotdata[i] : extra[i - leaf_slotmax];
@@ -340,9 +341,16 @@ private:
             slice.lock.read_unlock();
         }
 
+        void write_unlock_slice(const key_type& key) {
+            int slice_num = get_slicenum(key);
+            Slice& slice = slices[slice_num];
+            slice.lock.write_unlock();
+        }
+
         int get_slicenum(const key_type& key) const {
             key_compare mapl_key_less;
             unsigned short slice = 0;
+            // TODO: use binary search if numslices is bigger than a threshold
             while (slice < numslices - 1
                     && mapl_key_less(slice_boundary[slice], key)) ++slice;
 
