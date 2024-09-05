@@ -2722,8 +2722,15 @@ private:
                     original_leaf->mutex_.write_unlock();
                 }
                 return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
-            } else {
-                TLX_BTREE_ASSERT(leaf->lock->readlocked());
+            } else { // MAPL leaf
+                leaf->lock->readlock(); // lock MAPL node to avoid SMO
+                leaf->mapl->writelock_slice(key);
+                if (!leaf->mapl) { // XXX is this possible?
+                    leaf->lock->read_unlock();
+                    return insert_res();
+                } else {
+                    leaf->lock->upgradelock(); // XXX is this possible? maybe retry here
+                }
 
                 int slice_num = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slice_num];
