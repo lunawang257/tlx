@@ -226,19 +226,6 @@
                  }
              } else {
                  root_->childid[0]->lock->read_unlock();
-@@ -2836,7 +3224,11 @@
-
-         if (root_->slotuse == 0) {
-             if (root_->level > 1) root_->childid[0]->lock->readlock();
--            else root_->childid[0]->lock->writelock();
-+            else if (static_cast<LeafNode*>(root_->childid[0])->mapl) {
-+                root_->childid[0]->lock->readlock();
-+            } else {
-+                root_->childid[0]->lock->writelock();
-+            }
-             root_->lock->read_unlock();
-             to_descendin = root_->childid[0];
-         }
 @@ -2876,37 +3268,80 @@
 
          if (curr->is_leafnode())
