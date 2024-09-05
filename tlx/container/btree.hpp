@@ -245,7 +245,7 @@ private:
     static const int mapl_size = static_cast<int>(leaf_slotmax * 1.5);
 
     struct Slice {
-        LockHelper lock;
+        ReaderWriterLock lock;
         int* index_array = nullptr;
         int initial;
         int size;
@@ -274,7 +274,7 @@ private:
     struct Mapl {
         Slice* slices = nullptr;
         uint16_t free_slot_head;
-        mutex_type free_slot_mtx;
+        ReaderWriterLock2 free_slot_mtx;
         int free_slot_end = mapl_size; // right now not taking into account end of slotdata TODO
         key_type* slice_boundary = nullptr;
         value_type extra[mapl_size];
@@ -338,13 +338,18 @@ private:
         }
 
         bool is_full() {
-            lock_type lock(free_slot_mtx);
-            return free_slot_head == free_slot_end;
+            free_slot_mtx.read_lock();
+            bool full = (free_slot_head == free_slot_end);
+            free_slot_mtx.read_unlock();
+            return full;
         }
 
         bool expand(int slice) {
-            lock_type lock(free_slot_mtx);
-            if (free_slot_head == free_slot_end) return false;
+            free_slot_mtx.write_lock();
+            if (free_slot_head == free_slot_end) {
+                free_slot_mtx.write_unlock();
+                return false;
+            }
 
             uint16_t new_slot = free_slot_head;
             TLX_BTREE_ASSERT(new_slot < free_slot_end);
@@ -352,13 +357,17 @@ private:
 
             slices[slice].expand(new_slot);
             (*slotusep)++;
+            free_slot_mtx.write_unlock();
             return true;
         }
 
         bool shrink(int s) {
-            lock_type lock(free_slot_mtx);
+            free_slot_mtx.write_lock();
             Slice& slice = slices[s];
-            if (*slotusep == 0) return false;
+            if (*slotusep == 0) {
+                free_slot_mtx.write_unlock();
+                return false;
+            }
 
             uint16_t to_del = slice.index_array[slice.size - 1];
             *reinterpret_cast<uint16_t*>(&extra[to_del]) = free_slot_head;
@@ -366,6 +375,7 @@ private:
 
             slice.size--;
             (*slotusep)--;
+            free_slot_mtx.write_unlock();
             return true;
         }
     };
@@ -491,9 +501,12 @@ private:
         bool is_underflow() const {
             if (!mapl)
                 return (node::slotuse < leaf_slotmin);
-            else
-                lock_type lock(mapl->free_slot_mtx);
-                return (node::slotuse < leaf_slotmin);
+            else {
+                mapl->free_slot_mtx.read_lock();
+                bool underflow = (node::slotuse < leaf_slotmin);
+                mapl->free_slot_mtx.read_unlock();
+                return underflow;
+            }
         }
 
         bool soon_underflow() const {
