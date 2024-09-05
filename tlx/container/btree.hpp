@@ -247,7 +247,7 @@ public:
 private:
     //! \name Helper classes for MAPL Leaf
     //! \{
-    static const int slice_size = 8;
+    static const unsigned short slice_size = 8;
     static const int extra_div = 2;
     static const int mapl_size = static_cast<int>(leaf_slotmax / extra_div);
 
@@ -298,9 +298,10 @@ private:
             free_slot_head = slot;
         }*/
 
-        Mapl(value_type* slotdata, const unsigned short& slotuse) {
+        Mapl(value_type* slotdata, const unsigned short* node_slotuse) {
             slotdatap = slotdata;
-            slotusep = &slotuse;
+            slotusep = node_slotuse;
+            auto slotuse = *node_slotuse;
             numslices = (slotuse + slice_size - 1) / slice_size;
             TLX_BTREE_ASSERT(numslices > 1);
 
@@ -317,7 +318,7 @@ private:
             }
 
             // add all free slots to the free list
-            for (int i = slotuse; i < free_slot_end; i++) {
+            for (auto i = slotuse; i < free_slot_end; i++) {
                 value_type& val = i < leaf_slotmax ?
                     slotdata[i] : extra[i - leaf_slotmax];
                 *static_cast<idx_t*>(&val) = i + 1;
@@ -553,7 +554,8 @@ private:
         }
 
         void maplize() {
-            tlx_die_unless(false);
+            TLX_BTREE_ASSERT(!mapl);
+            mapl = new Mapl(slotdata, &node::slotuse);
         }
 
         void unmaplize() {
