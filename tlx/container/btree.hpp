@@ -2691,7 +2691,11 @@ private:
                             return {{},{},true};
                         }
                     }
-                    split_leaf_node(leaf, splitkey, splitnode);
+                    if (leaf->mapl) {
+                        split_mapl_leaf(leaf, splitkey, splitnode);
+                    } else {
+                        split_leaf_node(leaf, splitkey, splitnode);
+                    }
 
                     // check if insert slot is in the split sibling node
                     if (slot >= leaf->slotuse)
