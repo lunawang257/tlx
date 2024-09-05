@@ -288,6 +288,7 @@ private:
         ReaderWriterLock2 free_slot_mtx;
         idx_t free_slot_end = leaf_slotmax + mapl_size;
         key_type* slice_boundary = nullptr;
+        value_type *slotdatap;
         value_type extra[mapl_size];
         int numslices;
         unsigned short* slotusep;
@@ -298,6 +299,7 @@ private:
         }*/
 
         Mapl(value_type* slotdata, const unsigned short& slotuse) {
+            slotdatap = slotdata;
             slotusep = &slotuse;
             numslices = (slotuse + slice_size - 1) / slice_size;
             TLX_BTREE_ASSERT(numslices > 1);
@@ -373,7 +375,12 @@ private:
 
             idx_t new_slot = free_slot_head;
             TLX_BTREE_ASSERT(new_slot < free_slot_end);
-            free_slot_head = *reinterpret_cast<idx_t*>(extra + free_slot_head);
+            if (new_slot < leaf_slotmax)
+                free_slot_head = *reinterpret_cast<idx_t*>(
+                    slotdatap + free_slot_head);
+            else
+                free_slot_head = *reinterpret_cast<idx_t*>(
+                    extra + free_slot_head);
 
             slices[slice].expand(new_slot);
             (*slotusep)++;
