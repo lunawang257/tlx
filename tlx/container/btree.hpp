@@ -520,6 +520,81 @@ private:
             slotdata[slot] = value;
         }
 
+        void maplize() {
+            tlx_die_unless(false);
+        }
+
+        void unmaplize() {
+            TLX_BTREE_ASSERT(mapl);
+            TLX_BTREE_ASSERT(slotuse <= leaf_slotmax); // technically gotta lock before this
+            TLX_BTREE_ASSERT(lock->writelocked());
+
+            value_type ordered[node::slotuse];
+            for (int i = 0; i < node::slotuse; i++) {
+                ordered[i] = get_overall(i);
+            }
+            for (int i = 0; i < node::slotuse; i++) {
+                slotdata[i] = ordered[i];
+            }
+            mapl = nullptr;
+        }
+
+        /*void readlock() {
+            if (!mapl) lock->readlock();
+            else {
+                lock->readlock();
+                mapl->slices[mapl->get_slice]
+            }
+        }
+
+        void upgradelock() {
+            if (!mapl) lock->upgradelock();
+        }
+
+        void writelock() {
+            if (!mapl) lock->writelock();
+        }
+
+        void read_unlock() {
+            if (!mapl) lock->read_unlock();
+        }
+
+        void write_unlock() {
+            if (!mapl) lock->write_unlock();
+        }
+
+        void downgrade_lock() {
+            if (!mapl) lock->downgrade_lock();
+        }*/
+
+        const value_type& get_overall(int i) const {
+            int slice = i / slice_size;
+            i -= slice * slice_size;
+            return get(slice, i);
+        }
+
+        void set_overall(int i, const value_type& val) {
+            int slice = i / slice_size;
+            i -= slice * slice_size;
+            set(slice, i, val);
+        }
+
+        const value_type& get(int slice, int i) const {
+            if (i < mapl->slices[slice].initial) {
+                return slotdata[i];
+            } else {
+                return mapl->extra[mapl->slices[slice].get_ind(i)];
+            }
+        }
+
+        void set(int slice, int i, const value_type& val) {
+            TLX_BTREE_ASSERT(i < mapl->slices[slice].size);
+            if (i < mapl->slices[slice].initial) {
+                slotdata[i] = val;
+            } else {
+                mapl->extra[mapl->slices[slice].get_ind(i)] = val;
+            }
+        }
     };
 
     //! \}
@@ -705,82 +780,6 @@ public:
         //! Inequality of iterators.
         bool operator != (const iterator& x) const {
             return (x.curr_leaf != curr_leaf) || (x.curr_slot != curr_slot);
-        }
-
-        void maplize() {
-            tlx_die_unless(false);
-        }
-
-        void unmaplize() {
-            TLX_BTREE_ASSERT(mapl);
-            TLX_BTREE_ASSERT(slotuse <= leaf_slotmax); // technically gotta lock before this
-            TLX_BTREE_ASSERT(lock->writelocked());
-
-            value_type ordered[node::slotuse];
-            for (int i = 0; i < node::slotuse; i++) {
-                ordered[i] = get_overall(i);
-            }
-            for (int i = 0; i < node::slotuse; i++) {
-                slotdata[i] = ordered[i];
-            }
-            mapl = nullptr;
-        }
-
-        /*void readlock() {
-            if (!mapl) lock->readlock();
-            else {
-                lock->readlock();
-                mapl->slices[mapl->get_slice]
-            }
-        }
-
-        void upgradelock() {
-            if (!mapl) lock->upgradelock();
-        }
-
-        void writelock() {
-            if (!mapl) lock->writelock();
-        }
-
-        void read_unlock() {
-            if (!mapl) lock->read_unlock();
-        }
-
-        void write_unlock() {
-            if (!mapl) lock->write_unlock();
-        }
-
-        void downgrade_lock() {
-            if (!mapl) lock->downgrade_lock();
-        }*/
-
-        const value_type& get_overall(int i) const {
-            int slice = i / slice_size;
-            i -= slice * slice_size;
-            return get(slice, i);
-        }
-
-        void set_overall(int i, const value_type& val) {
-            int slice = i / slice_size;
-            i -= slice * slice_size;
-            set(slice, i, val);
-        }
-
-        const value_type& get(int slice, int i) const {
-            if (i < mapl->slices[slice].initial) {
-                return slotdata[i];
-            } else {
-                return mapl->extra[mapl->slices[slice].get_ind(i)];
-            }
-        }
-
-        void set(int slice, int i, const value_type& val) {
-            TLX_BTREE_ASSERT(i < mapl->slices[slice].size);
-            if (i < mapl->slices[slice].initial) {
-                slotdata[i] = val;
-            } else {
-                mapl->extra[mapl->slices[slice].get_ind(i)] = val;
-            }
         }
     };
 
