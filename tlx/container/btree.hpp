@@ -248,7 +248,8 @@ private:
     //! \name Helper classes for MAPL Leaf
     //! \{
     static const int slice_size = 8;
-    static const int mapl_size = static_cast<int>(leaf_slotmax * 1.5);
+    static const int extra_div = 2;
+    static const int mapl_size = static_cast<int>(leaf_slotmax / extra_div);
 
     // if uint8_t is used, max slotuse will be about 255 / 1.5 ~ 170
     using idx_t = uint16_t;
