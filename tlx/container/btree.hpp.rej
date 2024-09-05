@@ -226,16 +226,6 @@
                  }
              } else {
                  root_->childid[0]->lock->read_unlock();
-@@ -2797,6 +3182,9 @@
-                     LeafNode* leftleaf = static_cast<LeafNode*>(leftchild);
-                     LeafNode* rightleaf = static_cast<LeafNode*>(rightchild);
-
-+                    if (leftleaf->mapl) leftleaf->unmaplize();
-+                    if (rightleaf->mapl) rightleaf->unmaplize();
-+
-                     merge_leaves(leftleaf, rightleaf, root_);
-                     free_node(rightleaf);
-
 @@ -2836,7 +3224,11 @@
 
          if (root_->slotuse == 0) {

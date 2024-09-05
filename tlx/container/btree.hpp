@@ -3974,6 +3974,9 @@ int cpu_id) {
                         " with common parent " << parent << ".");
         (void)parent;
 
+        if (left->mapl) left->unmaplize();
+        if (right->mapl) right->unmaplize();
+
         TLX_BTREE_ASSERT(left->is_leafnode() && right->is_leafnode());
         TLX_BTREE_ASSERT(parent->level == 1);
 
