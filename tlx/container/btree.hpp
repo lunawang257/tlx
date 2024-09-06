@@ -1646,7 +1646,7 @@ public:
             stats_ = tree_stats();
         }
 
-        TLX_BTREE_ASSERT(stats_.size == 0);
+        TLX_BTREE_ASSERT(size() == 0);
     }
 
 private:
@@ -2740,13 +2740,19 @@ private:
         else // n->is_leafnode() == true
         {
             LeafNode* leaf = static_cast<LeafNode*>(n);
+        retry:
             leaf->mutex_.read_lock();
             if (!leaf->mapl) {
                 LeafNode* original_leaf = leaf;
                 if constexpr (concurrent) {
                     // printf("trying to lock leaf lock from %p\n", leaf);
-                    if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) // XXX should upgrade, if fail, unlock and retry
+                    if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
                         leaf->mutex_.write_lock();
+                        if (leaf->mapl) {
+                            leaf->mutex_.write_unlock();
+                            goto retry;
+                        }
+                    }
                     if constexpr (optimism) {
                         if (!leaf->is_full()) {
                             (*parent_lock)->read_unlock(cpu_id);
@@ -3384,9 +3390,9 @@ int cpu_id) {
                     head_leaf_ = tail_leaf_ = nullptr;
 
                     // will be decremented soon by insert_start()
-                    TLX_BTREE_ASSERT(stats_.size == 1);
-                    TLX_BTREE_ASSERT(stats_.leaves == 0);
-                    TLX_BTREE_ASSERT(stats_.inner_nodes == 0);
+                    TLX_BTREE_ASSERT(size() == 1);
+                    TLX_BTREE_ASSERT(0 + stats_.leaves == 0);
+                    TLX_BTREE_ASSERT(0 + stats_.inner_nodes == 0);
                     if constexpr (concurrent) {
                         leaf->mutex_.write_unlock();
                     }

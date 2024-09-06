@@ -2006,9 +2006,16 @@ void test_bulkload() {
 
 /******************************************************************************/
 // Test Multithreading
+const int Slots = 8;
 typedef tlx::btree_set<
-        unsigned int,
-        std::less<unsigned int>, traits_nodebug<unsigned int> > set_type;
+    unsigned int,
+    std::less<unsigned int>,
+    struct tlx::btree_default_traits<
+        size_t, size_t,
+        Slots * (sizeof(size_t) + sizeof(void*)),
+        Slots * sizeof(size_t)>,
+    std::allocator<size_t> /* Allocator */,
+    true /* concurrent */ > set_type;
 
 const int MAX_KEY = 100;
 const int NUM_OPERATIONS = 100;
@@ -2024,8 +2031,8 @@ std::mutex printmtx;
 int seqnum = 0;
 set_type my_multi_thread_set;
 
-const int NUM_THREADS = 2;
-size_t cur_numthreads = 1;
+const int NUM_THREADS = 1;
+size_t cur_numthreads = NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;
 
@@ -2417,7 +2424,7 @@ void test_multithread() {
 
 int main() {
     std::cout << "seed: " << seed << std::endl;
-    std::cout << "pid= " << getpid() << std::endl;
+    std::cout << "pid: " << getpid() << std::endl;
     //*
     test_simple();
     if (tlx_more_tests) {
