@@ -252,7 +252,7 @@ private:
     static const int mapl_size = static_cast<int>(leaf_slotmax / extra_div);
 
     // if uint8_t is used, max slotuse will be about 255 / 1.5 ~ 170
-    using idx_t = uint16_t;
+    using idx_t = int16_t;
 
     struct Slice {
         ReaderWriterLock lock;
@@ -281,6 +281,12 @@ private:
             size++;
         }
     } __attribute__((__aligned__(CACHE_LINE_SIZE)));
+
+    // allow get_overall to efficiently get the next key
+    struct MaplKeyContext {
+        idx_t prev_slice = -1;
+        idx_t prev_index = 0;
+    };
 
     struct Mapl {
         Slice* slices = nullptr;
@@ -510,11 +516,10 @@ private:
         }
 
 
-
         //! Return key in slot s.
         const key_type& key(size_t s) const {
-            if (!mapl) return key_of_value::get(slotdata[s]);
-            else return key_of_value::get(get_overall(s));
+            TLX_BTREE_ASSERT(!mapl);
+            return key_of_value::get(slotdata[s]);
         }
 
         //! True if the node's slots are full.
@@ -560,12 +565,13 @@ private:
 
         void unmaplize() {
             TLX_BTREE_ASSERT(mapl);
-            TLX_BTREE_ASSERT(slotuse <= leaf_slotmax); // technically gotta lock before this
-            TLX_BTREE_ASSERT(lock->writelocked());
+            TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax); // technically gotta lock before this
+            TLX_BTREE_ASSERT(mutex_.write_locked());
 
             value_type ordered[node::slotuse];
+            MaplKeyContext ctx;
             for (int i = 0; i < node::slotuse; i++) {
-                ordered[i] = get_overall(i);
+                ordered[i] = get_overall(i, &ctx);
             }
             for (int i = 0; i < node::slotuse; i++) {
                 slotdata[i] = ordered[i];
@@ -601,10 +607,23 @@ private:
             if (!mapl) lock->downgrade_lock();
         }*/
 
-        const value_type& get_overall(int i) const {
-            int slice = i / slice_size;
-            i -= slice * slice_size;
-            return get(slice, i);
+        // only allow to get data in sequential manner
+        const value_type& get_overall(int i, MaplKeyContext *ctx) const {
+            TLX_BTREE_ASSERT(mapl);
+            TLX_BTREE_ASSERT(i >= ctx->prev_index);
+
+            idx_t slice_i = ctx->prev_slice + 1;
+            idx_t idx = ctx->prev_index - i;
+            idx_t cur_slice_size = mapl->slices[slice_i].size;
+
+            TLX_BTREE_ASSERT(idx <= cur_slice_size);
+
+            if (idx == cur_slice_size) {
+                ++ctx->prev_slice;
+                ctx->prev_index += cur_slice_size;
+            }
+
+            return get(slice_i, idx);
         }
 
         void set_overall(int i, const value_type& val) {
@@ -2869,7 +2888,7 @@ private:
     void split_mapl_leaf(LeafNode* leaf,
                          key_type* out_newkey, node** out_newleaf) {
         TLX_BTREE_ASSERT(leaf->mapl->is_full());
-        TLX_BTREE_ASSERT(leaf->lock->writelocked());
+        TLX_BTREE_ASSERT(leaf->mutex_.write_locked());
 
         LeafNode* newleaf = allocate_leaf();
         newleaf->mutex_.write_lock();
@@ -2886,7 +2905,7 @@ private:
         }
 
         for (int i = leaf_slotmax - 1; i < leaf_slotmax * 2 - 2; i++) {
-            newleaf->set_overall(0, leaf->get_overall(i));
+            newleaf->set_overall(0, leaf->get_overall(i, nullptr));
         }
 
         leaf->slotuse = leaf_slotmax - 1;
@@ -3824,11 +3843,10 @@ int cpu_id) {
             }
             else // MAPL leaf
             {
-                TLX_BTREE_ASSERT(leaf->lock->readlocked());
+                TLX_BTREE_ASSERT(leaf->mutex_.read_locked());
 
                 if (stats_.size > leaf->slotuse && leaf->is_underflow()) {
                     tlx_die_unless(false); // bc i dont think ^ is necessary
-                    TLX_BTREE_ASSERT(cur_numthreads > 1);
                     leaf->mutex_.write_unlock();
                     return restart;
                 }

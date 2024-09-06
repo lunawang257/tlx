@@ -189,6 +189,10 @@ public:
     return;
   }
 
+  bool read_locked() {
+      return readers > 0;
+  }
+
   /**
    * Try to acquire a write lock and spin until the lock is available.
    * Then wait till reader count is 0.
@@ -201,6 +205,10 @@ public:
     // wait for readers to finish
     while (readers > 0) {
     }
+  }
+
+  bool write_locked() {
+    return writer.test(std::memory_order_relaxed);
   }
 
   bool try_upgrade_release_on_fail(int cpuid __attribute__((unused))) {

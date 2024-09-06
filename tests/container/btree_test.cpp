@@ -20,8 +20,8 @@ inline int sched_getcpu() {
 }
 #endif
 
-#ifdef TLX_BTREE_TEST
-void before_assert(void) {}
+#if defined(TLX_BTREE_TEST) && defined(TLX_BTREE_DEBUG) && !defined(NDEBUG)
+extern void before_assert(void);
 #else
 inline void before_assert(void) {}
 #endif
@@ -2120,7 +2120,9 @@ void log_mem_op(MemOpType optype, void *node,
     get_stack_addr(log_info.addrs);
 }
 
-void log_lock(void* node, int lock_type) {
+void log_lock(void* node __attribute__((unused)),
+              int lock_type __attribute__((unused))) {
+#if 0
     if (cur_numthreads > 1 && local_debug_info.tinfo) {
         local_debug_info.tinfo->cur_node = node;
         local_debug_info.tinfo->op = lock_type;
@@ -2175,6 +2177,7 @@ void log_lock(void* node, int lock_type) {
 
         get_stack_addr(log_info.addrs);
     }
+#endif
 }
 
 const char *MemOpName[] = {
@@ -2241,6 +2244,7 @@ void print_all_lock_records() {
 
 void print_threads_states(void)
 {
+#if 0
     my_multi_thread_set.print(std::cout);
     for (size_t i = 0; i < cur_numthreads; ++i) {
         std::cout << "Thread " << i + thread_start_idx << " id: " << global_thread_info[i].id
@@ -2289,6 +2293,7 @@ void print_threads_states(void)
             std::cout << std::endl;
         }
     }
+#endif
 }
 
 void before_assert(void)
@@ -2412,8 +2417,9 @@ void test_multithread() {
 
 int main() {
     std::cout << "seed: " << seed << std::endl;
-    std::cout << "pid: " << getpid() << std::endl;
-    /*test_simple();
+    std::cout << "pid= " << getpid() << std::endl;
+    //*
+    test_simple();
     if (tlx_more_tests) {
         test_large();
         // TODO test_large_sequence();
@@ -2422,7 +2428,8 @@ int main() {
         test_struct();
         test_relations();
         test_bulkload();
-    }*/
+    }
+    // */
     if (multithread) {
         int total_passes = 100000;
         double ts_start = tlx::timestamp();
