@@ -2428,7 +2428,7 @@ void test_mapl() {}
 
 #else
 
-typedef unsigned int val_type;
+typedef unsigned short val_type;
 const int TestSlotMax = 8;
 typedef tlx::btree_set<
     val_type, std::less<val_type>,
@@ -2499,6 +2499,14 @@ void verify_mapl(const char *testname,
         }                                               \
     }
 
+void slice_insert(test_leaf_type *leaf, val_type key) {
+    int slicenum = leaf->mapl->get_slicenum(key);
+    test_set_type ts;
+    auto* slice = leaf->mapl->slices + slicenum;
+    int pos = ts.tree_.find_lower(slice, key);
+    leaf->mapl->slice_insert(slicenum, pos, key);
+}
+
 void test_mapl() {
     {
         test_leaf_type leaf;
@@ -2511,6 +2519,45 @@ slice[0]: 0:10 1:20 2:30
 slice[1]: 3:40 4:50 5:60
 Boundaries: 0:30
 Free list: 6 7 8 9 10 11
+)");
+
+        VERIFY_EQ(leaf.mapl->get_slicenum(60), 1);
+
+        // insert key
+        slice_insert(&leaf, 15);
+        verify_mapl("insert 15", leaf, R"(
+#slices=2
+slice[0]: 0:10 6:15 1:20 2:30
+slice[1]: 3:40 4:50 5:60
+Boundaries: 0:30
+Free list: 7 8 9 10 11
+)");
+
+        slice_insert(&leaf, 35);
+        verify_mapl("insert 35", leaf, R"(
+#slices=2
+slice[0]: 0:10 6:15 1:20 2:30
+slice[1]: 7:35 3:40 4:50 5:60
+Boundaries: 0:30
+Free list: 8 9 10 11
+)");
+
+        slice_insert(&leaf, 33);
+        verify_mapl("insert 33", leaf, R"(
+#slices=2
+slice[0]: 0:10 6:15 1:20 2:30
+slice[1]: 8:33 7:35 3:40 4:50 5:60
+Boundaries: 0:30
+Free list: 9 10 11
+)");
+
+        slice_insert(&leaf, 31);
+        verify_mapl("insert 31", leaf, R"(
+#slices=2
+slice[0]: 0:10 6:15 1:20 2:30
+slice[1]: 9:31 8:33 7:35 3:40 4:50 5:60
+Boundaries: 0:30
+Free list: 10 11
 )");
     }
 

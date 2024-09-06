@@ -259,21 +259,34 @@ private:
     // if uint8_t is used, max slotuse will be about 255 / 1.5 ~ 170
     using idx_t = int16_t;
 
+    struct Mapl;
+
     struct Slice {
+        Mapl *mapl;
         ReaderWriterLock lock;
         idx_t* index_array = nullptr;
-        int size;
+        int slotuse;
 
-        void init(idx_t off, idx_t startsize) {
-            size = startsize;
+        void init(Mapl *p, idx_t off, idx_t startsize) {
+            mapl = p;
+            slotuse = startsize;
             index_array = new idx_t[mapl_size];
             for (idx_t i = 0; i < startsize; ++i) {
                 index_array[i] = off + i;
             }
         }
 
+        const key_type& key(size_t s) const {
+            idx_t slot = index_array[s];
+            TLX_BTREE_ASSERT(slot >= 0 && slot < mapl->free_slot_end);
+            if (slot < leaf_slotmax)
+                return key_of_value::get(mapl->slotdatap[slot]);
+            else
+                return key_of_value::get(mapl->extra[slot - leaf_slotmax]);
+        }
+
         int get_ind(idx_t i) const {
-            TLX_BTREE_ASSERT(i < size && i >= 0);
+            TLX_BTREE_ASSERT(i < slotuse && i >= 0);
             return index_array[i];
             /*i -= initial;
             int chunk_num = i / chunk_size;
@@ -282,8 +295,8 @@ private:
         }
 
         void expand(idx_t slot_ind) {
-            index_array[size] = slot_ind;
-            size++;
+            index_array[slotuse] = slot_ind;
+            slotuse++;
         }
     } __attribute__((__aligned__(CACHE_LINE_SIZE)));
 
@@ -318,10 +331,10 @@ private:
 
             slices = new Slice[numslices];
             for (int i = 0; i < numslices - 1; i++) {
-                slices[i].init(i * slice_size, slice_size);
+                slices[i].init(this, i * slice_size, slice_size);
             }
             idx_t last_slice_off = (numslices - 1) * slice_size;
-            slices[numslices - 1].init(last_slice_off,
+            slices[numslices - 1].init(this, last_slice_off,
                                        slotuse - last_slice_off);
 
             slice_boundary = new key_type[numslices - 1];
@@ -380,6 +393,37 @@ private:
             return full;
         }
 
+        bool slice_insert(int slicenum, idx_t pos, const value_type& data) {
+            free_slot_mtx.write_lock();
+            if (free_slot_head == free_slot_end) {
+                free_slot_mtx.write_unlock();
+                return false;
+            }
+
+            idx_t new_slot_idx = free_slot_head;
+            value_type* new_slot;
+            TLX_BTREE_ASSERT(new_slot_idx < free_slot_end);
+            if (new_slot_idx < leaf_slotmax) {
+                new_slot = &slotdatap[new_slot_idx];
+                free_slot_head = *reinterpret_cast<idx_t*>(new_slot);
+            } else {
+                new_slot = &extra[new_slot_idx - leaf_slotmax];
+                free_slot_head = *reinterpret_cast<idx_t*>(new_slot);
+            }
+            free_slot_mtx.write_unlock();
+
+            idx_t* idx_ar = slices[slicenum].index_array;
+            idx_t* idx_end = idx_ar + slices[slicenum].slotuse;
+            std::copy_backward(idx_ar + pos, idx_end, idx_end + 1);
+
+            idx_ar[pos] = new_slot_idx;
+            *new_slot = data;
+
+            (slices[slicenum].slotuse)++;
+            (*slotusep)++;
+            return true;
+        }
+
         bool expand(int slice) {
             free_slot_mtx.write_lock();
             if (free_slot_head == free_slot_end) {
@@ -410,7 +454,7 @@ private:
                 return false;
             }
 
-            idx_t to_del = slice.index_array[slice.size - 1];
+            idx_t to_del = slice.index_array[slice.slotuse - 1];
             if (to_del < leaf_slotmax)
                 *reinterpret_cast<idx_t*>(&slotdatap[to_del]) =
                     free_slot_head;
@@ -419,7 +463,7 @@ private:
                     free_slot_head;
             free_slot_head = to_del;
 
-            slice.size--;
+            slice.slotuse--;
             (*slotusep)--;
             free_slot_mtx.write_unlock();
             return true;
@@ -623,12 +667,12 @@ public:
             ctx->prev_index = 0;
             for (i = 0, cur = 0;
                  i < mapl->numslices && cur < n;
-                 ++i, cur += mapl->slices[i].size) {
-                ctx->prev_index += mapl->slices[i].size;
+                 ++i, cur += mapl->slices[i].slotuse) {
+                ctx->prev_index += mapl->slices[i].slotuse;
             }
             if (cur > n) {
                 ctx->prev_slice = i - 1;
-                ctx->prev_index -= mapl->slices[i].size;
+                ctx->prev_index -= mapl->slices[i].slotuse;
             }
         }
 
@@ -639,7 +683,7 @@ public:
 
             idx_t slice_i = ctx->prev_slice + 1;
             idx_t idx = ctx->prev_index - i;
-            idx_t cur_slice_size = mapl->slices[slice_i].size;
+            idx_t cur_slice_size = mapl->slices[slice_i].slotuse;
 
             TLX_BTREE_ASSERT(idx <= cur_slice_size);
 
@@ -658,7 +702,7 @@ public:
         }
 
         const value_type& get(int slice, idx_t i) const {
-            TLX_BTREE_ASSERT(i < mapl->slices[slice].size);
+            TLX_BTREE_ASSERT(i < mapl->slices[slice].slotuse);
             idx_t idx = mapl->slices[slice].get_ind(i);
             if (idx < leaf_slotmax) {
                 return slotdata[idx];
@@ -668,7 +712,7 @@ public:
         }
 
         void set(int slice, idx_t i, const value_type& val) {
-            TLX_BTREE_ASSERT(i < mapl->slices[slice].size);
+            TLX_BTREE_ASSERT(i < mapl->slices[slice].slotuse);
             idx_t idx = mapl->slices[slice].get_ind(i);
             if (idx < leaf_slotmax)
                 slotdata[idx] = val;
@@ -681,7 +725,7 @@ public:
             for (int i = 0; i < mapl->numslices; ++i) {
                 os << "slice[" << i << "]: ";
                 const Slice& slice = mapl->slices[i];
-                for (int j = 0; j < slice.size; ++j) {
+                for (int j = 0; j < slice.slotuse; ++j) {
                     idx_t idx = slice.index_array[j];
                     if (idx < leaf_slotmax) {
                         os << idx << ":" << key_of_value::get(slotdata[idx]) << " ";
@@ -1790,7 +1834,11 @@ public:
 
     //! \}
 
+#ifdef NDEBUG
 private:
+#else
+public:
+#endif
     //! \name B+ Tree Node Binary Search Functions
     //! \{
 
@@ -2887,7 +2935,7 @@ private:
                 TLX_BTREE_ASSERT(!leaf->mapl->is_full());
 
                 unsigned short ind = 0; // searching for stuff--TODO make function w/ binary search
-                while (ind < slice.size
+                while (ind < slice.slotuse
                         && key_less(leaf->key(ind), key)) ++ind;
 
                 if (key_equal(leaf->key(ind), key)) {
@@ -2903,7 +2951,7 @@ private:
                     return {{},{},true};
                 }
 
-                for (int i = slice.size - 1; i > ind; i--) {
+                for (int i = slice.slotuse - 1; i > ind; i--) {
                     leaf->set(slice_num, i, leaf->get(slice_num, i -1));
                 }
                 leaf->set(slice_num, ind, value);
@@ -3924,7 +3972,7 @@ int cpu_id) {
                 leaf->mapl->writelock_slice(key);
 
                 unsigned short ind = 0; // searching for stuff--TODO make function w/ binary search
-                while (ind < slice.size
+                while (ind < slice.slotuse
                         && key_less(leaf->key(ind), key)) ++ind;
 
                 if (ind >= leaf->slotuse || !key_equal(leaf->key(ind), key)) {
@@ -3940,7 +3988,7 @@ int cpu_id) {
                     return restart;
                 }
 
-                for (int i = ind; i < slice.size; i++) {
+                for (int i = ind; i < slice.slotuse; i++) {
                     leaf->set(slicenum, i, leaf->get(slicenum, i + 1));
                 }
 
