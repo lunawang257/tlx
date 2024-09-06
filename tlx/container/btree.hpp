@@ -607,6 +607,12 @@ private:
             if (!mapl) lock->downgrade_lock();
         }*/
 
+        void init_mapl_key_ctx(int n, MaplKeyContext *ctx) const {
+            n; ctx;
+            //idx_t i, cur = 0;
+            //for (i = 0, cur = 0; i < cur < n;
+        }
+
         // only allow to get data in sequential manner
         const value_type& get_overall(int i, MaplKeyContext *ctx) const {
             TLX_BTREE_ASSERT(mapl);
