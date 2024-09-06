@@ -297,7 +297,7 @@ private:
         Slice* slices = nullptr;
         idx_t free_slot_head;
         ReaderWriterLock2 free_slot_mtx;
-        idx_t free_slot_end = leaf_slotmax + mapl_size;
+        const idx_t free_slot_end = leaf_slotmax + mapl_size;
         key_type* slice_boundary = nullptr;
         value_type *slotdatap;
         value_type extra[mapl_size];
@@ -320,12 +320,14 @@ private:
             for (int i = 0; i < numslices - 1; i++) {
                 slices[i].init(i * slice_size, slice_size);
             }
-            slices[numslices - 1].init((numslices - 1) * slice_size,
-                                       slotuse % slice_size);
+            idx_t last_slice_off = (numslices - 1) * slice_size;
+            slices[numslices - 1].init(last_slice_off,
+                                       slotuse - last_slice_off);
 
             slice_boundary = new key_type[numslices - 1];
             for (int i = 0; i < numslices - 1; i++) {
-                slice_boundary[i] = slotdata[slice_size * (i + 1) - 1];
+                slice_boundary[i] = key_of_value::get(
+                    slotdata[slice_size * (i + 1) - 1]);
             }
 
             // add all free slots to the free list
@@ -672,6 +674,42 @@ public:
                 slotdata[idx] = val;
             else
                 mapl->extra[idx - leaf_slotmax] = val;
+        }
+
+        void print_mapl(std::ostream& os) const {
+            os << "#slices=" << mapl->numslices << "\n";
+            for (int i = 0; i < mapl->numslices; ++i) {
+                os << "slice[" << i << "]: ";
+                const Slice& slice = mapl->slices[i];
+                for (int j = 0; j < slice.size; ++j) {
+                    idx_t idx = slice.index_array[j];
+                    if (idx < leaf_slotmax) {
+                        os << idx << ":" << key_of_value::get(slotdata[idx]) << " ";
+                    } else {
+                        os << idx << ":"
+                           << key_of_value::get(
+                               mapl->extra[idx - leaf_slotmax]) << " ";
+                    }
+                }
+                os << "\n";
+            }
+
+            os << "Boundaries: ";
+            for (int i = 0; i < mapl->numslices - 1; ++i) {
+                os << i << ':' << mapl->slice_boundary[i] << ' ';
+            }
+
+            os << "\nFree list: ";
+            idx_t idx = mapl->free_slot_head;
+            while (idx != mapl->free_slot_end) {
+                os << idx << " ";
+                if (idx < leaf_slotmax)
+                    idx = *reinterpret_cast<const idx_t*>(&slotdata[idx]);
+                else
+                    idx = *reinterpret_cast<const idx_t*>(
+                        &mapl->extra[idx - leaf_slotmax]);
+            }
+            os << "\n";
         }
     };
 
@@ -4487,20 +4525,23 @@ private:
         if (node->is_leafnode())
         {
             const LeafNode* leafnode = static_cast<const LeafNode*>(node);
+            if (leafnode->mapl) {
+                leafnode->print_mapl(os);
+            } else {
+                for (unsigned int i = 0; i < depth; i++) os << "  ";
+                os << "  leaf prev " << leafnode->prev_leaf <<
+                    " next " << leafnode->next_leaf << std::endl;
 
-            for (unsigned int i = 0; i < depth; i++) os << "  ";
-            os << "  leaf prev " << leafnode->prev_leaf <<
-                " next " << leafnode->next_leaf << std::endl;
+                for (unsigned int i = 0; i < depth; i++) os << "  ";
 
-            for (unsigned int i = 0; i < depth; i++) os << "  ";
-
-            for (unsigned short slot = 0; slot < leafnode->slotuse; ++slot)
-            {
-                // os << leafnode->key(slot) << " "
-                //    << "(data: " << leafnode->slotdata[slot] << ") ";
-                os << leafnode->key(slot) << "  ";
+                for (unsigned short slot = 0; slot < leafnode->slotuse; ++slot)
+                {
+                    // os << leafnode->key(slot) << " "
+                    //    << "(data: " << leafnode->slotdata[slot] << ") ";
+                    os << leafnode->key(slot) << "  ";
+                }
+                os << std::endl;
             }
-            os << std::endl;
         }
         else
         {

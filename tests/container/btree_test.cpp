@@ -2441,6 +2441,28 @@ typedef tlx::btree_set<
 
 typedef test_set_type::btree_impl::LeafNode test_leaf_type;
 
+// Function to trim leading/trailing spaces and empty lines from a string
+std::string trim(const std::string& input) {
+    std::stringstream ss(input);
+    std::string line, result;
+
+    // Process each line
+    while (std::getline(ss, line)) {
+        // Find the first non-space character (leading space trim)
+        size_t start = line.find_first_not_of(' ');
+
+        // Find the last non-space character (trailing space trim)
+        size_t end = line.find_last_not_of(' ');
+
+        if (start != std::string::npos && end != std::string::npos) {
+            // Append the trimmed line to result
+            result += line.substr(start, end - start + 1) + '\n';
+        }
+    }
+
+    return result;
+}
+
 void set_leaf_data(test_leaf_type *leaf,
                    const std::vector<val_type>& v) {
     TLX_BTREE_ASSERT(v.size() < test_set_type::btree_impl::leaf_slotmax);
@@ -2448,17 +2470,73 @@ void set_leaf_data(test_leaf_type *leaf,
         leaf->slotdata[i] = v[i];
     }
     leaf->slotuse = v.size();
-
-    leaf->maplize();
 }
+
+void verify_mapl(const char *testname,
+                 const test_leaf_type& leaf,
+                 const char *expected_c) {
+    std::stringstream ss;
+    leaf.print_mapl(ss);
+    std::string actual = trim(ss.str());
+    std::string expected = trim(expected_c);
+    if (actual != expected) {
+        std::cerr << "Mapl leaf content wrong\nExpected:\n"
+                  << expected
+                  << "\nActual:\n"
+                  << actual;
+        TLX_BTREE_ASSERT(false);
+    }
+    std::cout << "[PASS] " << testname << "\n" << std::flush;
+}
+
+#define VERIFY_EQ(a, b)                             \
+    {                                               \
+        auto res_a = (a);                               \
+        if (res_a != (b)) {                             \
+            std::cerr << ""#a << "=" << res_a << "\n"   \
+                      << "expected: " << (b) << "\n";   \
+            TLX_BTREE_ASSERT(false);                    \
+        }                                               \
+    }
 
 void test_mapl() {
-    test_leaf_type leaf;
+    {
+        test_leaf_type leaf;
+        set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        leaf.maplize();
 
-    set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        verify_mapl("aligned", leaf, R"(
+#slices=2
+slice[0]: 0:10 1:20 2:30
+slice[1]: 3:40 4:50 5:60
+Boundaries: 0:30
+Free list: 6 7 8 9 10 11
+)");
+    }
 
-    leaf.maplize();
+    {
+        test_leaf_type leaf;
+        set_leaf_data(&leaf, {10, 20, 30, 40, 50});
+        leaf.maplize();
+
+        verify_mapl("unaligned", leaf, R"(
+#slices=2
+slice[0]: 0:10 1:20 2:30
+slice[1]: 3:40 4:50
+Boundaries: 0:30
+Free list: 5 6 7 8 9 10 11
+)");
+
+        VERIFY_EQ(leaf.mapl->get_slicenum(5), 0);
+        VERIFY_EQ(leaf.mapl->get_slicenum(10), 0);
+        VERIFY_EQ(leaf.mapl->get_slicenum(30), 0);
+        VERIFY_EQ(leaf.mapl->get_slicenum(35), 1);
+        VERIFY_EQ(leaf.mapl->get_slicenum(40), 1);
+        VERIFY_EQ(leaf.mapl->get_slicenum(80), 1);
+    }
+    std::cout << "[PASS] " << __func__ << "()\n";
 }
+
 #endif
 
 int main() {
