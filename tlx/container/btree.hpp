@@ -3384,6 +3384,9 @@ int cpu_id) {
                     TLX_BTREE_ASSERT(leaf == root_);
                     TLX_BTREE_ASSERT(leaf->slotuse == 0);
 
+                    if constexpr (concurrent) {
+                        leaf->mutex_.write_unlock();
+                    }
                     free_node(root_);
 
                     root_ = leaf = nullptr;
@@ -3393,9 +3396,6 @@ int cpu_id) {
                     TLX_BTREE_ASSERT(size() == 1);
                     TLX_BTREE_ASSERT(0 + stats_.leaves == 0);
                     TLX_BTREE_ASSERT(0 + stats_.inner_nodes == 0);
-                    if constexpr (concurrent) {
-                        leaf->mutex_.write_unlock();
-                    }
                     return {btree_ok, false};
                 }
                 // case : if both left and right leaves would underflow in case
