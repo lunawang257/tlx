@@ -2422,6 +2422,45 @@ void test_multithread() {
     }
 }
 
+#ifdef NDEBUG
+
+void test_mapl() {}
+
+#else
+
+typedef unsigned int val_type;
+const int TestSlotMax = 8;
+typedef tlx::btree_set<
+    val_type, std::less<val_type>,
+    struct tlx::btree_default_traits<
+        val_type, val_type,
+        TestSlotMax * (sizeof(val_type) + sizeof(void*)),
+        TestSlotMax * sizeof(val_type)>,
+    std::allocator<val_type> /* Allocator */,
+    true /* concurrent */ > test_set_type;
+
+typedef test_set_type::btree_impl::LeafNode test_leaf_type;
+
+void set_leaf_data(test_leaf_type *leaf,
+                   const std::vector<val_type>& v) {
+    TLX_BTREE_ASSERT(v.size() < test_set_type::btree_impl::leaf_slotmax);
+    for (size_t i = 0; i < v.size(); ++i) {
+        leaf->slotdata[i] = v[i];
+    }
+    leaf->slotuse = v.size();
+
+    leaf->maplize();
+}
+
+void test_mapl() {
+    test_leaf_type leaf;
+
+    set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+
+    leaf.maplize();
+}
+#endif
+
 int main() {
     std::cout << "seed: " << seed << std::endl;
     std::cout << "pid: " << getpid() << std::endl;
@@ -2437,6 +2476,9 @@ int main() {
         test_bulkload();
     }
     // */
+
+    test_mapl();
+
     if (multithread) {
         int total_passes = 100000;
         double ts_start = tlx::timestamp();

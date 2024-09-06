@@ -247,7 +247,12 @@ public:
 private:
     //! \name Helper classes for MAPL Leaf
     //! \{
+#ifdef NDEBUG
     static const unsigned short slice_size = 8;
+#else
+    // use small number to simplify unit test
+    static const unsigned short slice_size = 3;
+#endif
     static const int extra_div = 2;
     static const int mapl_size = static_cast<int>(leaf_slotmax / extra_div);
 
@@ -304,7 +309,7 @@ private:
             free_slot_head = slot;
         }*/
 
-        Mapl(value_type* slotdata, const unsigned short* node_slotuse) {
+        Mapl(value_type* slotdata, unsigned short* node_slotuse) {
             slotdatap = slotdata;
             slotusep = node_slotuse;
             auto slotuse = *node_slotuse;
@@ -327,7 +332,7 @@ private:
             for (auto i = slotuse; i < free_slot_end; i++) {
                 value_type& val = i < leaf_slotmax ?
                     slotdata[i] : extra[i - leaf_slotmax];
-                *static_cast<idx_t*>(&val) = i + 1;
+                *reinterpret_cast<idx_t*>(&val) = i + 1;
             }
             free_slot_head = slotuse;
         }
@@ -421,7 +426,11 @@ private:
 
     //! \}
 
+#ifdef NDEBUG
 private:
+#else
+public:
+#endif
     //! \name Node Classes for In-Memory Nodes
     //! \{
 
@@ -560,7 +569,7 @@ private:
 
         void maplize() {
             TLX_BTREE_ASSERT(!mapl);
-            mapl = new Mapl(slotdata, &node::slotuse);
+            mapl = new Mapl(slotdata, &(node::slotuse));
         }
 
         void unmaplize() {
@@ -608,9 +617,17 @@ private:
         }*/
 
         void init_mapl_key_ctx(int n, MaplKeyContext *ctx) const {
-            n; ctx;
-            //idx_t i, cur = 0;
-            //for (i = 0, cur = 0; i < cur < n;
+            idx_t i, cur = 0;
+            ctx->prev_index = 0;
+            for (i = 0, cur = 0;
+                 i < mapl->numslices && cur < n;
+                 ++i, cur += mapl->slices[i].size) {
+                ctx->prev_index += mapl->slices[i].size;
+            }
+            if (cur > n) {
+                ctx->prev_slice = i - 1;
+                ctx->prev_index -= mapl->slices[i].size;
+            }
         }
 
         // only allow to get data in sequential manner
