@@ -2045,6 +2045,14 @@ enum LogType {
     LOG_LOCK,
     LOG_MEM_OP,
     LOG_RETRY,
+    LOG_OP,
+};
+
+enum OpType {
+    OP_INSERT,
+    OP_ERASE,
+    OP_FIND,
+    OP_END
 };
 
 struct LogInfo {
@@ -2071,12 +2079,32 @@ struct LogInfo {
             int num_inner;
             int num_leaves;
         };
+        struct { // LOG_OP
+            OpType op_type;
+            int op_key;
+            int op_res;
+            int set_size;
+        };
     };
 };
 
 enum {
     TOTAL_DEBUG_LOG_INFO = 10000
 };
+
+inline std::string op_type_to_string(int op) {
+    switch (op) {
+        case OP_INSERT:
+            return "insert";
+        case OP_ERASE:
+            return "erase";
+        case OP_FIND:
+            return "find";
+        default:
+            return "unknown_op_type";
+    }
+}
+
 std::vector<LogInfo> debug_log_info(TOTAL_DEBUG_LOG_INFO);
 std::atomic<size_t> cur_debug_log_info = 0;
 
@@ -2103,6 +2131,22 @@ void log_retry() {
     LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
     log_info.logtype = LOG_RETRY;
     get_stack_addr(log_info.addrs);
+}
+
+void log_op(OpType op, int key, int res, int set_size) {
+    if (debug_log_info.empty())
+        return;
+
+    size_t idx = cur_debug_log_info.fetch_add(
+        1, std::memory_order_relaxed);
+
+    LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
+    log_info.logtype = LOG_OP;
+    log_info.timestamp = std::chrono::high_resolution_clock::now();
+    log_info.op_type = op;
+    log_info.op_key = key;
+    log_info.op_res = res;
+    log_info.set_size = set_size;
 }
 
 void log_mem_op(MemOpType optype, void *node,
@@ -2189,7 +2233,7 @@ const char *MemOpName[] = {
     "free leaf"
 };
 
-bool print_lock_record(const LogInfo& info) {
+bool print_log_record(const LogInfo& info) {
     std::lock_guard<std::mutex> printlock(printmtx);
     switch (info.logtype) {
     case LOG_LOCK:
@@ -2229,6 +2273,14 @@ bool print_lock_record(const LogInfo& info) {
                   << stack_sym(info.addrs)
                   << std::endl;
         break;
+    case LOG_OP:
+        std::cout << format_time(info.timestamp)
+                  << " thread " << info.threadidx
+                  << " " << op_type_to_string(info.op_type)
+                  << " res=" << info.op_res
+                  << " set_size=" << info.set_size
+                  << std::endl;
+        break;
     default:
         return false;
     }
@@ -2239,13 +2291,13 @@ void print_all_lock_records() {
   size_t i;
   size_t cur_index = cur_debug_log_info % TOTAL_DEBUG_LOG_INFO;
   for (i = cur_index; i < debug_log_info.size(); ++i) {
-      if (!print_lock_record(debug_log_info[i])) {
+      if (!print_log_record(debug_log_info[i])) {
           break;
       }
   }
 
   for (i = 0; i < cur_index; ++i) {
-      print_lock_record(debug_log_info[i]);
+      print_log_record(debug_log_info[i]);
   }
 }
 
@@ -2361,7 +2413,7 @@ void print(const char* op, int val, int id) {
         << " value: " << val << std::endl;
 }
 
-void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int delete_prob, int id) {
+void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
     // TODO std::mt19937 gen(seed + id);
     // std::mt19937 gen(std::random_device{}());
     std::mt19937 gen(seed + id);
@@ -2382,6 +2434,7 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int delete_
             bool succeeded = my_set.insert(key).second;
             die_unless(succeeded != truth_source[key].in_set);
             truth_source[key].in_set = true;
+            log_op(OP_INSERT, key, succeeded, my_set.size());
         }
         else if (operation < insert_prob + lookup_prob)
         {
@@ -2390,14 +2443,16 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int delete_
             // using exists because this currently doesn't support iterators
             bool found = my_set.exists(key);
             die_unless(found == truth_source[key].in_set);
+            log_op(OP_FIND, key, found, my_set.size());
         }
-        else if (operation < insert_prob + lookup_prob + delete_prob)
+        else
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("erase", key, id);
             bool erased = my_set.erase(key);
             die_unless(erased == truth_source[key].in_set);
             truth_source[key].in_set = false;
+            log_op(OP_ERASE, key, erased, my_set.size());
         }
         //usleep(10 * 1000 * 1000ull); // sleep for debugging
     }
@@ -2409,14 +2464,13 @@ void test_multithread() {
     // Probability out of 100
     int insert_prob = 33;
     int lookup_prob = 33;
-    int delete_prob = 34;
     cur_numthreads = NUM_THREADS; // for debug printing TODO
     // Register signal handler for SIGUSR1
     std::signal(SIGUSR1, signal_handler);
 
     std::vector<std::thread> threads;
     for (int i = 0; i < NUM_THREADS; ++i) {
-        threads.emplace_back(thread_func, std::ref(my_multi_thread_set), insert_prob, lookup_prob, delete_prob, i);
+        threads.emplace_back(thread_func, std::ref(my_multi_thread_set), insert_prob, lookup_prob, i);
     }
     for (auto& th : threads) {
         th.join();

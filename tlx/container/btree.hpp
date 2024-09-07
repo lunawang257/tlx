@@ -663,15 +663,16 @@ private:
         bool try_upgrade_release_on_fail(int cpuid __attribute__((unused))) {
             log_lock(nodep, lock_type_try_upgrade_release_on_fail);
             lock_type lock(mutex);
-            delfromread(false);
-            addtowrite();
 
             TLX_BTREE_ASSERT(!haswriter);
             numreader--;
+            delfromread(false);
             if (numreader > 0) {
                 log_lock(nodep, lock_type_try_upgrade_failed);
+                log_lock(nodep, lock_type_read_unlock);
                 return false;
             }
+            addtowrite();
             haswriter = true;
             log_lock(nodep, lock_type_try_upgrade_got);
             DBGPRT();
@@ -4068,7 +4069,6 @@ private:
                     root_ = inner->childid[0];
 
                     inner->slotuse = 0;
-                    free_node(inner);
                     if (concurrent) {
                         if (!optimism) {
                             inner->mutex_.write_unlock();
@@ -4078,6 +4078,7 @@ private:
                             }
                         }
                     }
+                    free_node(inner);
                     return {btree_ok, false};
                 }
                 // case : if both left and right leaves would underflow in case
