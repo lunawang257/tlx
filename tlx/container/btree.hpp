@@ -3217,6 +3217,9 @@ private:
                 }
                 unsigned short slot = find_lower(leaf, key);
 
+                // never append to leaf since it means the parent boundary key must be changed
+                //die_unless(slot < leaf->slotuse);
+
                 if (!allow_duplicates &&
                     slot < leaf->slotuse && key_equal(key, leaf->key(slot))) {
                     if constexpr (concurrent) {

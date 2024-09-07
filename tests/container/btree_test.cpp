@@ -2069,6 +2069,7 @@ struct LogInfo {
     void *addrs[NUM_STACK_TO_PRINT];
     int threadidx;
     void *node;
+    unsigned short min, max;
 
     union {
         struct { // LOG_LOCK
@@ -2219,6 +2220,8 @@ void log_lock(void* node __attribute__((unused)),
                 set_type::btree_impl::LeafNode *leafp =
                     static_cast<set_type::btree_impl::LeafNode *>(nodep);
 
+                log_info.min = leafp->slotdata[0];
+                log_info.max = leafp->slotdata[leafp->slotuse - 1];
                 log_info.numreader = leafp->mutex_.numreader;
                 log_info.haswriter = leafp->mutex_.haswriter;
                 log_info.readerswaiting = leafp->mutex_.readerswaiting;
@@ -2227,6 +2230,8 @@ void log_lock(void* node __attribute__((unused)),
             } else {
                 set_type::btree_impl::InnerNode *innerp =
                     static_cast<set_type::btree_impl::InnerNode *>(nodep);
+                log_info.min = innerp->slotkey[0];
+                log_info.max = innerp->slotkey[innerp->slotuse - 1];
                 log_info.numreader = innerp->mutex_.numreader;
                 log_info.haswriter = innerp->mutex_.haswriter;
                 log_info.readerswaiting = innerp->mutex_.readerswaiting;
@@ -2261,6 +2266,7 @@ bool print_log_record(const LogInfo& info) {
         std::cout << format_time(info.timestamp)
                   << " thread " << info.threadidx
                   << " node " << info.node
+                  << "[" << info.min << "," << info.max << "]"
                   << " (g" << info.gen
                   << " c" << info.slotuse
                   << " L" << info.level
