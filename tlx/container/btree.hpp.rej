@@ -1,228 +1,27 @@
-@@ -2739,49 +3007,97 @@
-
-         if (c->is_leafnode())
-         {
--            TLX_BTREE_ASSERT(c->lock->writelocked());
-             LeafNode* child = static_cast<LeafNode*>(c);
--            if (child->is_full())
--            {
--                int oldgen = parent->gen;
--                child->lock->write_unlock();
--                parent->lock->upgradelock();
-+            if (child->mapl) {
-+                TLX_BTREE_ASSERT(child->lock->readlocked());
-+                if (child->mapl->is_full()) {
-+                    int oldgen = parent->gen;
-+                    child->lock->read_unlock();
-+                    parent->lock->upgradelock();
-
--                if (parent->gen != oldgen) {
--                    parent->lock->write_unlock();
--                    return retry;
--                }
-+                    if (parent->gen != oldgen) {
-+                        parent->lock->write_unlock();
-+                        return retry;
-+                    }
-
--                child->lock->writelock();
-+                    child->lock->writelock();
-
--                if (parent->childid[slot] != child
--                        || !child->is_full()) {
--                    parent->lock->write_unlock();
--                    child->lock->write_unlock();
--                    return retry;
-+                    if (parent->childid[slot] != child
-+                            || !child->is_full()) {
-+                        parent->lock->write_unlock();
-+                        child->lock->write_unlock();
-+                        return retry;
-+                    }
-+
-+                    key_type newkey = key_type();
-+                    LeafNode* newleaf = nullptr;
-+
-+                    split_mapl_leaf(child, &newkey, &newleaf);
-+
-+                    child->gen++;
-+                    parent->gen++;
-+
-+                    std::copy_backward(
-+                        parent->slotkey + slot, parent->slotkey + parent->slotuse,
-+                        parent->slotkey + parent->slotuse + 1);
-+                    std::copy_backward(
-+                        parent->childid + slot, parent->childid + parent->slotuse + 1,
-+                        parent->childid + parent->slotuse + 2);
-+
-+                    parent->slotkey[slot] = newkey;
-+                    parent->childid[slot + 1] = newleaf;
-+                    parent->slotuse++;
-+
-+                    parent->lock->downgrade_lock();
-+                    return did_split;
-                 }
-+            }
-+            else // !child->mapl
-+            {
-+                TLX_BTREE_ASSERT(child->lock->writelocked());
-
--                key_type newkey = key_type();
--                LeafNode* newleaf = nullptr;
-+                if (child->is_full())
-+                {
-+                    int oldgen = parent->gen;
-+                    child->lock->write_unlock();
-+                    parent->lock->upgradelock();
-
--                split_leaf_node(child, &newkey, &newleaf);
-+                    if (parent->gen != oldgen) {
-+                        parent->lock->write_unlock();
-+                        return retry;
-+                    }
-
--                child->gen++;
--                parent->gen++;
-+                    child->lock->writelock();
-
--                std::copy_backward(
--                    parent->slotkey + slot, parent->slotkey + parent->slotuse,
--                    parent->slotkey + parent->slotuse + 1);
--                std::copy_backward(
--                    parent->childid + slot, parent->childid + parent->slotuse + 1,
--                    parent->childid + parent->slotuse + 2);
-+                    if (parent->childid[slot] != child
-+                            || !child->is_full()) {
-+                        parent->lock->write_unlock();
-+                        child->lock->write_unlock();
-+                        return retry;
-+                    }
-
--                parent->slotkey[slot] = newkey;
--                parent->childid[slot + 1] = newleaf;
--                parent->slotuse++;
-+                    key_type newkey = key_type();
-+                    LeafNode* newleaf = nullptr;
-
--                parent->lock->downgrade_lock();
--                return did_split;
-+                    split_leaf_node(child, &newkey, &newleaf);
-+
-+                    child->gen++;
-+                    parent->gen++;
-+
-+                    std::copy_backward(
-+                        parent->slotkey + slot, parent->slotkey + parent->slotuse,
-+                        parent->slotkey + parent->slotuse + 1);
-+                    std::copy_backward(
-+                        parent->childid + slot, parent->childid + parent->slotuse + 1,
-+                        parent->childid + parent->slotuse + 2);
-+
-+                    parent->slotkey[slot] = newkey;
-+                    parent->childid[slot + 1] = newleaf;
-+                    parent->slotuse++;
-+
-+                    parent->lock->downgrade_lock();
-+                    return did_split;
-+                }
-             }
+@@ -419,9 +473,9 @@
          }
-         else
-@@ -2715,38 +3063,75 @@
+     };
 
-         // checking edge case (must do this when root_ is locked)
-         if (root_->slotuse == 0) {
-+            TLX_BTREE_ASSERT(root_->level == 1);
-             root_->childid[0]->lock->readlock();
-             LeafNode* child = static_cast<LeafNode*>(root_->childid[0]);
+     //! \}
 
-             if (child->slotuse == 1) {
--                if (key_equal(child->key(0), key)) {
--                    child->lock->read_unlock();
-+                if (!child->mapl) {
-+                    if (key_equal(child->key(0), key)) {
-+                        child->lock->read_unlock();
-+
-+                        int oldgen = root_->gen;
-+                        root_->lock->upgradelock();
-+                        if (root_->gen != oldgen) {
-+                            root_->lock->write_unlock();
-+                            return restart;
-+                        }
-+                        child->lock->writelock();
+-private:
++public:
+     //! \name Node Classes for In-Memory Nodes
+     //! \{
 
--                    int oldgen = root_->gen;
--                    root_->lock->upgradelock();
--                    if (root_->gen != oldgen) {
--                        root_->lock->write_unlock();
--                        return restart;
--                    }
--                    child->lock->writelock();
-+                        if (child->slotuse != 1) {
-+                            child->lock->write_unlock();
-+                            root_->lock->write_unlock();
-+                            return restart;
-+                        }
-+
-+                        free_node(child);
-+                        root_->gen++;
-+                        root_->level = 0;
-+                        stats_.size--;
+@@ -2902,14 +3230,14 @@
 
--                    if (child->slotuse != 1) {
--                        child->lock->write_unlock();
-                         root_->lock->write_unlock();
--                        return restart;
-+                        return btree_ok;
-+                    } else {
-+                        root_->lock->read_unlock();
-+                        root_->childid[0]->lock->read_unlock();
-+                        return btree_not_found;
-                     }
-+                }
-+                else // child->mapl != nullptr
-+                {
-+                    child->mapl->readlock_slice(key);
-+                    if (key_equal(child->key(0), key)) {
-+                        child->mapl->read_unlock_slice(key);
-+                        child->lock->read_unlock();
-+
-+                        int oldgen = root_->gen;
-+                        root_->lock->upgradelock();
-+                        if (root_->gen != oldgen) {
-+                            root_->lock->write_unlock();
-+                            return restart;
-+                        }
-+                        child->lock->writelock();
-
--                    free_node(child);
--                    root_->gen++;
--                    root_->level = 0;
--                    stats_.size--;
-+                        if (child->slotuse != 1) {
-+                            child->lock->write_unlock();
-+                            root_->lock->write_unlock();
-+                            return restart;
-+                        }
-
--                    root_->lock->write_unlock();
--                    return btree_ok;
--                } else {
--                    root_->lock->read_unlock();
--                    root_->childid[0]->lock->read_unlock();
--                    return btree_not_found;
-+                        free_node(child);
-+                        root_->gen++;
-+                        root_->level = 0;
-+                        stats_.size--;
-+
-+                        root_->lock->write_unlock();
-+                        return btree_ok;
-+                    } else {
-+                        root_->lock->read_unlock();
-+                        root_->childid[0]->lock->read_unlock();
-+                        return btree_not_found;
-+                    }
+                 if (key_equal(leaf->key(ind), key)) {
+                     slice.lock.write_unlock();
+-                    leaf->mutex_.read_unlock();
++                    leaf->mutex_.read_unlock(cpu_id);
+                     return std::tuple<iterator, bool, bool>(iterator(leaf, ind), false, false);
                  }
-             } else {
-                 root_->childid[0]->lock->read_unlock();
+
+                 bool successful = leaf->mapl->expand(slice_num);
+                 if (!successful) {
+                     slice.lock.write_unlock();
+-                    leaf->mutex_.read_unlock();
++                    leaf->mutex_.read_unlock(cpu_id);
+                     return {{},{},true};
+                 }

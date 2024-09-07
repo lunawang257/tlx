@@ -2031,7 +2031,7 @@ std::mutex printmtx;
 int seqnum = 0;
 set_type my_multi_thread_set;
 
-const int NUM_THREADS = 1;
+const int NUM_THREADS = 2;
 size_t cur_numthreads = NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;
@@ -2061,11 +2061,10 @@ struct LogInfo {
             unsigned short slotuse;
             unsigned int numreader;
             bool haswriter;
-            int check_writer;
             int writerswaiting;
             int readerswaiting;
             int upgradewaiting;
-            int lock_type;
+            int lock_type_enum;
         };
         struct { // LOG_MEM_OP
             MemOpType mem_op_type;
@@ -2128,59 +2127,55 @@ void log_mem_op(MemOpType optype, void *node,
 }
 
 void log_lock(void* node __attribute__((unused)),
-              int lock_type __attribute__((unused))) {
-#if 0
-    if (cur_numthreads > 1 && local_debug_info.tinfo) {
-        local_debug_info.tinfo->cur_node = node;
-        local_debug_info.tinfo->op = lock_type;
-
+              int lock_type_enum __attribute__((unused))) {
+#if 1
+    auto& tinfo = local_debug_info.tinfo;
+    if (cur_numthreads >= 1) {
         size_t idx = cur_debug_log_info.fetch_add(
             1, std::memory_order_relaxed);
 
         LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
+        if (tinfo) {
+            tinfo->cur_node = node;
+            tinfo->op = lock_type_enum;
+            log_info.threadidx = tinfo->threadidx;
+        }
         log_info.logtype = LOG_LOCK;
         log_info.timestamp = std::chrono::high_resolution_clock::now();
-        log_info.threadidx = local_debug_info.tinfo->threadidx;
         log_info.node = node;
 
         set_type::btree_impl::node *nodep =
             static_cast<set_type::btree_impl::node *>(node);
-        log_info.gen = nodep->gen;
-        log_info.level = nodep->level;
-        log_info.slotuse = nodep->slotuse;
-
         log_info.numreader = 0;
         log_info.haswriter = 0;
         log_info.readerswaiting = 0;
         log_info.writerswaiting = 0;
         log_info.upgradewaiting = 0;
 
-        if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
-            set_type::btree_impl::LeafNode *leafp =
-                static_cast<set_type::btree_impl::LeafNode *>(nodep);
-            if (leafp->lock) {
-                log_info.numreader = leafp->lock->numreader;
-                log_info.haswriter = leafp->lock->haswriter;
-                log_info.check_writer = leafp->lock->haswriter ||
-                    leafp->lock->writerswaiting ||
-                    leafp->lock->upgradewaiting;
-                log_info.readerswaiting = leafp->lock->readerswaiting;
-                log_info.writerswaiting = leafp->lock->writerswaiting;
-                log_info.upgradewaiting = leafp->lock->upgradewaiting;
-            }
-        } else {
-            set_type::btree_impl::InnerNode *innerp =
-                static_cast<set_type::btree_impl::InnerNode *>(nodep);
-            if (innerp->lock) {
-                log_info.numreader = innerp->lock->numreader.get();
-                log_info.haswriter = innerp->lock->haswriter;
-                log_info.check_writer = innerp->lock->check_writer.test();
-                log_info.readerswaiting = innerp->lock->readerswaiting;
-                log_info.writerswaiting = innerp->lock->writerswaiting;
-                log_info.upgradewaiting = innerp->lock->upgradewaiting;
+        log_info.level = nodep ? nodep->level : -1;
+        log_info.slotuse = nodep ? nodep->slotuse : -1;
+
+        if (nodep) {
+            if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
+                set_type::btree_impl::LeafNode *leafp =
+                    static_cast<set_type::btree_impl::LeafNode *>(nodep);
+
+                log_info.numreader = leafp->mutex_.numreader;
+                log_info.haswriter = leafp->mutex_.haswriter;
+                log_info.readerswaiting = leafp->mutex_.readerswaiting;
+                log_info.writerswaiting = leafp->mutex_.writerswaiting;
+                log_info.upgradewaiting = leafp->mutex_.upgradewaiting;
+            } else {
+                set_type::btree_impl::InnerNode *innerp =
+                    static_cast<set_type::btree_impl::InnerNode *>(nodep);
+                log_info.numreader = innerp->mutex_.numreader;
+                log_info.haswriter = innerp->mutex_.haswriter;
+                log_info.readerswaiting = innerp->mutex_.readerswaiting;
+                log_info.writerswaiting = innerp->mutex_.writerswaiting;
+                log_info.upgradewaiting = innerp->mutex_.upgradewaiting;
             }
         }
-        log_info.lock_type = lock_type;
+        log_info.lock_type_enum = lock_type_enum;
 
         get_stack_addr(log_info.addrs);
     }
@@ -2194,12 +2189,13 @@ const char *MemOpName[] = {
     "free leaf"
 };
 
-void print_lock_record(const LogInfo& info) {
+bool print_lock_record(const LogInfo& info) {
     std::lock_guard<std::mutex> printlock(printmtx);
     switch (info.logtype) {
     case LOG_LOCK:
-        if (info.node == 0) return;
-
+        if (info.lock_type_enum == 0) {
+            return false;
+        }
         std::cout << format_time(info.timestamp)
                   << " thread " << info.threadidx
                   << " node " << info.node
@@ -2208,12 +2204,11 @@ void print_lock_record(const LogInfo& info) {
                   << " L" << info.level
                   << ") (r" << info.numreader
                   << "|w" << info.haswriter
-                  << "|cw" << info.check_writer
                   << " waiter:r" << info.readerswaiting
                   << "|w" << info.writerswaiting
                   << "|u" << info.upgradewaiting
                   << ") "
-                  << lock_type_to_string(info.lock_type)
+                  << lock_type_to_string(info.lock_type_enum)
                   << " "
                   << stack_sym(info.addrs)
                   << std::endl;
@@ -2234,18 +2229,23 @@ void print_lock_record(const LogInfo& info) {
                   << stack_sym(info.addrs)
                   << std::endl;
         break;
+    default:
+        return false;
     }
+    return true;
 }
 
 void print_all_lock_records() {
   size_t i;
   size_t cur_index = cur_debug_log_info % TOTAL_DEBUG_LOG_INFO;
   for (i = cur_index; i < debug_log_info.size(); ++i) {
-    print_lock_record(debug_log_info[i]);
+      if (!print_lock_record(debug_log_info[i])) {
+          break;
+      }
   }
 
   for (i = 0; i < cur_index; ++i) {
-    print_lock_record(debug_log_info[i]);
+      print_lock_record(debug_log_info[i]);
   }
 }
 
@@ -2363,7 +2363,8 @@ void print(const char* op, int val, int id) {
 
 void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int delete_prob, int id) {
     // TODO std::mt19937 gen(seed + id);
-    std::mt19937 gen(std::random_device{}());
+    // std::mt19937 gen(std::random_device{}());
+    std::mt19937 gen(seed + id);
     std::uniform_int_distribution<> dist(0, 99);
     std::uniform_int_distribution<> key_dist(0, MAX_KEY - 1);
 
@@ -2509,7 +2510,7 @@ void slice_insert(test_leaf_type *leaf, val_type key) {
 
 void test_mapl() {
     {
-        test_leaf_type leaf;
+        test_leaf_type leaf(nullptr);
         set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
@@ -2562,7 +2563,7 @@ Free list: 10 11
     }
 
     {
-        test_leaf_type leaf;
+        test_leaf_type leaf(nullptr);
         set_leaf_data(&leaf, {10, 20, 30, 40, 50});
         leaf.maplize();
 

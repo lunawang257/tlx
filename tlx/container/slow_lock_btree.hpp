@@ -37,6 +37,7 @@
 #include <tlx/container/ParallelTools/Lock.hpp>
 
 #include <tlx/container/btree.hpp>
+#include <lock_type.hpp>
 
 //#define STD_LOCK
 #define FAST_LOCK
@@ -63,37 +64,6 @@ extern std::string format_current_time(void);
 
 // Thread-local storage for each thread's debug information
 thread_local thread_debug_info local_debug_info;
-
-thread_local int local_thread_id;
-
-enum lock_requirement {
-    lock_all,
-    lock_root_only,
-    lock_no_root_only,
-    lock_none
-};
-
-enum lock_type {
-    lock_type_read = 1,
-    lock_type_read_notify_upgrader,
-    lock_type_read_notify_writer,
-    lock_type_read_wait,
-    lock_type_read_got,
-    lock_type_write,
-    lock_type_write_got,
-    lock_type_upgrade,
-    lock_type_upgrade_wait,
-    lock_type_upgrade_got,
-    lock_type_downgrade,
-    lock_type_downgrade_notify_reader,
-    lock_type_read_unlock,
-    lock_type_read_unlock_notify_upgrader,
-    lock_type_read_unlock_notify_writer,
-    lock_type_write_unlock,
-    lock_type_write_unlock_notify_upgrader,
-    lock_type_write_unlock_notify_writer,
-    lock_type_write_unlock_notify_reader,
-};
 
 enum { MAX_CPU = 6 }; // 6
 
@@ -132,6 +102,12 @@ inline std::string lock_type_to_string(int lt) {
             return "read_unlock_t_upgrader";
         case lock_type_read_unlock_notify_writer:
             return "read_unlock_t_writer";
+        case lock_type_try_upgrade_release_on_fail:
+            return "lock_type_try_upgrade_release_on_fail";
+        case lock_type_try_upgrade_failed:
+            return "lock_type_try_upgrade_failed";
+        case lock_type_try_upgrade_got:
+            return "lock_type_try_upgrade_got";
         case lock_type_write_unlock:
             return "write_unlock";
         case lock_type_write_unlock_notify_upgrader:
@@ -433,37 +409,7 @@ private:
     pthread_cond_t cond_;
 };
 
-extern std::mutex printmtx;
-
-enum MemOpType {
-  ALLOC_INNER,
-  ALLOC_LEAF,
-  FREE_INNER,
-  FREE_LEAF,
-};
-
 extern size_t cur_numthreads;
-
-extern const bool debug_print;
-
-#if defined(TLX_BTREE_TEST) && defined(TLX_BTREE_DEBUG) && !defined(NDEBUG)
-
-extern void log_lock(void *node, int lock_type);
-extern void log_mem_op(MemOpType optype,void *node, int num_inner, int num_leaves);
-extern void log_retry(void);
-
-#define VERIFY_NODE(verify, treep, nodep)       \
-    if (verify) treep->verify_one_node(nodep);
-
-#else
-
-#define log_lock(node, lock_type)
-#define log_mem_op(optype, node, num_inner, num_leaves)
-#define log_retry()
-#define before_assert()
-#define VERIFY_NODE(verify, treep, nodep)
-
-#endif
 
 namespace tlx {
 
@@ -472,8 +418,6 @@ namespace tlx {
 //! \defgroup tlx_container_btree B+ Trees
 //! B+ tree variants
 //! \{
-
-extern int seq; // TODO delete
 
 #define TAKE_LOCK(isleaf, node, func)                                   \
     do {                                                                \
@@ -660,6 +604,46 @@ public:
 private:
 public: // XXX
     struct node;
+
+private:
+#ifdef TLX_BTREE_DEBUG
+
+    void verify_one_node(const node* n) const {
+        if (root_->level == 0) {
+            tlx_die_unless(root_->slotuse == 0);
+            return;
+        }
+
+        if (n->is_leafnode())
+        {
+            const LeafNode* leaf = static_cast<const LeafNode*>(n);
+
+            tlx_die_unless(root_->level <= 1 || leaf->slotuse >= leaf_slotmin - 1);
+            //tlx_die_unless(leaf->slotuse > 0);
+
+            for (unsigned short slot = 0; slot < leaf->slotuse - 1; ++slot)
+            {
+                tlx_die_unless(
+                    key_lessequal(leaf->key(slot), leaf->key(slot + 1)));
+            }
+        }
+        else // !n->is_leafnode()
+        {
+            const InnerNode* inner = static_cast<const InnerNode*>(n);
+
+            tlx_die_unless(inner == root_ || inner->slotuse >= inner_slotmin - 1);
+
+            for (unsigned short slot = 0; slot < inner->slotuse - 1; ++slot)
+            {
+                tlx_die_unless(
+                    key_lessequal(inner->key(slot), inner->key(slot + 1)));
+            }
+        }
+    }
+
+#else
+    void verify_one_node(const node* n __attribute__((unused))) const { }
+#endif
 
 public:
     //! \name Lock Helper Struct
@@ -4965,45 +4949,6 @@ public:
             verify_leaflinks();
         }
     }
-
-#ifdef TLX_BTREE_DEBUG
-
-    void verify_one_node(const node* n) const {
-        if (root_->level == 0) {
-            tlx_die_unless(root_->slotuse == 0);
-            return;
-        }
-
-        if (n->is_leafnode())
-        {
-            const LeafNode* leaf = static_cast<const LeafNode*>(n);
-
-            tlx_die_unless(root_->level <= 1 || leaf->slotuse >= leaf_slotmin - 1);
-            //tlx_die_unless(leaf->slotuse > 0);
-
-            for (unsigned short slot = 0; slot < leaf->slotuse - 1; ++slot)
-            {
-                tlx_die_unless(
-                    key_lessequal(leaf->key(slot), leaf->key(slot + 1)));
-            }
-        }
-        else // !n->is_leafnode()
-        {
-            const InnerNode* inner = static_cast<const InnerNode*>(n);
-
-            tlx_die_unless(inner == root_ || inner->slotuse >= inner_slotmin - 1);
-
-            for (unsigned short slot = 0; slot < inner->slotuse - 1; ++slot)
-            {
-                tlx_die_unless(
-                    key_lessequal(inner->key(slot), inner->key(slot + 1)));
-            }
-        }
-    }
-
-#else
-    void verify_one_node(const node* n __attribute__((unused))) const { }
-#endif
 
 private:
     //! Recursively descend down the tree and verify each node
