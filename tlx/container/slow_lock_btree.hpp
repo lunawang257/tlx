@@ -116,6 +116,10 @@ inline std::string lock_type_to_string(int lt) {
             return "write_unlock_t_writer";
         case lock_type_write_unlock_notify_reader:
             return "write_unlock_t_reader";
+        case lock_type_inner_split:
+            return "inner_split";
+        case lock_type_leaf_split:
+            return "leaf_split";
         default:
             return "unknown_lock_type";
     }

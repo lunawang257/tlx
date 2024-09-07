@@ -66,7 +66,7 @@ static const bool test_multi = false;
 static const bool multithread = true;
 static const auto seed = std::random_device{}();
 
-bool prt_lock = false;
+bool prt_lock = true;
 bool prt_mem_op = prt_lock;
 bool prt_retry = prt_lock;
 bool prt_op = true;
@@ -2055,8 +2055,11 @@ enum LogType {
 
 enum OpType {
     OP_INSERT,
+    OP_INSERT_DONE,
     OP_ERASE,
+    OP_ERASE_DONE,
     OP_FIND,
+    OP_FIND_DONE,
     OP_END
 };
 
@@ -2101,10 +2104,16 @@ inline std::string op_type_to_string(int op) {
     switch (op) {
         case OP_INSERT:
             return "insert";
+        case OP_INSERT_DONE:
+            return "instDn";
         case OP_ERASE:
-            return "erase";
+            return "erase ";
+        case OP_ERASE_DONE:
+            return "erseDn";
         case OP_FIND:
-            return "find";
+            return "find  ";
+        case OP_FIND_DONE:
+            return "findDn";
         default:
             return "unknown_op_type";
     }
@@ -2138,7 +2147,7 @@ void log_retry() {
     get_stack_addr(log_info.addrs);
 }
 
-void log_op(OpType op, int key, int res, int set_size) {
+void log_op(OpType op, int key, int res, int set_size, int thread_id) {
     if (debug_log_info.empty())
         return;
 
@@ -2152,6 +2161,7 @@ void log_op(OpType op, int key, int res, int set_size) {
     log_info.op_key = key;
     log_info.op_res = res;
     log_info.set_size = set_size;
+    log_info.threadidx = thread_id;
 }
 
 void log_mem_op(MemOpType optype, void *node,
@@ -2243,10 +2253,10 @@ bool print_log_record(const LogInfo& info) {
     switch (info.logtype) {
     case LOG_LOCK:
         if (!prt_lock) {
-            return false;
+            return true;
         }
         if (info.lock_type_enum == 0) {
-            return false;
+            return false; // empty record stop printing
         }
         std::cout << format_time(info.timestamp)
                   << " thread " << info.threadidx
@@ -2267,7 +2277,7 @@ bool print_log_record(const LogInfo& info) {
         break;
     case LOG_MEM_OP:
         if (!prt_mem_op) {
-            return false;
+            return true;
         }
         std::cout << format_time(info.timestamp)
                   << " " << MemOpName[info.mem_op_type]
@@ -2280,7 +2290,7 @@ bool print_log_record(const LogInfo& info) {
         break;
     case LOG_RETRY:
         if (!prt_retry) {
-            return false;
+            return true;
         }
         std::cout << format_time(info.timestamp)
                   << " retry "
@@ -2289,13 +2299,14 @@ bool print_log_record(const LogInfo& info) {
         break;
     case LOG_OP:
         if (!prt_op) {
-            return false;
+            return true;
         }
         std::cout << format_time(info.timestamp)
                   << " thread " << info.threadidx
                   << " " << op_type_to_string(info.op_type)
-                  << " res=" << info.op_res
-                  << " set_size=" << info.set_size
+                  << "\tkey=" << std::setw(2) << info.op_key
+                  << "\tres=" << info.op_res
+                  << "\tset_size=" << info.set_size
                   << std::endl;
         break;
     default:
@@ -2430,6 +2441,25 @@ void print(const char* op, int val, int id) {
         << " value: " << val << std::endl;
 }
 
+bool verify_all() {
+    int failures = 0;
+    // compare all items in my_set and truth_source, if they don't match, print
+    std::lock_guard<std::mutex> l(printmtx);
+    std::cout << "Verifying set\n";
+    for (int i = 0; i < MAX_KEY; ++i) {
+        if (my_multi_thread_set.exists(i) != truth_source[i].in_set) {
+            std::cout << "ERROR: key " << i << " in set: "
+                << my_multi_thread_set.exists(i) << " in truth_source: "
+                << truth_source[i].in_set << std::endl;
+            ++failures;
+        }
+    }
+    if (failures > 0) {
+        std::cout << "Verification failed with " << failures << " errors\n" << std::flush;
+    }
+    return failures == 0;
+}
+
 void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
     // TODO std::mt19937 gen(seed + id);
     // std::mt19937 gen(std::random_device{}());
@@ -2441,6 +2471,16 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
     //usleep(10 * 1000 * 1000ull); // sleep for debugging
 
     for (int i = 0; i < NUM_OPERATIONS; ++i) {
+        if (false) {
+            // lock all mtx in truth_source
+            for (int key = 0; key < MAX_KEY; ++key) {
+                truth_source[key].mtx.lock();
+            }
+            die_unless(verify_all());
+            for (int key = 0; key < MAX_KEY; ++key) {
+                truth_source[key].mtx.unlock();
+            }
+        }
         int key = key_dist(gen);
         int operation = dist(gen);
 
@@ -2448,28 +2488,53 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("insert", key, id);
+            log_op(OP_INSERT, key, false, my_set.size(), id + thread_start_idx);
             bool succeeded = my_set.insert(key).second;
-            die_unless(succeeded != truth_source[key].in_set);
+            log_op(OP_INSERT_DONE, key, succeeded, my_set.size(), id + thread_start_idx);
+            if (succeeded == truth_source[key].in_set) {
+                die_unless(verify_all());
+            }
             truth_source[key].in_set = true;
-            log_op(OP_INSERT, key, succeeded, my_set.size());
+
+            bool found = my_set.exists(key);
+            if (found != truth_source[key].in_set) {
+                before_assert();
+                std::cout << "Cannot find just inserted key " << key << "\n" << std::flush;
+                my_set.print(std::cout);
+                exit(1);
+            }
         }
         else if (operation < insert_prob + lookup_prob)
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("find", key, id);
             // using exists because this currently doesn't support iterators
+            log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
             bool found = my_set.exists(key);
-            die_unless(found == truth_source[key].in_set);
-            log_op(OP_FIND, key, found, my_set.size());
+            log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
+            if (found != truth_source[key].in_set) {
+                die_unless(verify_all());
+            }
         }
         else
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("erase", key, id);
+            log_op(OP_ERASE, key, false, my_set.size(), id + thread_start_idx);
             bool erased = my_set.erase(key);
-            die_unless(erased == truth_source[key].in_set);
+            log_op(OP_ERASE_DONE, key, erased, my_set.size(), id + thread_start_idx);
+            if (erased != truth_source[key].in_set) {
+                die_unless(verify_all());
+            }
             truth_source[key].in_set = false;
-            log_op(OP_ERASE, key, erased, my_set.size());
+
+            bool found = my_set.exists(key);
+            if (found != truth_source[key].in_set) {
+                before_assert();
+                std::cout << "Found just deleted key " << key << "\n" << std::flush;
+                my_set.print(std::cout);
+                exit(1);
+            }
         }
         //usleep(10 * 1000 * 1000ull); // sleep for debugging
     }

@@ -619,6 +619,7 @@ private:
 #endif
 
         bool take_lock() {
+            return true;
             if (!treep) {
                 return true;
             }
@@ -2947,21 +2948,6 @@ public:
       return sum;
     }
 
-    // XXX added to fix compile error, should be removed
-    struct insert_res {
-        iterator it;
-        bool inserted;
-        bool retry;
-
-        insert_res(iterator i, bool in):
-            it(i), inserted(in), retry(false)
-        {}
-
-        insert_res():
-            it(nullptr, 0), inserted(false), retry(true)
-        {}
-    };
-
 private:
     //! \name Private Insertion Functions
     //! \{
@@ -3121,6 +3107,7 @@ private:
 
                 if (inner->is_full())
                 {
+                    log_lock(inner, lock_type_inner_split);
                     split_inner_node(inner, splitkey, splitnode, slot);
 
                     TLX_BTREE_PRINT("BTree::insert_descend done split_inner:" <<
@@ -3250,8 +3237,10 @@ private:
                     }
                     if (leaf->mapl) {
                         split_mapl_leaf(leaf, splitkey, splitnode);
+                        TLX_BTREE_ASSERT(false);
                     } else {
                         split_leaf_node(leaf, splitkey, splitnode);
+                        log_lock(leaf, lock_type_leaf_split);
                     }
 
                     // check if insert slot is in the split sibling node
