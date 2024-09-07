@@ -41,6 +41,8 @@ enum { CACHE_LINE_SIZE = 64 };
 
 #define PSUM_HEIGHT_CUTOFF 2
 
+extern bool in_multi_test;
+
 namespace tlx {
 
 //! \addtogroup tlx_container
@@ -3218,7 +3220,7 @@ private:
                 unsigned short slot = find_lower(leaf, key);
 
                 // never append to leaf since it means the parent boundary key must be changed
-                //die_unless(slot < leaf->slotuse);
+                //TLX_BTREE_ASSERT(!in_multi_test || leaf->slotuse <= 1 || slot < leaf->slotuse);
 
                 if (!allow_duplicates &&
                     slot < leaf->slotuse && key_equal(key, leaf->key(slot))) {
@@ -3243,7 +3245,6 @@ private:
                         TLX_BTREE_ASSERT(false);
                     } else {
                         split_leaf_node(leaf, splitkey, splitnode);
-                        log_lock(leaf, lock_type_leaf_split);
                     }
 
                     // check if insert slot is in the split sibling node
@@ -3337,6 +3338,8 @@ private:
 
         std::copy(leaf->slotdata + mid, leaf->slotdata + leaf->slotuse,
                   newleaf->slotdata);
+
+        log_split(leaf, mid);
 
         leaf->slotuse = mid;
         leaf->next_leaf = newleaf;

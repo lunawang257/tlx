@@ -66,10 +66,11 @@ static const bool test_multi = false;
 static const bool multithread = true;
 static const auto seed = std::random_device{}();
 
-bool prt_lock = true;
+bool prt_lock = false;
 bool prt_mem_op = prt_lock;
 bool prt_retry = prt_lock;
 bool prt_op = true;
+bool prt_split = true;
 
 enum {
   STACK_START_TO_PRINT = 3,
@@ -2034,6 +2035,7 @@ std::vector<Entry> truth_source(MAX_KEY);
 
 std::mutex printmtx;
 int seqnum = 0;
+bool in_multi_test = false;
 set_type my_multi_thread_set;
 
 const int NUM_THREADS = 2;
@@ -2051,6 +2053,7 @@ enum LogType {
     LOG_MEM_OP,
     LOG_RETRY,
     LOG_OP,
+    LOG_SPLIT,
 };
 
 enum OpType {
@@ -2069,7 +2072,7 @@ struct LogInfo {
     void *addrs[NUM_STACK_TO_PRINT];
     int threadidx;
     void *node;
-    unsigned short min, max;
+    unsigned short min, max, split_key;
 
     union {
         struct { // LOG_LOCK
@@ -2186,64 +2189,87 @@ void log_mem_op(MemOpType optype, void *node,
     get_stack_addr(log_info.addrs);
 }
 
+void log_split(void *node, int split_key) {
+    size_t idx = cur_debug_log_info.fetch_add(
+        1, std::memory_order_relaxed);
+
+    LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
+    log_info.logtype = LOG_LOCK;
+
+    set_type::btree_impl::node *nodep =
+        static_cast<set_type::btree_impl::node *>(node);
+    if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
+        set_type::btree_impl::LeafNode *leafp =
+            static_cast<set_type::btree_impl::LeafNode *>(nodep);
+
+        log_info.lock_type_enum = lock_type_leaf_split;
+        log_info.min = leafp->slotdata[0];
+        log_info.max = leafp->slotdata[leafp->slotuse - 1];
+        log_info.split_key = leafp->slotdata[split_key];
+    } else {
+        set_type::btree_impl::InnerNode *innerp =
+            static_cast<set_type::btree_impl::InnerNode *>(nodep);
+        log_info.lock_type_enum = lock_type_inner_split;
+        log_info.min = innerp->slotkey[0];
+        log_info.max = innerp->slotkey[innerp->slotuse - 1];
+        log_info.split_key = innerp->slotkey[split_key];
+    }
+}
+
 void log_lock(void* node __attribute__((unused)),
               int lock_type_enum __attribute__((unused))) {
-#if 1
     auto& tinfo = local_debug_info.tinfo;
-    if (cur_numthreads >= 1) {
-        size_t idx = cur_debug_log_info.fetch_add(
-            1, std::memory_order_relaxed);
+    size_t idx = cur_debug_log_info.fetch_add(
+        1, std::memory_order_relaxed);
 
-        LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
-        if (tinfo) {
-            tinfo->cur_node = node;
-            tinfo->op = lock_type_enum;
-            log_info.threadidx = tinfo->threadidx;
-        }
-        log_info.logtype = LOG_LOCK;
-        log_info.timestamp = std::chrono::high_resolution_clock::now();
-        log_info.node = node;
-
-        set_type::btree_impl::node *nodep =
-            static_cast<set_type::btree_impl::node *>(node);
-        log_info.numreader = 0;
-        log_info.haswriter = 0;
-        log_info.readerswaiting = 0;
-        log_info.writerswaiting = 0;
-        log_info.upgradewaiting = 0;
-
-        log_info.level = nodep ? nodep->level : -1;
-        log_info.slotuse = nodep ? nodep->slotuse : -1;
-
-        if (nodep) {
-            if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
-                set_type::btree_impl::LeafNode *leafp =
-                    static_cast<set_type::btree_impl::LeafNode *>(nodep);
-
-                log_info.min = leafp->slotdata[0];
-                log_info.max = leafp->slotdata[leafp->slotuse - 1];
-                log_info.numreader = leafp->mutex_.numreader;
-                log_info.haswriter = leafp->mutex_.haswriter;
-                log_info.readerswaiting = leafp->mutex_.readerswaiting;
-                log_info.writerswaiting = leafp->mutex_.writerswaiting;
-                log_info.upgradewaiting = leafp->mutex_.upgradewaiting;
-            } else {
-                set_type::btree_impl::InnerNode *innerp =
-                    static_cast<set_type::btree_impl::InnerNode *>(nodep);
-                log_info.min = innerp->slotkey[0];
-                log_info.max = innerp->slotkey[innerp->slotuse - 1];
-                log_info.numreader = innerp->mutex_.numreader;
-                log_info.haswriter = innerp->mutex_.haswriter;
-                log_info.readerswaiting = innerp->mutex_.readerswaiting;
-                log_info.writerswaiting = innerp->mutex_.writerswaiting;
-                log_info.upgradewaiting = innerp->mutex_.upgradewaiting;
-            }
-        }
-        log_info.lock_type_enum = lock_type_enum;
-
-        get_stack_addr(log_info.addrs);
+    LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
+    if (tinfo) {
+        tinfo->cur_node = node;
+        tinfo->op = lock_type_enum;
+        log_info.threadidx = tinfo->threadidx;
     }
-#endif
+    log_info.logtype = LOG_LOCK;
+    log_info.timestamp = std::chrono::high_resolution_clock::now();
+    log_info.node = node;
+
+    set_type::btree_impl::node *nodep =
+        static_cast<set_type::btree_impl::node *>(node);
+    log_info.numreader = 0;
+    log_info.haswriter = 0;
+    log_info.readerswaiting = 0;
+    log_info.writerswaiting = 0;
+    log_info.upgradewaiting = 0;
+
+    log_info.level = nodep ? nodep->level : -1;
+    log_info.slotuse = nodep ? nodep->slotuse : -1;
+
+    if (nodep) {
+        if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
+            set_type::btree_impl::LeafNode *leafp =
+                static_cast<set_type::btree_impl::LeafNode *>(nodep);
+
+            log_info.min = leafp->slotdata[0];
+            log_info.max = leafp->slotdata[leafp->slotuse - 1];
+            log_info.numreader = leafp->mutex_.numreader;
+            log_info.haswriter = leafp->mutex_.haswriter;
+            log_info.readerswaiting = leafp->mutex_.readerswaiting;
+            log_info.writerswaiting = leafp->mutex_.writerswaiting;
+            log_info.upgradewaiting = leafp->mutex_.upgradewaiting;
+        } else {
+            set_type::btree_impl::InnerNode *innerp =
+                static_cast<set_type::btree_impl::InnerNode *>(nodep);
+            log_info.min = innerp->slotkey[0];
+            log_info.max = innerp->slotkey[innerp->slotuse - 1];
+            log_info.numreader = innerp->mutex_.numreader;
+            log_info.haswriter = innerp->mutex_.haswriter;
+            log_info.readerswaiting = innerp->mutex_.readerswaiting;
+            log_info.writerswaiting = innerp->mutex_.writerswaiting;
+            log_info.upgradewaiting = innerp->mutex_.upgradewaiting;
+        }
+    }
+    log_info.lock_type_enum = lock_type_enum;
+
+    get_stack_addr(log_info.addrs);
 }
 
 const char *MemOpName[] = {
@@ -2277,6 +2303,19 @@ bool print_log_record(const LogInfo& info) {
                   << "|u" << info.upgradewaiting
                   << ") "
                   << lock_type_to_string(info.lock_type_enum)
+                  << " "
+                  << stack_sym(info.addrs)
+                  << std::endl;
+        break;
+    case LOG_SPLIT:
+        if (!prt_split) {
+            return true;
+        }
+        std::cout << format_time(info.timestamp)
+                  << " split "
+                  << " node " << info.node
+                  << "[" << info.min << "," << info.max << "]"
+                  << " split_key=" << info.split_key
                   << " "
                   << stack_sym(info.addrs)
                   << std::endl;
@@ -2337,8 +2376,8 @@ void print_all_lock_records() {
 
 void print_threads_states(void)
 {
-#if 0
     my_multi_thread_set.print(std::cout);
+#if 0
     for (size_t i = 0; i < cur_numthreads; ++i) {
         std::cout << "Thread " << i + thread_start_idx << " id: " << global_thread_info[i].id
             << " - Node: " << global_thread_info[i].cur_node
@@ -2502,7 +2541,9 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
             }
             truth_source[key].in_set = true;
 
+            log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
             bool found = my_set.exists(key);
+            log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
             if (found != truth_source[key].in_set) {
                 before_assert();
                 std::cout << "Cannot find just inserted key " << key << "\n" << std::flush;
@@ -2534,7 +2575,9 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
             }
             truth_source[key].in_set = false;
 
+            log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
             bool found = my_set.exists(key);
+            log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
             if (found != truth_source[key].in_set) {
                 before_assert();
                 std::cout << "Found just deleted key " << key << "\n" << std::flush;
@@ -2549,6 +2592,7 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
 }
 
 void test_multithread() {
+    in_multi_test = true;
     // Probability out of 100
     int insert_prob = 33;
     int lookup_prob = 33;
