@@ -66,6 +66,11 @@ static const bool test_multi = false;
 static const bool multithread = true;
 static const auto seed = std::random_device{}();
 
+bool prt_lock = false;
+bool prt_mem_op = prt_lock;
+bool prt_retry = prt_lock;
+bool prt_op = true;
+
 enum {
   STACK_START_TO_PRINT = 3,
   NUM_STACK_TO_PRINT = 4
@@ -2237,6 +2242,9 @@ bool print_log_record(const LogInfo& info) {
     std::lock_guard<std::mutex> printlock(printmtx);
     switch (info.logtype) {
     case LOG_LOCK:
+        if (!prt_lock) {
+            return false;
+        }
         if (info.lock_type_enum == 0) {
             return false;
         }
@@ -2258,6 +2266,9 @@ bool print_log_record(const LogInfo& info) {
                   << std::endl;
         break;
     case LOG_MEM_OP:
+        if (!prt_mem_op) {
+            return false;
+        }
         std::cout << format_time(info.timestamp)
                   << " " << MemOpName[info.mem_op_type]
                   << " " << info.node
@@ -2268,12 +2279,18 @@ bool print_log_record(const LogInfo& info) {
                   << std::endl;
         break;
     case LOG_RETRY:
+        if (!prt_retry) {
+            return false;
+        }
         std::cout << format_time(info.timestamp)
                   << " retry "
                   << stack_sym(info.addrs)
                   << std::endl;
         break;
     case LOG_OP:
+        if (!prt_op) {
+            return false;
+        }
         std::cout << format_time(info.timestamp)
                   << " thread " << info.threadidx
                   << " " << op_type_to_string(info.op_type)
