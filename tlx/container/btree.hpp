@@ -818,6 +818,8 @@ public:
         //! The currently referenced leaf node of the tree
         typename BTree::LeafNode* curr_leaf;
 
+        unsigned short slicenum;
+
         //! Current key/data slot referenced
         unsigned short curr_slot;
 
@@ -854,6 +856,13 @@ public:
         //! Initializing-Constructor of a mutable iterator
         iterator(typename BTree::LeafNode* l, unsigned short s)
             : curr_leaf(l), curr_slot(s)
+        { }
+
+        //! iterator for Mapl leaf
+        iterator(typename BTree::LeafNode* l,
+                 unsigned short n,
+                 unsigned short s)
+            : curr_leaf(l), slicenum(n), curr_slot(s)
         { }
 
         //! Copy-constructor from a reverse iterator
@@ -2950,31 +2959,27 @@ private:
 
                 TLX_BTREE_ASSERT(!leaf->mapl->is_full());
 
-                unsigned short ind = 0; // searching for stuff--TODO make function w/ binary search
-                while (ind < slice.slotuse
-                        && key_less(leaf->key(ind), key)) ++ind;
+                unsigned short ind = 0; // searching for stuff
+                ind = find_lower(&slice, key);
 
-                if (key_equal(leaf->key(ind), key)) {
+                if (ind < slice.slotuse && key_equal(slice.key(ind), key)) {
                     slice.lock.write_unlock();
                     leaf->mutex_.read_unlock();
-                    return std::tuple<iterator, bool, bool>(iterator(leaf, ind), false, false);
+                    return std::tuple<iterator, bool, bool>(
+                        iterator(leaf, slice_num, ind), false, false);
                 }
 
-                bool successful = leaf->mapl->expand(slice_num);
+                bool successful = leaf->mapl->slice_insert(slice_num, ind, value);
                 if (!successful) {
                     slice.lock.write_unlock();
                     leaf->mutex_.read_unlock();
                     return {{},{},true};
                 }
 
-                for (int i = slice.slotuse - 1; i > ind; i--) {
-                    leaf->set(slice_num, i, leaf->get(slice_num, i -1));
-                }
-                leaf->set(slice_num, ind, value);
-
                 std::tuple<iterator, bool, bool> ret_val =
-                        std::tuple<iterator, bool, bool>(iterator(leaf, slice_num * slice_size + ind),
-                                                         true, false);
+                        std::tuple<iterator, bool, bool>(
+                            iterator(leaf, slice_num, ind),
+                            true, false);
                 slice.lock.write_unlock();
                 leaf->mutex_.read_unlock();
                 return ret_val;
