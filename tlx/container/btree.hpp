@@ -254,7 +254,11 @@ public:
     static const bool debug = traits::debug;
 
     //! \}
-public: // XXX
+#ifdef NDEBUG
+private:
+#else
+public:
+#endif
     struct node;
 
 private:
@@ -839,8 +843,10 @@ public:
         node* childid[inner_slotmax + 1]; // NOLINT
 
         InnerNode(BTree *tree) : node(tree) {
+        #ifndef NDEBUG
             mutex_.nodep = this;
             mutex_.treep = tree;
+        #endif
         }
 
         ~InnerNode() {
@@ -895,10 +901,10 @@ public:
         Mapl* mapl = nullptr;
 
         LeafNode(BTree *tree) : node(tree) {
+        #ifndef NDEBUG
             mutex_.nodep = this;
             mutex_.treep = tree;
-#ifdef TLX_BTREE_DEBUG
-#endif
+        #endif
         }
 
         ~LeafNode() {
@@ -3660,7 +3666,16 @@ public:
 
         if (self_verify) verify();
 
-        if (!root_) return false;
+        if (!root_) {
+            if constexpr (concurrent) {
+                if constexpr (optimism) {
+                    mutex.read_unlock(cpu_id);
+                } else {
+                    mutex.write_unlock();
+                }
+            }
+            return false;
+        }
 
         auto lock_p = &mutex;
 
