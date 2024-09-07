@@ -8,7 +8,7 @@
 # All rights reserved. Published under the Boost Software License, Version 1.0
 ################################################################################
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.5)
 
 if(NOT TARGET tlx)
 
@@ -51,7 +51,7 @@ set(TLX_SOVERSION "0.6")
 ### Options and Switches
 
 option(TLX_BUILD_TESTS
-  "Build and run tlx's tests." OFF)
+  "Build and run tlx's tests." ON)
 
 option(TLX_USE_GCOV
   "Compile and run tests with gcov for coverage analysis." OFF)
