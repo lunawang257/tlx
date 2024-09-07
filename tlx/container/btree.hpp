@@ -410,6 +410,7 @@ private:
                 new_slot = &extra[new_slot_idx - leaf_slotmax];
                 free_slot_head = *reinterpret_cast<idx_t*>(new_slot);
             }
+            (*slotusep)++; // must update with free_slot_mtx locked
             free_slot_mtx.write_unlock();
 
             idx_t* idx_ar = slices[slicenum].index_array;
@@ -420,8 +421,23 @@ private:
             *new_slot = data;
 
             (slices[slicenum].slotuse)++;
-            (*slotusep)++;
             return true;
+        }
+
+        void slice_erase(int slicenum, idx_t pos) {
+            free_slot_mtx.write_lock();
+            TLX_BTREE_ASSERT(slices[slicenum].slotuse > 0);
+
+            idx_t idx_ar = slices[slicenum].index_array;
+            std::copy(idx_ar + pos, idx_ar + slices[slicenum].slotuse,
+                    idx_ar + pos - 1);
+
+            *reinterpret_cast<idx_t*>(idx_ar + slices[slicenum].slotuse) = free_slot_head;
+            free_slot_head = *reinterpret_cast<idx_t*>(idx_ar + slices[slicenum].slotuse);
+
+            (*slotdatap)--;
+            free_slot_mtx.write_unlock();
+            slices[slicenum].slotuse--;
         }
 
         bool expand(int slice) {
