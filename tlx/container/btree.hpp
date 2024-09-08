@@ -770,14 +770,6 @@ private:
             DBGPRT();
         }
 
-        bool write_locked() {
-            return haswriter; //TODOOOOO: Is it  right?
-        }
-
-        bool read_locked() {
-            return numreader != 0; //TODOOOOO: Is it  right?
-        }
-
     /*private:
         int total_users() {
             int i = numreader + writerswaiting + readerswaiting
@@ -786,6 +778,24 @@ private:
             return i + (haswriter ? 1 : 0);
         }*/
     };
+
+    void node_write_lock(node* n)
+    {
+        if (n->is_leafnode()) {
+            static_cast<LeafNode*>(n)->mutex_.write_lock();
+        } else {
+            static_cast<InnerNode*>(n)->mutex_.write_lock();
+        }
+    }
+
+    void node_write_unlock(node* n)
+    {
+        if (n->is_leafnode()) {
+            static_cast<LeafNode*>(n)->mutex_.write_unlock();
+        } else {
+            static_cast<InnerNode*>(n)->mutex_.write_unlock();
+        }
+    }
 
   #ifndef NDEBUG
   // debug mode
@@ -971,7 +981,7 @@ public:
         void unmaplize() {
             TLX_BTREE_ASSERT(mapl);
             TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax); // technically gotta lock before this
-            TLX_BTREE_ASSERT(mutex_.write_locked());
+            TLX_BTREE_ASSERT(mutex_.writelocked());
 
             value_type ordered[node::slotuse];
             MaplKeyContext ctx;
@@ -2061,6 +2071,7 @@ private:
         LeafNode* n = new (leaf_node_allocator().allocate(1)) LeafNode(this);
         n->initialize();
         ++stats_.leaves;
+        log_mem_op(ALLOC_LEAF, n, stats_.inner_nodes, stats_.leaves);
         return n;
     }
 
@@ -2069,6 +2080,7 @@ private:
         InnerNode* n = new (inner_node_allocator().allocate(1)) InnerNode(this);
         n->initialize(level);
         ++stats_.inner_nodes;
+        log_mem_op(ALLOC_INNER, n, stats_.inner_nodes, stats_.leaves);
         return n;
     }
 
@@ -2078,16 +2090,28 @@ private:
         if (n->is_leafnode()) {
             LeafNode* ln = static_cast<LeafNode*>(n);
             typename LeafNode::alloc_type a(leaf_node_allocator());
+            TLX_BTREE_ASSERT(!ln->mutex_.readlocked());
+            TLX_BTREE_ASSERT(!ln->mutex_.writelocked());
             std::allocator_traits<typename LeafNode::alloc_type>::destroy(a, ln);
+#ifndef NDEBUG
+            memset(ln, 0, sizeof(LeafNode));
+#endif
             std::allocator_traits<typename LeafNode::alloc_type>::deallocate(a, ln, 1);
             --stats_.leaves;
+            log_mem_op(FREE_LEAF, n, stats_.inner_nodes, stats_.leaves);
         }
         else {
             InnerNode* in = static_cast<InnerNode*>(n);
             typename InnerNode::alloc_type a(inner_node_allocator());
+            TLX_BTREE_ASSERT(!in->mutex_.readlocked());
+            TLX_BTREE_ASSERT(!in->mutex_.writelocked());
             std::allocator_traits<typename InnerNode::alloc_type>::destroy(a, in);
+#ifndef NDEBUG
+            memset(in, 0, sizeof(InnerNode));
+#endif
             std::allocator_traits<typename InnerNode::alloc_type>::deallocate(a, in, 1);
             --stats_.inner_nodes;
+            log_mem_op(FREE_INNER, n, stats_.inner_nodes, stats_.leaves);
         }
     }
 
@@ -3352,7 +3376,7 @@ private:
     void split_mapl_leaf(LeafNode* leaf,
                          key_type* out_newkey, node** out_newleaf) {
         TLX_BTREE_ASSERT(leaf->mapl->is_full());
-        TLX_BTREE_ASSERT(leaf->mutex_.write_locked());
+        TLX_BTREE_ASSERT(leaf->mutex_.writelocked());
 
         LeafNode* newleaf = allocate_leaf();
         newleaf->mutex_.write_lock();
@@ -4022,14 +4046,28 @@ private:
 
             if (result.has(btree_fixmerge))
             {
+                if constexpr (concurrent) {
+                    // wait for other reader/writers to leave
+                    node_write_lock(inner->childid[slot]);
+                }
                 // either the current node or the next is empty and should be
                 // removed
-                if (inner->childid[slot]->slotuse != 0)
+                if (inner->childid[slot]->slotuse != 0) {
+                    if constexpr (concurrent) {
+                        node_write_unlock(inner->childid[slot]);
+                    }
                     slot++;
+                    if constexpr (concurrent) {
+                        node_write_lock(inner->childid[slot]);
+                    }
+                }
 
                 // this is the child slot invalidated by the merge
                 TLX_BTREE_ASSERT(inner->childid[slot]->slotuse == 0);
 
+                if constexpr (concurrent) {
+                    node_write_unlock(inner->childid[slot]);
+                }
                 free_node(inner->childid[slot]);
 
                 std::copy(
@@ -4317,7 +4355,7 @@ private:
             }
             else // MAPL leaf
             {
-                TLX_BTREE_ASSERT(leaf->mutex_.read_locked());
+                TLX_BTREE_ASSERT(leaf->mutex_.readlocked());
 
                 if (stats_.size > leaf->slotuse && leaf->is_underflow()) {
                     tlx_die_unless(false); // bc i dont think ^ is necessary
@@ -4441,6 +4479,10 @@ private:
 
             if (result.has(btree_fixmerge))
             {
+                if constexpr (concurrent) {
+                    node_write_lock(inner->childid[slot]);
+                }
+
                 // either the current node or the next is empty and should be
                 // removed
                 if (inner->childid[slot]->slotuse != 0)
@@ -4449,6 +4491,9 @@ private:
                 // this is the child slot invalidated by the merge
                 TLX_BTREE_ASSERT(inner->childid[slot]->slotuse == 0);
 
+                if constexpr (concurrent) {
+                    node_write_unlock(inner->childid[slot]);
+                }
                 free_node(inner->childid[slot]);
 
                 std::copy(
