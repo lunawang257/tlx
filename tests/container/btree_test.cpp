@@ -2023,8 +2023,9 @@ typedef tlx::btree_set<
     std::allocator<size_t> /* Allocator */,
     true /* concurrent */ > set_type;
 
-const int MAX_KEY = 100;
-const int NUM_OPERATIONS = 100;
+const size_t INITIAL_SIZE = 800;
+const int MAX_KEY = 1000;
+const int NUM_OPERATIONS = 500;
 
 struct Entry {
     std::mutex mtx;
@@ -2038,7 +2039,7 @@ int seqnum = 0;
 bool in_multi_test = false;
 set_type my_multi_thread_set;
 
-const int NUM_THREADS = 2;
+const int NUM_THREADS = 4;
 size_t cur_numthreads = NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;
@@ -2139,7 +2140,8 @@ void get_stack_addr(void *out_addrs[NUM_STACK_TO_PRINT]) {
     }
 }
 
-void log_retry() {
+void log_retry(void *node) {
+    auto& tinfo = local_debug_info.tinfo;
     if (debug_log_info.empty())
         return;
 
@@ -2147,6 +2149,10 @@ void log_retry() {
         1, std::memory_order_relaxed);
 
     LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
+    if (tinfo) {
+        log_info.threadidx = tinfo->threadidx;
+    }
+    log_info.node = node;
     log_info.logtype = LOG_RETRY;
     get_stack_addr(log_info.addrs);
 }
@@ -2352,7 +2358,10 @@ bool print_log_record(const LogInfo& info) {
             return true;
         }
         std::cout << format_time(info.timestamp)
+                  << " thread " << info.threadidx
                   << " retry "
+                  << " node " << info.node
+                  << " "
                   << stack_sym(info.addrs)
                   << std::endl;
         break;
@@ -2530,16 +2539,6 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
     //usleep(10 * 1000 * 1000ull); // sleep for debugging
 
     for (int i = 0; i < NUM_OPERATIONS; ++i) {
-        if (false) {
-            // lock all mtx in truth_source
-            for (int key = 0; key < MAX_KEY; ++key) {
-                truth_source[key].mtx.lock();
-            }
-            die_unless(verify_all());
-            for (int key = 0; key < MAX_KEY; ++key) {
-                truth_source[key].mtx.unlock();
-            }
-        }
         int key = key_dist(gen);
         int operation = dist(gen);
 
@@ -2550,9 +2549,7 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
             log_op(OP_INSERT, key, false, my_set.size(), id + thread_start_idx);
             bool succeeded = my_set.insert(key).second;
             log_op(OP_INSERT_DONE, key, succeeded, my_set.size(), id + thread_start_idx);
-            if (succeeded == truth_source[key].in_set) {
-                die_unless(verify_all());
-            }
+            die_unless(succeeded != truth_source[key].in_set);
             truth_source[key].in_set = true;
 
             log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
@@ -2573,9 +2570,7 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
             log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
             bool found = my_set.exists(key);
             log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
-            if (found != truth_source[key].in_set) {
-                die_unless(verify_all());
-            }
+            die_unless(found == truth_source[key].in_set);
         }
         else
         {
@@ -2584,9 +2579,7 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
             log_op(OP_ERASE, key, false, my_set.size(), id + thread_start_idx);
             bool erased = my_set.erase(key);
             log_op(OP_ERASE_DONE, key, erased, my_set.size(), id + thread_start_idx);
-            if (erased != truth_source[key].in_set) {
-                die_unless(verify_all());
-            }
+            die_unless(erased == truth_source[key].in_set);
             truth_source[key].in_set = false;
 
             log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
@@ -2605,14 +2598,26 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
     cleanup_thread_info();
 }
 
-void test_multithread() {
+void test_multithread(size_t initial_size) {
     in_multi_test = true;
     // Probability out of 100
     int insert_prob = 33;
     int lookup_prob = 33;
-    cur_numthreads = NUM_THREADS; // for debug printing TODO
+    std::mt19937 gen(seed);
+    std::uniform_int_distribution<> key(0, MAX_KEY - 1);
+
     // Register signal handler for SIGUSR1
     std::signal(SIGUSR1, signal_handler);
+
+    cur_numthreads = NUM_THREADS; // for debug printing TODO
+
+    // prepare the set to start with random items
+    while (my_multi_thread_set.size() < initial_size) {
+        auto k = key(gen);
+        bool inserted = my_multi_thread_set.insert(k).second;
+        die_unless(inserted != truth_source[k].in_set);
+        truth_source[k].in_set = true;
+    }
 
     std::vector<std::thread> threads;
     for (int i = 0; i < NUM_THREADS; ++i) {
@@ -2806,13 +2811,19 @@ int main() {
     test_mapl();
 
     if (multithread) {
-        int total_passes = 100000;
+        int total_passes = 1000000;
         double ts_start = tlx::timestamp();
         bool one_line = false;
         int prt_interval = one_line ? 40 : 500;
+        size_t initial_size;
 
         for (int i = 0; i < total_passes; i++) {
-            test_multithread(); // TODO remove this surrounding stuff
+            if (i % 2 == 0) {
+                initial_size = 0; // test empty tree
+            } else {
+                initial_size = INITIAL_SIZE; // test tall tree
+            }
+            test_multithread(initial_size);
             my_multi_thread_set.clear();
             debug_log_info.resize(0);
             debug_log_info.resize(TOTAL_DEBUG_LOG_INFO);
