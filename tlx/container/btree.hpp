@@ -4208,97 +4208,136 @@ private:
                 else if ((left_inner == nullptr || left_inner->is_few()) &&
                          (right_inner == nullptr || right_inner->is_few()))
                 {
-                    if constexpr (concurrent) {
-                        if (lock_p) {
-                            assert_inner_write_locked(inner);
+                    if (left_parent == parent) {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(left_inner);
+                            assert_inner_write_locked(left_parent);
                         }
-                    }
-                    if (left_parent == parent)
                         myres |= merge_inner(
                             left_inner, inner, left_parent, parentslot - 1);
-                    else
+                    }
+                    else {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(right_inner);
+                            assert_inner_write_locked(right_parent);
+                        }
                         myres |= merge_inner(
                             inner, right_inner, right_parent, parentslot);
+                    }
                 }
                 // case : the right leaf has extra data, so balance right with
                 // current
                 else if ((left_inner != nullptr && left_inner->is_few()) &&
                          (right_inner != nullptr && !right_inner->is_few()))
                 {
-                    if constexpr (concurrent) {
-                        if (lock_p) {
-                            assert_inner_write_locked(inner);
+                    if (right_parent == parent) {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(right_inner);
+                            assert_inner_write_locked(right_parent);
                         }
-                        assert_inner_write_locked(right_inner);
-                        assert_inner_write_locked(left_inner);
-                        assert_inner_write_locked(right_parent);
-                        assert_inner_write_locked(left_parent);
-                    }
-                    if (right_parent == parent)
                         shift_left_inner(
                             inner, right_inner, right_parent, parentslot);
-                    else
+                    }
+                    else {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(left_inner);
+                            assert_inner_write_locked(left_parent);
+                        }
                         myres |= merge_inner(
                             left_inner, inner, left_parent, parentslot - 1);
+                    }
                 }
                 // case : the left leaf has extra data, so balance left with
                 // current
                 else if ((left_inner != nullptr && !left_inner->is_few()) &&
                          (right_inner != nullptr && right_inner->is_few()))
                 {
-                    if constexpr (concurrent) {
-                        if (lock_p) {
-                            assert_inner_write_locked(inner);
+                    if (left_parent == parent) {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(left_inner);
+                            assert_inner_write_locked(left_parent);
                         }
-                        assert_inner_write_locked(right_inner);
-                        assert_inner_write_locked(left_inner);
-                        assert_inner_write_locked(right_parent);
-                        assert_inner_write_locked(left_parent);
-                    }
-                    if (left_parent == parent)
                         shift_right_inner(
                             left_inner, inner, left_parent, parentslot - 1);
-                    else
+                    }
+                    else {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(right_inner);
+                            assert_inner_write_locked(right_parent);
+                        }
                         myres |= merge_inner(
                             inner, right_inner, right_parent, parentslot);
+                    }
                 }
                 // case : both the leaf and right leaves have extra data and our
                 // parent, choose the leaf with more data
                 else if (left_parent == right_parent)
                 {
-                    if constexpr (concurrent) {
-                        if (lock_p) {
-                            assert_inner_write_locked(inner);
+                    if (left_inner->slotuse <= right_inner->slotuse) {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(right_inner);
+                            assert_inner_write_locked(right_parent);
                         }
-                        assert_inner_write_locked(right_inner);
-                        assert_inner_write_locked(left_inner);
-                        assert_inner_write_locked(right_parent);
-                        assert_inner_write_locked(left_parent);
-                    }
-                    if (left_inner->slotuse <= right_inner->slotuse)
                         shift_left_inner(
                             inner, right_inner, right_parent, parentslot);
-                    else
+                    }
+                    else {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(left_inner);
+                            assert_inner_write_locked(left_parent);
+                        }
                         shift_right_inner(
                             left_inner, inner, left_parent, parentslot - 1);
+                    }
                 }
                 else
                 {
-                    if constexpr (concurrent) {
-                        if (lock_p) {
-                            assert_inner_write_locked(inner);
+                    if (left_parent == parent) {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(left_inner);
+                            assert_inner_write_locked(left_parent);
                         }
-                        assert_inner_write_locked(right_inner);
-                        assert_inner_write_locked(left_inner);
-                        assert_inner_write_locked(right_parent);
-                        assert_inner_write_locked(left_parent);
-                    }
-                    if (left_parent == parent)
                         shift_right_inner(
                             left_inner, inner, left_parent, parentslot - 1);
-                    else
+                    }
+                    else {
+                        if constexpr (concurrent) {
+                            if (lock_p) {
+                                assert_inner_write_locked(inner);
+                            }
+                            assert_inner_write_locked(right_inner);
+                            assert_inner_write_locked(right_parent);
+                        }
                         shift_left_inner(
                             inner, right_inner, right_parent, parentslot);
+                    }
                 }
 
                 if constexpr (concurrent) {
