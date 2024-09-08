@@ -2705,12 +2705,23 @@ void verify_mapl(const char *testname,
         }                                               \
     }
 
-void slice_insert(test_leaf_type *leaf, val_type key) {
-    int slicenum = leaf->mapl->get_slicenum(key);
+void slice_insert(test_leaf_type *leaf, val_type val) {
     test_set_type ts;
+
+    const auto& key = test_set_type::btree_impl::key_of_value::get(val);
+    int slicenum = leaf->mapl->get_slicenum(key);
     auto* slice = leaf->mapl->slices + slicenum;
     int pos = ts.tree_.find_lower(slice, key);
-    leaf->mapl->slice_insert(slicenum, pos, key);
+    leaf->mapl->slice_insert(slicenum, pos, val);
+}
+
+void slice_erase(test_leaf_type *leaf, test_set_type::btree_impl::key_type key) {
+    test_set_type ts;
+
+    int slicenum = leaf->mapl->get_slicenum(key);
+    auto* slice = leaf->mapl->slices + slicenum;
+    int pos = ts.tree_.find_lower(slice, key);
+    leaf->mapl->slice_erase(slicenum, pos);
 }
 
 void test_mapl() {
@@ -2787,6 +2798,54 @@ Free list: 5 6 7 8 9 10 11
         VERIFY_EQ(leaf.mapl->get_slicenum(40), 1);
         VERIFY_EQ(leaf.mapl->get_slicenum(80), 1);
     }
+
+    {
+        test_leaf_type leaf(nullptr);
+        set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        leaf.maplize();
+
+        // bc i messed up writing the tests
+        slice_insert(&leaf, 15);
+        //leaf.print_mapl(std::cout);
+
+        // erase key
+        slice_erase(&leaf, 40);
+        verify_mapl("erase 40", leaf, R"(
+#slices=2
+slice[0]: 0:10 6:15 1:20 2:30
+slice[1]: 4:50 5:60
+Boundaries: 0:30
+Free list: 3 7 8 9 10 11
+)");
+
+        slice_erase(&leaf, 15);
+        verify_mapl("erase 15", leaf, R"(
+#slices=2
+slice[0]: 0:10 1:20 2:30
+slice[1]: 4:50 5:60
+Boundaries: 0:30
+Free list: 6 3 7 8 9 10 11
+)");
+
+        slice_erase(&leaf, 60);
+        verify_mapl("erase 60", leaf, R"(
+#slices=2
+slice[0]: 0:10 1:20 2:30
+slice[1]: 4:50
+Boundaries: 0:30
+Free list: 5 6 3 7 8 9 10 11
+)");
+
+        slice_erase(&leaf, 50);
+        verify_mapl("erase 50", leaf, R"(
+#slices=2
+slice[0]: 0:10 1:20 2:30
+slice[1]:
+Boundaries: 0:30
+Free list: 4 5 6 3 7 8 9 10 11
+)");
+    }
+
     std::cout << "[PASS] " << __func__ << "()\n";
 }
 

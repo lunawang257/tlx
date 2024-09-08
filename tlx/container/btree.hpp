@@ -485,17 +485,22 @@ private:
         }
 
         void slice_erase(int slicenum, idx_t pos) {
-            free_slot_mtx.write_lock();
             TLX_BTREE_ASSERT(slices[slicenum].slotuse > 0);
+            free_slot_mtx.write_lock();
 
-            idx_t idx_ar = slices[slicenum].index_array;
-            std::copy(idx_ar + pos, idx_ar + slices[slicenum].slotuse,
-                    idx_ar + pos - 1);
+            idx_t* idx_ar = slices[slicenum].index_array;
+            idx_t end = idx_ar[pos];
+            if (end < leaf_slotmax) {
+                *reinterpret_cast<idx_t*>(&slotdatap[end]) = free_slot_head;
+            } else {
+                *reinterpret_cast<idx_t*>(&extra[end - leaf_slotmax]) = free_slot_head;
+            }
 
-            *reinterpret_cast<idx_t*>(idx_ar + slices[slicenum].slotuse) = free_slot_head;
-            free_slot_head = *reinterpret_cast<idx_t*>(idx_ar + slices[slicenum].slotuse);
+            free_slot_head = end;
 
-            (*slotdatap)--;
+            std::copy(idx_ar + pos + 1, idx_ar + slices[slicenum].slotuse,
+                    idx_ar + pos);
+            (*slotusep)--;
             free_slot_mtx.write_unlock();
             slices[slicenum].slotuse--;
         }
@@ -1074,7 +1079,7 @@ public:
             TLX_BTREE_ASSERT(i >= ctx->prev_index);
 
             idx_t slice_i = ctx->prev_slice + 1;
-            idx_t idx = ctx->prev_index - i;
+            idx_t idx = i - ctx->prev_index;
             idx_t cur_slice_size = mapl->slices[slice_i].slotuse;
 
             TLX_BTREE_ASSERT(idx <= cur_slice_size);
@@ -2423,15 +2428,29 @@ public:
             parent_lock->read_unlock(cpuid);
         }
 
-        unsigned short slot = find_lower(leaf, key);
-        auto res =  (slot < leaf->slotuse && key_equal(key, leaf->key(slot)));
-        if constexpr(concurrent) {
-#ifndef NDEBUG
-            std::this_thread::yield(); // better reproduce race conditions
-#endif
-            leaf->mutex_.read_unlock(cpuid);
+        if (leaf->mapl) {
+            unsigned short slot = find_lower(leaf, key);
+            auto res = (slot < leaf->slotuse && key_equal(key, leaf->key(slot)));
+            if constexpr(concurrent) {
+                leaf->mutex_.read_unlock(cpuid);
+            }
+            return res;
+        } else {
+            int slicenum = leaf->mapl->get_slicenum(key);
+            if constexpr (concurrent)
+                leaf->mapl->slices[slicenum].lock.read_lock();
+            Slice& slice = leaf->mapl->slices[slicenum];
+
+            unsigned short ind = find_lower(&slice, key);
+            auto res = !(slicenum == leaf->mapl->numslices &&
+                    ind == slice.slotuse) && key_equal(key, slice.key(ind));
+
+            if constexpr(concurrent) {
+                slice.lock.read_unlock(cpuid);
+                leaf->mutex_.read_unlock(cpuid);
+            }
+            return res;
         }
-        return res;
     }
 
     //! Non-STL function that applies read-only function to all elts in range [start, end) by key
@@ -3255,12 +3274,12 @@ private:
         else // n->is_leafnode() == true
         {
             LeafNode* leaf = static_cast<LeafNode*>(n);
+            LeafNode* original_leaf = leaf;
         retry:
             if constexpr (concurrent) {
                 leaf->mutex_.read_lock();
             }
             if (!leaf->mapl) {
-                LeafNode* original_leaf = leaf;
                 if constexpr (concurrent) {
                     // printf("trying to lock leaf lock from %p\n", leaf);
                     if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
@@ -3302,8 +3321,8 @@ private:
                         }
                     }
                     if (leaf->mapl) {
+                        tlx_die_unless(false); // this shouldn't happen
                         split_mapl_leaf(leaf, splitkey, splitnode);
-                        TLX_BTREE_ASSERT(false);
                     } else {
                         split_leaf_node(leaf, splitkey, splitnode);
                     }
@@ -3356,20 +3375,64 @@ private:
                         iterator(leaf, slice_num, ind), false, false);
                 }
 
-                bool successful = leaf->mapl->slice_insert(slice_num, ind, value);
-                if (!successful) {
-                    slice.lock.write_unlock();
-                    leaf->mutex_.read_unlock(cpu_id);
-                    return {{},{},true};
+                if (leaf->is_full()) {
+                    if constexpr (concurrent) {
+                        if constexpr (optimism) {
+                            slice.lock.write_unlock();
+                            leaf->mutex_.read_unlock(cpu_id);
+                            return {{},{},true};
+                        }
+                    }
+
+                    split_mapl_leaf(leaf, splitkey, splitnode);
+
+                    // check if insert slot is in the split sibling node
+                    /*if (ind >= leaf->slotuse)
+                    {
+                        ind -= leaf->slotuse;
+                        leaf = static_cast<LeafNode*>(*splitnode);
+                    }*/
                 }
 
-                std::tuple<iterator, bool, bool> ret_val =
-                        std::tuple<iterator, bool, bool>(
-                            iterator(leaf, slice_num, ind),
-                            true, false);
-                slice.lock.write_unlock();
-                leaf->mutex_.read_unlock(cpu_id);
-                return ret_val;
+                if (!leaf->mapl) {
+                     // move items and put data item into correct data slot
+                    unsigned short slot = find_lower(leaf, key);
+                    TLX_BTREE_ASSERT(slot >= 0 && slot <= leaf->slotuse);
+
+                    std::copy_backward(
+                        leaf->slotdata + slot, leaf->slotdata + leaf->slotuse,
+                        leaf->slotdata + leaf->slotuse + 1);
+
+                    leaf->slotdata[slot] = value;
+                    leaf->slotuse++;
+
+                    if (splitnode && leaf != *splitnode && slot == leaf->slotuse - 1)
+                    {
+                        // special case: the node was split, and the insert is at the
+                        // last slot of the old node. then the splitkey must be updated.
+                        *splitkey = key;
+                    }
+                    if constexpr (concurrent) {
+                        // printf("unlocked leaf lock %p\n", leaf);
+                        original_leaf->mutex_.write_unlock();
+                    }
+                    return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
+                } else {
+                    bool successful = leaf->mapl->slice_insert(slice_num, ind, value);
+                    if (!successful) {
+                        slice.lock.write_unlock();
+                        leaf->mutex_.read_unlock(cpu_id);
+                        return {{},{},true};
+                    }
+
+                    std::tuple<iterator, bool, bool> ret_val =
+                            std::tuple<iterator, bool, bool>(
+                                iterator(leaf, slice_num, ind),
+                                true, false);
+                    slice.lock.write_unlock();
+                    leaf->mutex_.read_unlock(cpu_id);
+                    return ret_val;
+                }
             }
         }
     }
@@ -3420,7 +3483,9 @@ private:
         LeafNode* newleaf = allocate_leaf();
         newleaf->mutex_.write_lock();
 
-        newleaf->slotuse = leaf_slotmax - 1;
+        int right_slotuse = mapl_size / 2;
+        int left_slotuse = mapl_size - right_slotuse;
+        newleaf->slotuse = right_slotuse;
 
         newleaf->next_leaf = leaf->next_leaf;
         if (newleaf->next_leaf == nullptr) {
@@ -3431,11 +3496,14 @@ private:
             newleaf->next_leaf->prev_leaf = newleaf;
         }
 
-        for (int i = leaf_slotmax - 1; i < leaf_slotmax * 2 - 2; i++) {
-            newleaf->set_overall(0, leaf->get_overall(i, nullptr));
+        MaplKeyContext ctx;
+        leaf->init_mapl_key_ctx(left_slotuse, &ctx);
+
+        for (int i = left_slotuse; i < mapl_size; i++) {
+            newleaf->slotdata[i] = leaf->get_overall(i, &ctx);
         }
 
-        leaf->slotuse = leaf_slotmax - 1;
+        leaf->slotuse = left_slotuse;
         leaf->next_leaf = newleaf;
         leaf->mapl = nullptr;
         newleaf->prev_leaf = leaf;
@@ -3839,7 +3907,17 @@ private:
             bool right_leaf_locked __attribute__((unused)) = false;
             LeafNode* leaf = static_cast<LeafNode*>(curr);
             if constexpr (concurrent) {
-                leaf->mutex_.write_lock();
+            retry:
+                leaf->mutex_.read_lock();
+                if (!leaf->mapl) {
+                    if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
+                        leaf->mutex_.write_lock();
+                        if (leaf->mapl) {
+                            leaf->mutex_.write_unlock();
+                            goto retry;
+                        }
+                    }
+                }
                 // if constexpr (optimism) {
                 //     (*parent_lock)->read_unlock(cpu_id);
                 //     *parent_lock = nullptr;
@@ -3848,73 +3926,143 @@ private:
             LeafNode* left_leaf = static_cast<LeafNode*>(left);
             LeafNode* right_leaf = static_cast<LeafNode*>(right);
 
-            unsigned short slot = find_lower(leaf, key);
+            result_t myres;
+            bool fix_underflow;
 
-            if (slot >= leaf->slotuse || !key_equal(key, leaf->key(slot)))
+            if (!leaf->mapl)
             {
-                TLX_BTREE_PRINT("Could not find key " << key << " to erase.");
-                if constexpr (concurrent) {
+                unsigned short slot = find_lower(leaf, key);
+                if (slot >= leaf->slotuse || !key_equal(key, leaf->key(slot))) {
+                    TLX_BTREE_PRINT("Could not find key " << key << " to erase.");
                     leaf->mutex_.write_unlock();
+                    return {btree_not_found, false};
                 }
-                return {btree_not_found, false};
-            }
-
-            // in this case the parent needs to do something
-            // so in optimism mode we just fail back to the top
-            if constexpr (concurrent && optimism) {
-                if (slot == leaf->slotuse - 1) {
-                    leaf->mutex_.write_unlock();
-                    log_retry(leaf);
-                    return {{}, true};
+                // in this case the parent needs to do something
+                // so in optimism mode we just fail back to the top
+                if constexpr (concurrent && optimism) {
+                    if (slot == leaf->slotuse - 1) {
+                        leaf->mutex_.write_unlock();
+                        return {{}, true};
+                    }
+                    if (leaf->soon_underflow() &&
+                        !(leaf == root_ && leaf->slotuse >= 2)) {
+                        leaf->mutex_.write_unlock();
+                        return {{}, true};
+                    }
                 }
-                if (leaf->soon_underflow() &&
-                    !(leaf == root_ && leaf->slotuse >= 2)) {
-                    leaf->mutex_.write_unlock();
-                    log_retry(leaf);
-                    return {{}, true};
-                }
-            }
 
-            TLX_BTREE_PRINT(
-                "Found key in leaf " << curr << " at slot " << slot);
+                TLX_BTREE_PRINT(
+                    "Found key in leaf " << curr << " at slot " << slot);
 
-            std::copy(leaf->slotdata + slot + 1, leaf->slotdata + leaf->slotuse,
-                      leaf->slotdata + slot);
+                std::copy(leaf->slotdata + slot + 1, leaf->slotdata + leaf->slotuse,
+                          leaf->slotdata + slot);
 
-            leaf->slotuse--;
+                leaf->slotuse--;
 
-            result_t myres = btree_ok;
+                myres = btree_ok;
 
-            // if the last key of the leaf was changed, the parent is notified
-            // and updates the key of this leaf
-            if (slot == leaf->slotuse)
-            {
-                if constexpr (concurrent) {
-                    assert_leaf_write_locked(leaf);
-                    assert_inner_write_locked(parent);
-                }
-                if (parent && parentslot < parent->slotuse)
+                // if the last key of the leaf was changed, the parent is notified
+                // and updates the key of this leaf
+                if (slot == leaf->slotuse)
                 {
-                    TLX_BTREE_ASSERT(parent->childid[parentslot] == curr);
-                    parent->slotkey[parentslot] = leaf->key(leaf->slotuse - 1);
-                }
-                else
-                {
-                    if (leaf->slotuse >= 1)
+                    if constexpr (concurrent) {
+                        assert_leaf_write_locked(leaf);
+                        assert_inner_write_locked(parent);
+                    }
+                    if (parent && parentslot < parent->slotuse)
                     {
-                        TLX_BTREE_PRINT("Scheduling lastkeyupdate: key " <<
-                                        leaf->key(leaf->slotuse - 1));
-                        myres |= result_t(
-                            btree_update_lastkey, leaf->key(leaf->slotuse - 1));
+                        TLX_BTREE_ASSERT(parent->childid[parentslot] == curr);
+                        parent->slotkey[parentslot] = leaf->key(leaf->slotuse - 1);
                     }
                     else
                     {
-                        TLX_BTREE_ASSERT(leaf == root_);
+                        if (leaf->slotuse >= 1)
+                        {
+                            TLX_BTREE_PRINT("Scheduling lastkeyupdate: key " <<
+                                            leaf->key(leaf->slotuse - 1));
+                            myres |= result_t(
+                                btree_update_lastkey, leaf->key(leaf->slotuse - 1));
+                        }
+                        else
+                        {
+                            TLX_BTREE_ASSERT(leaf == root_);
+                        }
+                    }
+                }
+
+                fix_underflow = leaf->is_underflow() && !(leaf == root_ && leaf->slotuse >= 1);
+            } else {
+                int slicenum = leaf->mapl->get_slicenum(key);
+                Slice& slice = leaf->mapl->slices[slicenum];
+                slice.lock.write_lock();
+                unsigned short ind = find_lower(&slice, key);
+                if (ind >= slice.slotuse || !key_equal(key, slice.key(ind))) {
+                    slice.lock.write_unlock();
+                    leaf->mutex_.read_unlock(cpu_id);
+                    return {btree_not_found, false};
+                }
+
+                // in this case the parent needs to do something
+                // so in optimism mode we just fail back to the top
+                if constexpr (concurrent && optimism) {
+                    if (slicenum == leaf->mapl->numslices - 1
+                            && ind == slice.slotuse) {
+                        slice.lock.write_unlock();
+                        leaf->mutex_.read_unlock(cpu_id);
+                        return {{}, true};
+                    }
+                    if (leaf->soon_underflow()) {
+                        slice.lock.write_unlock();
+                        leaf->mutex_.read_unlock(cpu_id);
+                        return {{}, true};
+                    }
+                }
+
+                leaf->mapl->slice_erase(slicenum, ind);
+
+                myres = btree_ok;
+
+                // if the last key of the leaf was changed, the parent is notified
+                // and updates the key of this leaf
+                if (slicenum == leaf->mapl->numslices - 1
+                            && ind == slice.slotuse) {
+                    const key_type& to_set = slice.key(ind - 1);
+
+                    if (parent && parentslot < parent->slotuse) {
+                        TLX_BTREE_ASSERT(parent->childid[parentslot] == curr);
+                        parent->slotkey[parentslot] = to_set;
+                    } else {
+                        if (leaf->slotuse >= 1)
+                        {
+                            myres |= result_t(
+                                btree_update_lastkey, to_set);
+                        }
+                        else
+                        {
+                            TLX_BTREE_ASSERT(leaf == root_);
+                        }
+                    }
+                }
+
+                fix_underflow = leaf->is_underflow();
+                if (leaf == root_) {
+                    leaf->mapl->free_slot_mtx.write_lock();
+                    if (leaf->slotuse < 1 && fix_underflow) {
+                        if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
+                            leaf->mutex_.write_lock();
+                        }
+                        if (leaf->mapl) {
+                            leaf->unmaplize();
+                        }
+                    } else {
+                        leaf->mapl->free_slot_mtx.write_unlock();
+                        fix_underflow = false;
                     }
                 }
             }
 
-            if (leaf->is_underflow() && !(leaf == root_ && leaf->slotuse >= 1))
+
+            if (fix_underflow)
             {
                 if constexpr (concurrent) {
                     if (left_leaf) {
@@ -3936,6 +4084,7 @@ private:
                     assert_inner_write_locked(right_parent);
                 }
 
+                TLX_BTREE_ASSERT(!leaf->mapl);
                 // determine what to do about the underflow
 
                 // case : if this empty leaf is the root, then delete all nodes
@@ -4014,7 +4163,8 @@ private:
                 }
             }
             if constexpr (concurrent) {
-                leaf->mutex_.write_unlock();
+                if (!leaf->mapl) leaf->mutex_.write_unlock();
+                else leaf->mutex_.read_unlock(cpu_id);
                 if (left_leaf_locked) left_leaf->mutex_.write_unlock();
                 if (right_leaf_locked) right_leaf->mutex_.write_unlock();
             }

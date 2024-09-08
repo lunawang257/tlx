@@ -228,6 +228,22 @@ public:
     return true;
   }
 
+  bool try_upgrade(int cpuid __attribute__((unused))) {
+    // acquire write lock.
+
+    if (writer.test_and_set()) {
+      return false;
+    }
+
+    readers--;
+
+    // wait for readers to finish
+    while (readers > 0) {
+    }
+
+    return true;
+  }
+
   void write_unlock(void) {
     writer.clear(std::memory_order_release);
     writer.notify_all();
