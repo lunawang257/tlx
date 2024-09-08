@@ -2909,7 +2909,7 @@ public:
             tries++;
             res = insert_start(key_of_value::get(x), x);
             if (res.retry) {
-                log_retry();
+                log_retry(nullptr);
             }
         } while (res.retry);
         return std::make_pair(res.it, res.inserted);
@@ -2922,7 +2922,7 @@ public:
         do {
             res = insert_start(key_of_value::get(x), x);
             if (res.retry) {
-                log_retry();
+                log_retry(nullptr);
             }
         } while (res.retry);
         return res.it;
@@ -3566,7 +3566,7 @@ public:
         do {
             res = erase_one_start(key);
             if (res == restart) {
-                log_retry();
+                log_retry(nullptr);
             }
         } while (res == restart);
 

@@ -53,7 +53,7 @@ thread_local int local_thread_id;
 extern void log_lock(void *node, int lock_type_enum);
 extern void log_split(void *nodep, int split_key);
 extern void log_mem_op(MemOpType optype,void *node, int num_inner, int num_leaves);
-extern void log_retry(void);
+extern void log_retry(void *node);
 
 #define VERIFY_NODE(verify, treep, nodep)       \
     if (verify) treep->verify_one_node(nodep);
@@ -63,7 +63,8 @@ extern void log_retry(void);
 #define log_lock(node, lock_type)
 #define log_split(nodep, split_key);
 #define log_mem_op(optype, node, num_inner, num_leaves)
-#define log_retry()
+#define log_op(op, key, res, set_size, thread_id)
+#define log_retry(node)
 #define before_assert()
 #define VERIFY_NODE(verify, treep, nodep)
 
