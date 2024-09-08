@@ -953,7 +953,7 @@ public:
         }
 
         bool soon_underflow() const {
-            return (node::slotuse - 1 < leaf_slotmin);
+            return is_few();
         }
 
         //! Set the (key,data) pair in slot. Overloaded function used by
@@ -3795,11 +3795,12 @@ private:
             // in this case the parent needs to do something
             // so in optimism mode we just fail back to the top
             if constexpr (concurrent && optimism) {
-                if (slot == leaf->slotuse) {
+                if (slot == leaf->slotuse - 1) {
                     leaf->mutex_.write_unlock();
                     return {{}, true};
                 }
-                if (leaf->soon_underflow()) {
+                if (leaf->soon_underflow() &&
+                    !(leaf == root_ && leaf->slotuse >= 2)) {
                     leaf->mutex_.write_unlock();
                     return {{}, true};
                 }
