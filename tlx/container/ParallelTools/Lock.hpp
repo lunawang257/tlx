@@ -100,6 +100,50 @@ public:
   ~partitioned_counter() { delete[] local_counters; }
 };
 
+struct ContentionCount {
+      std::atomic<int> no_wait = 0;
+      std::atomic<int> wait = 0;
+  };
+
+struct ContentionTracker {
+    static const int size = 4;
+    static const int rollover_threshold = 100;
+private:
+    ContentionCount buffer[size];
+    std::atomic<int> first = 0;
+
+public:
+    void rollover() {
+        int my_first = (first + 1)%size;
+        buffer[my_first].wait = 0;
+        buffer[my_first].no_wait = 0;
+        first = my_first;
+    }
+
+    int percent_waited() {
+        int wait_count = 0;
+        int no_wait_count = 0;
+        for (int i = 0; i < size; i++) {
+            wait_count += buffer[i].wait;
+            no_wait_count += buffer[i].no_wait;
+        }
+
+        return (wait_count * 100) / (wait_count + no_wait_count);
+    }
+
+    void track_no_wait() {
+        if ( ++buffer[first].no_wait >= rollover_threshold) {
+            rollover();
+        }
+    }
+
+    void track_wait() {
+        if ( ++buffer[first].wait >= rollover_threshold) {
+            rollover();
+        }
+    }
+};
+
 class ReaderWriterLock {
 
 public:
@@ -169,6 +213,7 @@ private:
 class ReaderWriterLock2 {
 public:
   ReaderWriterLock2() : writer(0), readers(0) {}
+  ContentionTracker con_tracker;
 
   /**
    * Try to acquire a lock and spin until the lock is available.
@@ -177,11 +222,16 @@ public:
 
     readers++;
 
+    bool waited = false;
     while (writer.test(std::memory_order_relaxed)) {
+      waited = true;
       readers--;
       writer.wait(true, std::memory_order_relaxed);
       readers++;
     }
+
+    if (waited) con_tracker.track_wait();
+    else con_tracker.track_no_wait();
   }
 
   void read_unlock(int cpuid __attribute__((unused)) = -1) {
@@ -198,13 +248,21 @@ public:
    * Then wait till reader count is 0.
    */
   void write_lock() {
+    bool waited = false;
+
     // acquire write lock.
     while (writer.test_and_set(std::memory_order_acq_rel)) {
+      waited = true;
       writer.wait(true, std::memory_order_acq_rel);
     }
+
+    if (readers > 0) waited = true;
     // wait for readers to finish
     while (readers > 0) {
     }
+
+    if (waited) con_tracker.track_wait();
+    else con_tracker.track_no_wait();
   }
 
   bool write_locked() {
@@ -216,6 +274,7 @@ public:
 
     if (writer.test_and_set()) {
       readers--;
+      con_tracker.track_wait();
       return false;
     }
 
@@ -225,22 +284,7 @@ public:
     while (readers > 0) {
     }
 
-    return true;
-  }
-
-  bool try_upgrade(int cpuid __attribute__((unused))) {
-    // acquire write lock.
-
-    if (writer.test_and_set()) {
-      return false;
-    }
-
-    readers--;
-
-    // wait for readers to finish
-    while (readers > 0) {
-    }
-
+    con_tracker.track_no_wait();
     return true;
   }
 

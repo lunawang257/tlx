@@ -54,7 +54,6 @@ namespace tlx {
 //! \{
 
 // *** Debugging Macros
-
 #ifdef TLX_BTREE_DEBUG
 
 #include <iostream>
@@ -248,6 +247,17 @@ public:
     //! merged or slots shifted from it's siblings.
     static const unsigned short inner_slotmin = (inner_slotmax / 2);
 
+    static const unsigned short maplize_threshold = 0;
+
+#ifdef NDEBUG
+    static const unsigned short slice_size = 8;
+#else
+    // use small number to simplify unit test
+    static const unsigned short slice_size = 3;
+#endif
+    static const int extra_div = 2;
+    static const int mapl_size = static_cast<int>(leaf_slotmax / extra_div);
+
     //! Debug parameter: Enables expensive and thorough checking of the B+ tree
     //! invariants after each insert/erase operation.
     static const bool self_verify = traits::self_verify;
@@ -307,14 +317,6 @@ private:
 
     //! \name Helper classes for MAPL Leaf
     //! \{
-#ifdef NDEBUG
-    static const unsigned short slice_size = 8;
-#else
-    // use small number to simplify unit test
-    static const unsigned short slice_size = 3;
-#endif
-    static const int extra_div = 2;
-    static const int mapl_size = static_cast<int>(leaf_slotmax / extra_div);
 
     // if uint8_t is used, max slotuse will be about 255 / 1.5 ~ 170
     using idx_t = int16_t;
@@ -551,8 +553,8 @@ private:
         }
     };
 
+
     struct LockHelper {
-        // TODO desc
         mutex_type mutex;
         cv_type readcv;
         cv_type writecv;
@@ -562,6 +564,7 @@ private:
         int writerswaiting = 0;
         int readerswaiting = 0;
         int upgradewaiting = 0;
+        ContentionTracker con_tracker;
 
         BTree *treep;
         node *nodep;
@@ -671,6 +674,7 @@ private:
             if (haswriter || writerswaiting > 0
                     || upgradewaiting > 0) {
                 readerswaiting++;
+                con_tracker.track_wait();
                 log_lock(nodep, lock_type_read_wait);
                 readcv.wait(lock, [this](){
                         return !this->haswriter
@@ -678,6 +682,8 @@ private:
                         && this->upgradewaiting == 0;
                 });
                 readerswaiting--;
+            } else {
+                con_tracker.track_no_wait();
             }
             numreader++;
             VERIFY_NODE(verify, treep, nodep);
@@ -696,12 +702,14 @@ private:
             if (numreader > 0) {
                 log_lock(nodep, lock_type_try_upgrade_failed);
                 log_lock(nodep, lock_type_read_unlock);
+                con_tracker.track_wait();
                 return false;
             }
             addtowrite();
             haswriter = true;
             log_lock(nodep, lock_type_try_upgrade_got);
             DBGPRT();
+            con_tracker.track_no_wait();
             return true;
         }
 
@@ -715,11 +723,14 @@ private:
             numreader--;
             if (numreader > 0 || haswriter) {
                 upgradewaiting++;
+                con_tracker.track_wait();
                 log_lock(nodep, lock_type_upgrade_wait);
                 upgradecv.wait(lock, [this]() {
                     return this->numreader == 0 && !this->haswriter;
                 });
                 upgradewaiting--;
+            } else {
+                con_tracker.track_no_wait();
             }
             haswriter = true;
             log_lock(nodep, lock_type_upgrade_got);
@@ -734,11 +745,14 @@ private:
             addtowrite();
             if (numreader > 0 || haswriter || upgradewaiting > 0) {
                 writerswaiting++;
+                con_tracker.track_wait();
                 writecv.wait(lock, [this](){
                     return this->numreader == 0 && !this->haswriter
                             && this->upgradewaiting == 0;
                 });
                 writerswaiting--;
+            } else {
+                con_tracker.track_no_wait();
             }
             TLX_BTREE_ASSERT(!haswriter);
             haswriter = true;
@@ -838,7 +852,6 @@ private:
   using ReaderWriterLock2 = LockHelper;
 
   #endif
-
    //! \}
 
 #ifdef NDEBUG
@@ -1006,6 +1019,13 @@ public:
         void set_slot(unsigned short slot, const value_type& value) {
             TLX_BTREE_ASSERT(slot < node::slotuse);
             slotdata[slot] = value;
+        }
+
+        bool should_maplize() {
+            TLX_BTREE_ASSERT(!mapl);
+            int percent = mutex_.con_tracker.percent_waited();
+            if (percent >= maplize_threshold) return true;
+            else return false;
         }
 
         void maplize() {
@@ -3284,6 +3304,9 @@ private:
                     // printf("trying to lock leaf lock from %p\n", leaf);
                     if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
                         leaf->mutex_.write_lock();
+                        if (leaf->should_maplize()) {
+                            leaf->maplize();
+                        }
                         if (leaf->mapl) {
                             leaf->mutex_.write_unlock();
                             goto retry;
@@ -3912,6 +3935,9 @@ private:
                 if (!leaf->mapl) {
                     if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
                         leaf->mutex_.write_lock();
+                        if (leaf->should_maplize()) {
+                            leaf->maplize();
+                        }
                         if (leaf->mapl) {
                             leaf->mutex_.write_unlock();
                             goto retry;
