@@ -66,7 +66,7 @@ static const bool test_multi = false;
 static const bool multithread = true;
 static const auto seed = std::random_device{}();
 
-bool prt_lock = false;
+bool prt_lock = true;
 bool prt_mem_op = prt_lock;
 bool prt_retry = prt_lock;
 bool prt_op = true;
@@ -2170,6 +2170,8 @@ void log_op(OpType op, int key, int res, int set_size, int thread_id) {
 
 void log_mem_op(MemOpType optype, void *node,
                 int num_inner, int num_leaves) {
+    auto& tinfo = local_debug_info.tinfo;
+
     if (debug_log_info.empty())
         return;
 
@@ -2177,6 +2179,10 @@ void log_mem_op(MemOpType optype, void *node,
         1, std::memory_order_relaxed);
 
     LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
+    if (tinfo) {
+        tinfo->cur_node = node;
+        log_info.threadidx = tinfo->threadidx;
+    }
     log_info.logtype = LOG_MEM_OP;
     log_info.node = node;
     log_info.mem_op_type = optype;
@@ -2190,12 +2196,18 @@ void log_mem_op(MemOpType optype, void *node,
 }
 
 void log_split(void *node, int split_key) {
+    auto& tinfo = local_debug_info.tinfo;
+
     size_t idx = cur_debug_log_info.fetch_add(
         1, std::memory_order_relaxed);
 
     LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
     log_info.logtype = LOG_LOCK;
 
+    if (tinfo) {
+        tinfo->cur_node = node;
+        log_info.threadidx = tinfo->threadidx;
+    }
     set_type::btree_impl::node *nodep =
         static_cast<set_type::btree_impl::node *>(node);
     if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
@@ -2312,8 +2324,9 @@ bool print_log_record(const LogInfo& info) {
             return true;
         }
         std::cout << format_time(info.timestamp)
-                  << " split "
+                  << " thread " << info.threadidx
                   << " node " << info.node
+                  << " split "
                   << "[" << info.min << "," << info.max << "]"
                   << " split_key=" << info.split_key
                   << " "
@@ -2325,6 +2338,7 @@ bool print_log_record(const LogInfo& info) {
             return true;
         }
         std::cout << format_time(info.timestamp)
+                  << " thread " << info.threadidx
                   << " " << MemOpName[info.mem_op_type]
                   << " " << info.node
                   << " #inner=" << info.num_inner
