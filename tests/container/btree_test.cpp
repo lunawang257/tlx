@@ -2100,6 +2100,7 @@ struct LogInfo {
 
     union {
         struct { // LOG_LOCK
+            void *slice;
             int gen;
             unsigned short sliceid;
             unsigned short level;
@@ -2291,11 +2292,16 @@ void log_lock(void* node __attribute__((unused)),
             set_type::btree_impl::LeafNode *leafp =
                 static_cast<set_type::btree_impl::LeafNode *>(nodep);
 
-            log_info.min = leafp->slotdata[0];
-            log_info.max = leafp->slotdata[leafp->slotuse - 1];
+            log_info.min = leafp->min_key();
+            log_info.max = leafp->max_key();
             log_info.numreader = leafp->mutex_.numreader;
             log_info.haswriter = leafp->mutex_.haswriter;
             log_info.sliceid = sliceid;
+            if (leafp->mapl) {
+                log_info.slice = leafp->mapl->slices + sliceid;
+            } else {
+                log_info.slice = nullptr;
+            }
             log_info.readerswaiting = leafp->mutex_.readerswaiting;
             log_info.writerswaiting = leafp->mutex_.writerswaiting;
             log_info.upgradewaiting = leafp->mutex_.upgradewaiting;
@@ -2306,7 +2312,7 @@ void log_lock(void* node __attribute__((unused)),
             log_info.max = innerp->slotkey[innerp->slotuse - 1];
             log_info.numreader = innerp->mutex_.numreader;
             log_info.haswriter = innerp->mutex_.haswriter;
-            log_info.sliceid = sliceid;
+            log_info.sliceid = MAPL_NONE;
             log_info.readerswaiting = innerp->mutex_.readerswaiting;
             log_info.writerswaiting = innerp->mutex_.writerswaiting;
             log_info.upgradewaiting = innerp->mutex_.upgradewaiting;
@@ -2342,7 +2348,8 @@ bool print_log_record(const LogInfo& info) {
             std::cout << " free_hdr";
         }
         else if (info.sliceid != MAPL_NONE) {
-            std::cout << " slice[" << info.sliceid << "]";
+            std::cout << " slice[" << info.sliceid << "]("
+                      << info.slice << ")";
         }
         std::cout << " (g" << info.gen
                   << " c" << info.slotuse
