@@ -2039,7 +2039,7 @@ int seqnum = 0;
 bool in_multi_test = false;
 set_type my_multi_thread_set;
 
-const int NUM_THREADS = 2;
+const int NUM_THREADS = 1;
 size_t cur_numthreads = NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;

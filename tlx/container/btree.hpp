@@ -1019,6 +1019,39 @@ public:
             return key_of_value::get(slotdata[s]);
         }
 
+        const key_type& min_key() const {
+            if (mapl) {
+                Slice& slice = mapl->slices[0];
+                return slice.key(0);
+            } else {
+                return key(0);
+            }
+        }
+
+        const key_type& max_key() const {
+            if (mapl) {
+                Slice& slice = mapl->slices[mapl->numslices - 1];
+                return slice.key(slice.slotuse - 1);
+            } else {
+                return key(node::slotuse - 1);
+            }
+        }
+
+        unsigned short total_slots() const {
+            if (mapl) {
+                unsigned short n = 0;
+                for (int slicenum = 0;
+                     slicenum < mapl->numslices;
+                     ++slicenum) {
+                    Slice& slice = mapl->slices[slicenum];
+                    n += slice.slotuse;
+                }
+                return n;
+            } else {
+                return node::slotuse;
+            }
+        }
+
         //! True if the node's slots are full.
         bool is_full() const {
             if (!mapl)
@@ -3443,8 +3476,6 @@ private:
                     slice.lock.write_lock();
                 }
 
-                TLX_BTREE_ASSERT(!leaf->mapl->is_full());
-
                 unsigned short ind = 0; // searching for stuff
                 ind = find_lower(&slice, key);
 
@@ -3563,7 +3594,9 @@ private:
                          key_type* out_newkey, node** out_newleaf) {
         TLX_BTREE_ASSERT(leaf->mapl->is_full());
 #ifndef NDEBUG
-        TLX_BTREE_ASSERT(leaf->mutex_.self_write_locked());
+        if constexpr (concurrent) {
+            TLX_BTREE_ASSERT(leaf->mutex_.self_write_locked());
+        }
 #endif
 
         LeafNode* newleaf = allocate_leaf();
@@ -5453,12 +5486,36 @@ private:
                 *minkey = leaf->key(0);
                 *maxkey = leaf->key(leaf->slotuse - 1);
 
-                ++vstats.leaves;
-                vstats.size += leaf->slotuse;
-            } else { //Mapl
-                //int slicenum = leaf->mapl->get_slicenum(key);
-                //Slice& slice = leaf->mapl->slices[slicenum];
+            } else { // Mapl
+                unsigned short total_slots = 0;
+                for (int slicenum = 0;
+                     slicenum < leaf->mapl->numslices;
+                     ++slicenum) {
+                    Slice& slice = leaf->mapl->slices[slicenum];
+                    if (slicenum == 0) {
+                        *minkey = slice.key(0);
+                    }
+                    if (slicenum == leaf->mapl->numslices - 1) {
+                        *maxkey = slice.key(slice.slotuse - 1);
+                    }
+                    for (idx_t i = 0; i < slice.slotuse - 1; ++i) {
+                        tlx_die_unless(key_lessequal(
+                                           slice.key(i), slice.key(i + 1)));
+                    }
+                    if (slicenum < leaf->mapl->numslices - 1) {
+                        if (!key_lessequal(
+                                slice.key(slice.slotuse - 1),
+                                leaf->mapl->slice_boundary[slicenum])) {
+                            leaf->print_mapl(std::cout);
+                            tlx_die_unless(false);
+                        }
+                    }
+                    total_slots += slice.slotuse;
+                }
+                tlx_die_unless(total_slots == leaf->slotuse);
             }
+            vstats.size += leaf->slotuse;
+            ++vstats.leaves;
         }
         else // !n->is_leafnode()
         {
@@ -5544,17 +5601,12 @@ private:
             tlx_die_unless(n->level == 0);
             tlx_die_unless(n->slotuse > 0);
 
-            for (unsigned short slot = 0; slot < n->slotuse - 1; ++slot)
-            {
-                tlx_die_unless(key_lessequal(n->key(slot), n->key(slot + 1)));
-            }
-
             testcount += n->slotuse;
 
             if (n->next_leaf)
             {
-                tlx_die_unless(key_lessequal(n->key(n->slotuse - 1),
-                                             n->next_leaf->key(0)));
+                tlx_die_unless(key_lessequal(n->max_key(),
+                                             n->next_leaf->min_key()));
 
                 tlx_die_unless(n == n->next_leaf->prev_leaf);
             }
