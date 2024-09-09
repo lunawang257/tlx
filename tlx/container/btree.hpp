@@ -3479,10 +3479,6 @@ private:
                 }
                 return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
             } else { // MAPL leaf
-                if constexpr (concurrent) {
-                    leaf->mapl->writelock_slice(key);
-                }
-
                 int slice_num = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slice_num];
                 if constexpr (concurrent) {
@@ -3490,6 +3486,9 @@ private:
                 }
 
                 unsigned short ind = 0; // searching for stuff
+                
+            std::cout << "hoisaernteioarnte" << std::endl; // XXX
+            leaf->print_mapl(std::cout); // XXX
                 ind = find_lower(&slice, key);
 
                 if (ind < slice.slotuse && key_equal(slice.key(ind), key)) {
@@ -3617,8 +3616,8 @@ private:
             newleaf->mutex_.write_lock();
         }
 
-        int right_slotuse = mapl_size / 2;
-        int left_slotuse = mapl_size - right_slotuse;
+        int right_slotuse = leaf->slotuse / 2;
+        int left_slotuse = leaf->slotuse - right_slotuse;
         newleaf->slotuse = right_slotuse;
 
         newleaf->next_leaf = leaf->next_leaf;
@@ -3634,7 +3633,7 @@ private:
         leaf->init_mapl_key_ctx(left_slotuse, &ctx);
 
         for (int i = left_slotuse; i < mapl_size; i++) {
-            newleaf->slotdata[i] = leaf->get_overall(i, &ctx);
+            newleaf->slotdata[i - left_slotuse] = leaf->get_overall(i, &ctx);
         }
 
         leaf->slotuse = left_slotuse;
@@ -4192,25 +4191,30 @@ private:
                     }
                 }
 
+                if constexpr (concurrent) {
+                    leaf->mapl->free_slot_mtx.write_lock();
+                }
+
                 fix_underflow = leaf->is_underflow();
                 if (leaf == root_) {
-                    if constexpr (concurrent) {
-                        leaf->mapl->free_slot_mtx.write_lock();
-                    }
                     if (leaf->slotuse < 1 && fix_underflow) {
-                        if constexpr (concurrent) {
-                            if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
-                                leaf->mutex_.write_lock();
-                            }
-                        }
-                        if (leaf->mapl) {
-                            leaf->unmaplize();
-                        }
+                        fix_underflow = true;
                     } else {
                         if constexpr (concurrent) {
                             leaf->mapl->free_slot_mtx.write_unlock();
                         }
                         fix_underflow = false;
+                    }
+                }
+
+                if (fix_underflow) {
+                    if constexpr (concurrent) {
+                        if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
+                            leaf->mutex_.write_lock();
+                        }
+                    }
+                    if (leaf->mapl) {
+                        leaf->unmaplize();
                     }
                 }
             }
@@ -4319,7 +4323,10 @@ private:
             }
             if constexpr (concurrent) {
                 if (!leaf->mapl) leaf->mutex_.write_unlock();
-                else leaf->mutex_.read_unlock(cpu_id);
+                else {
+                    leaf->mapl->write_unlock_slice(key);
+                    leaf->mutex_.read_unlock(cpu_id);
+                }
                 if (left_leaf_locked) left_leaf->mutex_.write_unlock();
                 if (right_leaf_locked) right_leaf->mutex_.write_unlock();
             }

@@ -292,6 +292,7 @@ struct SimpleTest {
                 die_unless(btree.size() == ++size);
             }
 
+            btree.print(std::cout);
             btree.verify();
 
             // random lookup
@@ -593,7 +594,7 @@ void test_simple() {
 
 template <typename KeyType>
 struct traits_nodebug : tlx::btree_default_traits<KeyType, KeyType> {
-    static const bool self_verify = false;
+    static const bool self_verify = true;
     static const bool debug = false;
 
     static const int leaf_slots = 8;
@@ -2284,8 +2285,8 @@ void log_lock(void* node __attribute__((unused)),
     log_info.writerswaiting = 0;
     log_info.upgradewaiting = 0;
 
-    log_info.level = nodep ? nodep->level : -1;
-    log_info.slotuse = nodep ? nodep->slotuse : -1;
+    //log_info.level = nodep ? nodep->level : -1;
+    //log_info.slotuse = nodep ? nodep->slotuse : -1;
 
     if (nodep) {
         if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
@@ -2894,7 +2895,7 @@ Free list: 4 5 6 3 7 8 9 10 11
 int main() {
     std::cout << "seed: " << seed << std::endl;
     std::cout << "pid: " << getpid() << std::endl;
-    //*
+    /*
     test_simple();
     if (tlx_more_tests) {
         test_large();
