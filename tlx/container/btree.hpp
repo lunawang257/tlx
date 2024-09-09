@@ -4092,6 +4092,9 @@ private:
                 if (slot == leaf->slotuse)
                 {
                     if constexpr (concurrent) {
+                        if constexpr (optimism) {
+                            TLX_BTREE_ASSERT(false);
+                        }
                         assert_leaf_write_locked(leaf);
                         assert_inner_write_locked(parent);
                     }
@@ -4201,6 +4204,9 @@ private:
             if (fix_underflow)
             {
                 if constexpr (concurrent) {
+                    if constexpr (optimism) {
+                        TLX_BTREE_ASSERT(false);
+                    }
                     if (left_leaf) {
                         left_leaf_locked = true;
                         left_leaf->mutex_.write_lock();
@@ -4455,7 +4461,13 @@ private:
                 }
             }
 
-            if (inner->is_underflow() &&
+            bool skip_smo = false;
+            if constexpr (concurrent) {
+                if constexpr (optimism) {
+                    skip_smo = true;
+                }
+            }
+            if (!skip_smo && inner->is_underflow() &&
                 !(inner == root_ && inner->slotuse >= 1))
             {
                 // case: the inner node is the root and has just one child. that
