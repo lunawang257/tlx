@@ -73,11 +73,6 @@ bool prt_retry = prt_lock;
 bool prt_op = true;
 bool prt_split = true;
 
-enum { // lock id in Mapl nodes
-    MAPL_NONE = 65535, // not a mapl node
-    MAPL_FREE_LIST_MTX = 65534 // free list mtx in mapl node
-};
-
 enum {
   STACK_START_TO_PRINT = 3,
   NUM_STACK_TO_PRINT = 4
@@ -2285,8 +2280,8 @@ void log_lock(void* node __attribute__((unused)),
     log_info.writerswaiting = 0;
     log_info.upgradewaiting = 0;
 
-    //log_info.level = nodep ? nodep->level : -1;
-    //log_info.slotuse = nodep ? nodep->slotuse : -1;
+    log_info.level = nodep ? nodep->level : -1;
+    log_info.slotuse = nodep ? nodep->slotuse : -1;
 
     if (nodep) {
         if (nodep->level == 0 && nodep->slotuse != 0) { // leaf

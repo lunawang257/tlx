@@ -33,6 +33,12 @@
 
 #include <lock_type.hpp>
 
+#ifdef NDEBUG
+#define DBG(foo)
+#else
+#define DBG(foo) foo
+#endif
+
 #if __APPLE__
 enum { CACHE_LINE_SIZE = 128 };
 #else
@@ -42,6 +48,11 @@ enum { CACHE_LINE_SIZE = 64 };
 #define PSUM_HEIGHT_CUTOFF 2
 
 enum { GARBAGE = 0xED, UINT_GARBAGE = 0xEDEDEDED };
+
+enum { // lock id in Mapl nodes
+    MAPL_NONE = 65535, // not a mapl node
+    MAPL_FREE_LIST_MTX = 65534 // free list mtx in mapl node
+};
 
 extern bool in_multi_test;
 
@@ -324,16 +335,16 @@ private:
     struct Mapl;
     struct LockHelper;
 
+#ifndef NDEBUG
 public:
     struct LeafNode;
 private:
+#else
+    struct LeafNode;
+#endif
 
-  #ifndef NDEBUG
-  // debug mode
-  using ReaderWriterLock = LockHelper;
-  using ReaderWriterLock2 = LockHelper;
-
-  #endif
+    DBG(using ReaderWriterLock = LockHelper;)
+    DBG(using ReaderWriterLock2 = LockHelper;)
 
     struct Slice {
         Mapl *mapl;
@@ -390,7 +401,7 @@ private:
         value_type extra[mapl_size];
         int numslices;
         unsigned short* slotusep;
-        LeafNode* nodep;
+        DBG(LeafNode* nodep;)
 
         /*void free_slot(int slot) {
             *static_cast<idx_t*>(&extra[slot]) = free_slot_head;
@@ -398,7 +409,7 @@ private:
         }*/
 
         Mapl(value_type* slotdata, unsigned short* node_slotuse,
-            LeafNode* leaf) {
+            LeafNode* leaf __attribute__((unused))) {
             slotdatap = slotdata;
             slotusep = node_slotuse;
             auto slotuse = *node_slotuse;
@@ -408,12 +419,12 @@ private:
             slices = new Slice[numslices];
             for (int i = 0; i < numslices - 1; i++) {
                 slices[i].init(this, i * slice_size, slice_size);
-                slices[i].lock.sliceid = i;
-                slices[i].lock.nodep = leaf;
+                DBG(slices[i].lock.sliceid = i;)
+                DBG(slices[i].lock.nodep = leaf;)
             }
-#ifndef NDEBUG
-            free_slot_mtx.sliceid = -1;
-#endif
+            DBG(free_slot_mtx.sliceid = MAPL_FREE_LIST_MTX;)
+            DBG(free_slot_mtx.nodep = leaf;)
+
             idx_t last_slice_off = (numslices - 1) * slice_size;
             slices[numslices - 1].init(this, last_slice_off,
                                        slotuse - last_slice_off);
@@ -3486,7 +3497,7 @@ private:
                 }
 
                 unsigned short ind = 0; // searching for stuff
-                
+
             std::cout << "hoisaernteioarnte" << std::endl; // XXX
             leaf->print_mapl(std::cout); // XXX
                 ind = find_lower(&slice, key);
