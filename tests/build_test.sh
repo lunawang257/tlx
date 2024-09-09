@@ -3,16 +3,13 @@
 # build multiple build types (Debug & Release) and make sure they all pass
 
 ScriptDir="$(dirname "$(realpath "$0")")"
-BuildDir="$ScriptDir/../build"
+PrjDir="$(dirname "$ScriptDir")"
 OutFile=/tmp/tlx_build_test_$$.txt
 
 function RunBuild()
 {
     BuildType=$1
-    if ! cmake -DTLX_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=$BuildType .. >> "$OutFile" 2>&1 ; then
-	return 1
-    fi
-    if ! cmake --build . --target clean >> "$OutFile" 2>&1; then
+    if ! cmake -DTLX_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=$BuildType "$PrjDir" >> "$OutFile" 2>&1 ; then
 	return 1
     fi
     if ! cmake --build . -j >> "$OutFile" 2>&1 ; then
@@ -21,14 +18,15 @@ function RunBuild()
     return 0
 }
 
-cd "$BuildDir"
-
 echo "Output in file $OutFile"
 prev_length=0
 for BuildType in Debug Release
 do
     printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
-    echo "Building $BuildType"
+    BuildDir="$PrjDir/build/$BuildType"
+    echo "Building $BuildType in $BuildDir"
+    mkdir -p "$BuildDir"
+    cd "$BuildDir"
     RunBuild $BuildType &
 
     cmake_pid=$!
