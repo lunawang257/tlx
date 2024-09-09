@@ -55,6 +55,7 @@ inline void before_assert(void) {}
 #include <sstream>
 #include <stack>
 #include <tlx/timestamp.hpp>
+#include <regex>
 
 #if TLX_MORE_TESTS
 static const bool tlx_more_tests = true;
@@ -154,6 +155,23 @@ std::string extract_func_name(const std::string& input) {
     ssize_t pos = clean_input.find_last_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
     auto res = clean_input.substr(pos + 1);
     return res;
+}
+
+std::string extractText(const std::string& input) {
+    // Regular expression to match text between "::" and "("
+    std::regex re(R"(::([^:(]+)\()");
+
+    // Variable to hold the matched string
+    std::smatch match;
+
+    // Search for the pattern in the input string
+    if (std::regex_search(input, match, re)) {
+        // Return the matched string without "::" and with "(" included
+        return match[1].str();
+    }
+
+    // Return an empty string if no match is found
+    return "";
 }
 
 std::string stack_sym(void * const addrs[NUM_STACK_TO_PRINT]) {
