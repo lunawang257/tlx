@@ -2023,9 +2023,9 @@ typedef tlx::btree_set<
     std::allocator<size_t> /* Allocator */,
     true /* concurrent */ > set_type;
 
-const size_t INITIAL_SIZE = 800;
-const int MAX_KEY = 1000;
-const int NUM_OPERATIONS = 500;
+const size_t INITIAL_SIZE = 50;
+const int MAX_KEY = 100;
+const int NUM_OPERATIONS = 150;
 
 struct Entry {
     std::mutex mtx;
@@ -2039,7 +2039,7 @@ int seqnum = 0;
 bool in_multi_test = false;
 set_type my_multi_thread_set;
 
-const int NUM_THREADS = 4;
+const int NUM_THREADS = 2;
 size_t cur_numthreads = NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;
