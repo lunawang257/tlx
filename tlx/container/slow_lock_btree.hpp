@@ -750,7 +750,7 @@ public:
                 numreader.add(1, local_thread_id);
                 return;
             }
-            log_lock(nodep, lock_type_read);
+            log_lock(nodep, lock_type_read, -1);
 
             bool added_ref = false;
             addtoread();
@@ -770,10 +770,10 @@ public:
                     TLX_BTREE_ASSERT(reader_count >= 0);
                     if (reader_count == 0) {
                         if (upgradewaiting > 0) {
-                            log_lock(nodep, lock_type_read_notify_upgrader);
+                            log_lock(nodep, lock_type_read_notify_upgrader, -1);
                             upgradecv.notify_one();
                         } else if (writerswaiting > 0) {
-                            log_lock(nodep, lock_type_read_notify_writer);
+                            log_lock(nodep, lock_type_read_notify_writer, -1);
                             writecv.notify_one();
                         }
                     }
@@ -781,7 +781,7 @@ public:
                 if (haswriter || writerswaiting > 0
                     || upgradewaiting > 0) {
                     readerswaiting++;
-                    log_lock(nodep, lock_type_read_wait);
+                    log_lock(nodep, lock_type_read_wait, -1);
                     readcv.wait(lock, [this](){
                         return !this->haswriter
                             && this->writerswaiting == 0
@@ -798,12 +798,12 @@ public:
 
             VERIFY_NODE(verify, treep, nodep);
             TLX_BTREE_ASSERT(numreader.get() > 0);
-            log_lock(nodep, lock_type_read_got);
+            log_lock(nodep, lock_type_read_got, -1);
             DBGPRT();
         }
 
         void upgradelock() {
-            log_lock(nodep, lock_type_upgrade);
+            log_lock(nodep, lock_type_upgrade, -1);
 
             // stops future readers
             check_writer.test_and_set(std::memory_order_release);
@@ -818,7 +818,7 @@ public:
                 TLX_BTREE_ASSERT(reader_count >= 0);
                 if (reader_count == 0 && !haswriter) break;
                 upgradewaiting++;
-                log_lock(nodep, lock_type_upgrade_wait);
+                log_lock(nodep, lock_type_upgrade_wait, -1);
                 upgradecv.wait_for(lock, std::chrono::microseconds(1), [this]() {
                     int64_t reader_count = numreader.get();
                     TLX_BTREE_ASSERT(reader_count >= 0);
@@ -827,12 +827,12 @@ public:
                 upgradewaiting--;
             }
             haswriter = true;
-            log_lock(nodep, lock_type_upgrade_got);
+            log_lock(nodep, lock_type_upgrade_got, -1);
             DBGPRT();
         }
 
         void writelock(bool verify __attribute__((unused)) = true) {
-            log_lock(nodep, lock_type_write);
+            log_lock(nodep, lock_type_write, -1);
 
             // stops future readers
             check_writer.test_and_set(std::memory_order_release);
@@ -856,7 +856,7 @@ public:
             TLX_BTREE_ASSERT(!haswriter);
             haswriter = true;
             VERIFY_NODE(verify, treep, nodep);
-            log_lock(nodep, lock_type_write_got);
+            log_lock(nodep, lock_type_write_got, -1);
             DBGPRT();
         }
 
@@ -865,7 +865,7 @@ public:
                 numreader.add(-1, local_thread_id);
                 return;
             }
-            log_lock(nodep, lock_type_read_unlock);
+            log_lock(nodep, lock_type_read_unlock, -1);
 
             delfromread(verify);
 
@@ -876,10 +876,12 @@ public:
 
                 if (reader_count == 1 /* use 1 because self count not decremented yet */) {
                     if (upgradewaiting > 0) {
-                        log_lock(nodep, lock_type_read_unlock_notify_upgrader);
+                        log_lock(nodep, lock_type_read_unlock_notify_upgrader,
+                                 -1);
                         upgradecv.notify_one();
                     } else if (writerswaiting > 0) {
-                        log_lock(nodep, lock_type_read_unlock_notify_writer);
+                        log_lock(nodep, lock_type_read_unlock_notify_writer,
+                                 -1);
                         writecv.notify_one();
                     }
                 }
@@ -892,20 +894,20 @@ public:
         }
 
         void write_unlock(bool verify = true) {
-            log_lock(nodep, lock_type_write_unlock);
+            log_lock(nodep, lock_type_write_unlock, -1);
 
             lock_type lock(mutex);
             delfromwrite(verify);
             TLX_BTREE_ASSERT(haswriter);
             haswriter = false;
             if (upgradewaiting > 0) {
-                log_lock(nodep, lock_type_write_unlock_notify_upgrader);
+                log_lock(nodep, lock_type_write_unlock_notify_upgrader, -1);
                 upgradecv.notify_one();
             } else if (writerswaiting > 0) {
-                log_lock(nodep, lock_type_write_unlock_notify_writer);
+                log_lock(nodep, lock_type_write_unlock_notify_writer, -1);
                 writecv.notify_one();
             } else {
-                log_lock(nodep, lock_type_write_unlock_notify_reader);
+                log_lock(nodep, lock_type_write_unlock_notify_reader, -1);
                 check_writer.clear();
                 readcv.notify_all();
             }
@@ -913,7 +915,7 @@ public:
         }
 
         void downgrade_lock() {
-            log_lock(nodep, lock_type_downgrade);
+            log_lock(nodep, lock_type_downgrade, -1);
             lock_type lock(mutex);
             TLX_BTREE_ASSERT(haswriter);
             addtoread();
@@ -921,7 +923,7 @@ public:
             haswriter = false;
             numreader.add(1, local_thread_id);
             if (upgradewaiting == 0 && writerswaiting == 0) {
-                log_lock(nodep, lock_type_downgrade_notify_reader);
+                log_lock(nodep, lock_type_downgrade_notify_reader, -1);
                 check_writer.clear();
                 readcv.notify_all();
             }
@@ -1031,13 +1033,13 @@ public:
                 numreader++;
                 return;
             }
-            log_lock(nodep, lock_type_read);
+            log_lock(nodep, lock_type_read, -1);
             lock_type lock(mutex);
             addtoread();
             if (haswriter || writerswaiting > 0
                     || upgradewaiting > 0) {
                 readerswaiting++;
-                log_lock(nodep, lock_type_read_wait);
+                log_lock(nodep, lock_type_read_wait, -1);
                 readcv.wait(lock, [this](){
                         return !this->haswriter
                         && this->writerswaiting == 0
@@ -1047,12 +1049,12 @@ public:
             }
             numreader++;
             VERIFY_NODE(verify, treep, nodep);
-            log_lock(nodep, lock_type_read_got);
+            log_lock(nodep, lock_type_read_got, -1);
             DBGPRT();
         }
 
         void upgradelock() {
-            log_lock(nodep, lock_type_upgrade);
+            log_lock(nodep, lock_type_upgrade, -1);
             lock_type lock(mutex);
             delfromread(false);
             addtowrite();
@@ -1060,19 +1062,19 @@ public:
             numreader--;
             if (numreader > 0 || haswriter) {
                 upgradewaiting++;
-                log_lock(nodep, lock_type_upgrade_wait);
+                log_lock(nodep, lock_type_upgrade_wait, -1);
                 upgradecv.wait(lock, [this]() {
                     return this->numreader == 0 && !this->haswriter;
                 });
                 upgradewaiting--;
             }
             haswriter = true;
-            log_lock(nodep, lock_type_upgrade_got);
+            log_lock(nodep, lock_type_upgrade_got, -1);
             DBGPRT();
         }
 
         void writelock(bool verify __attribute__((unused)) = true) {
-            log_lock(nodep, lock_type_write);
+            log_lock(nodep, lock_type_write, -1);
             lock_type lock(mutex);
             addtowrite();
             if (numreader > 0 || haswriter || upgradewaiting > 0) {
@@ -1086,7 +1088,7 @@ public:
             TLX_BTREE_ASSERT(!haswriter);
             haswriter = true;
             VERIFY_NODE(verify, treep, nodep);
-            log_lock(nodep, lock_type_write_got);
+            log_lock(nodep, lock_type_write_got, -1);
             DBGPRT();
         }
 
@@ -1095,7 +1097,7 @@ public:
                 numreader--;
                 return;
             }
-            log_lock(nodep, lock_type_read_unlock);
+            log_lock(nodep, lock_type_read_unlock, -1);
             lock_type lock(mutex);
             delfromread(verify);
             TLX_BTREE_ASSERT(numreader >= 1);
@@ -1110,7 +1112,7 @@ public:
         }
 
         void write_unlock(bool verify = true) {
-            log_lock(nodep, lock_type_write_unlock);
+            log_lock(nodep, lock_type_write_unlock, -1);
             lock_type lock(mutex);
             delfromwrite(verify);
             TLX_BTREE_ASSERT(haswriter);
@@ -1126,7 +1128,7 @@ public:
         }
 
         void downgrade_lock() {
-            log_lock(nodep, lock_type_downgrade);
+            log_lock(nodep, lock_type_downgrade, -1);
             lock_type lock(mutex);
             TLX_BTREE_ASSERT(haswriter);
             addtoread();

@@ -322,6 +322,14 @@ private:
     using idx_t = int16_t;
 
     struct Mapl;
+    struct LockHelper;
+
+  #ifndef NDEBUG
+  // debug mode
+  using ReaderWriterLock = LockHelper;
+  using ReaderWriterLock2 = LockHelper;
+
+  #endif
 
     struct Slice {
         Mapl *mapl;
@@ -394,7 +402,9 @@ private:
             slices = new Slice[numslices];
             for (int i = 0; i < numslices - 1; i++) {
                 slices[i].init(this, i * slice_size, slice_size);
+                slices[i].lock.sliceid = i;
             }
+            free_slot_mtx.sliceid = -1;
             idx_t last_slice_off = (numslices - 1) * slice_size;
             slices[numslices - 1].init(this, last_slice_off,
                                        slotuse - last_slice_off);
@@ -602,6 +612,7 @@ private:
 
         BTree *treep;
         node *nodep;
+        unsigned short sliceid;
 
 #ifdef TLX_BTREE_DEBUG
         std::unordered_set<std::thread::id> curwrite;
@@ -702,14 +713,14 @@ private:
                 numreader++;
                 return;
             }
-            log_lock(nodep, lock_type_read);
+            log_lock(nodep, lock_type_read, sliceid);
             lock_type lock(mutex);
             addtoread();
             if (haswriter || writerswaiting > 0
                     || upgradewaiting > 0) {
                 readerswaiting++;
                 con_tracker.track_wait();
-                log_lock(nodep, lock_type_read_wait);
+                log_lock(nodep, lock_type_read_wait, sliceid);
                 readcv.wait(lock, [this](){
                         return !this->haswriter
                         && this->writerswaiting == 0
@@ -721,27 +732,27 @@ private:
             }
             numreader++;
             VERIFY_NODE(verify, treep, nodep);
-            log_lock(nodep, lock_type_read_got);
+            log_lock(nodep, lock_type_read_got, sliceid);
             DBGPRT();
         }
 
         bool try_upgrade_release_on_fail(int cpuid __attribute__((unused))) {
             TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
-            log_lock(nodep, lock_type_try_upgrade_release_on_fail);
+            log_lock(nodep, lock_type_try_upgrade_release_on_fail, sliceid);
             lock_type lock(mutex);
 
             TLX_BTREE_ASSERT(!haswriter);
             numreader--;
             delfromread(false);
             if (numreader > 0) {
-                log_lock(nodep, lock_type_try_upgrade_failed);
-                log_lock(nodep, lock_type_read_unlock);
+                log_lock(nodep, lock_type_try_upgrade_failed, sliceid);
+                log_lock(nodep, lock_type_read_unlock, sliceid);
                 con_tracker.track_wait();
                 return false;
             }
             addtowrite();
             haswriter = true;
-            log_lock(nodep, lock_type_try_upgrade_got);
+            log_lock(nodep, lock_type_try_upgrade_got, sliceid);
             DBGPRT();
             con_tracker.track_no_wait();
             return true;
@@ -749,7 +760,7 @@ private:
 
         void upgradelock() {
             TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
-            log_lock(nodep, lock_type_upgrade);
+            log_lock(nodep, lock_type_upgrade, sliceid);
             lock_type lock(mutex);
             delfromread(false);
             addtowrite();
@@ -758,7 +769,7 @@ private:
             if (numreader > 0 || haswriter) {
                 upgradewaiting++;
                 con_tracker.track_wait();
-                log_lock(nodep, lock_type_upgrade_wait);
+                log_lock(nodep, lock_type_upgrade_wait, sliceid);
                 upgradecv.wait(lock, [this]() {
                     return this->numreader == 0 && !this->haswriter;
                 });
@@ -767,14 +778,14 @@ private:
                 con_tracker.track_no_wait();
             }
             haswriter = true;
-            log_lock(nodep, lock_type_upgrade_got);
+            log_lock(nodep, lock_type_upgrade_got, sliceid);
             DBGPRT();
         }
 
         void write_lock(bool verify __attribute__((unused)) = false) {
             TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
             if constexpr (!concurrent) TLX_BTREE_ASSERT(false);
-            log_lock(nodep, lock_type_write);
+            log_lock(nodep, lock_type_write, sliceid);
             lock_type lock(mutex);
             addtowrite();
             if (numreader > 0 || haswriter || upgradewaiting > 0) {
@@ -791,11 +802,11 @@ private:
             TLX_BTREE_ASSERT(!haswriter);
             haswriter = true;
             VERIFY_NODE(verify, treep, nodep);
-            log_lock(nodep, lock_type_write_got);
+            log_lock(nodep, lock_type_write_got, sliceid);
             DBGPRT();
         }
 
-        void read_unlock(int cpuid __attribute__((unused)),
+        void read_unlock(int cpuid __attribute__((unused)) = -1,
                          bool verify __attribute__((unused)) = false) {
             TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
 #ifndef NDEBUG
@@ -805,7 +816,7 @@ private:
                 numreader--;
                 return;
             }
-            log_lock(nodep, lock_type_read_unlock);
+            log_lock(nodep, lock_type_read_unlock, sliceid);
             lock_type lock(mutex);
             delfromread(verify);
             TLX_BTREE_ASSERT(numreader >= 1);
@@ -824,7 +835,7 @@ private:
 #ifndef NDEBUG
             //std::this_thread::yield(); // better reproduce race conditions
 #endif
-            log_lock(nodep, lock_type_write_unlock);
+            log_lock(nodep, lock_type_write_unlock, sliceid);
             lock_type lock(mutex);
             delfromwrite(verify);
             TLX_BTREE_ASSERT(haswriter);
@@ -841,7 +852,7 @@ private:
 
         void downgrade_lock() {
             TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
-            log_lock(nodep, lock_type_downgrade);
+            log_lock(nodep, lock_type_downgrade, sliceid);
             lock_type lock(mutex);
             TLX_BTREE_ASSERT(haswriter);
             addtoread();
@@ -880,12 +891,6 @@ private:
         }
     }
 
-  #ifndef NDEBUG
-  // debug mode
-  using ReaderWriterLock = LockHelper;
-  using ReaderWriterLock2 = LockHelper;
-
-  #endif
    //! \}
 
 #ifdef NDEBUG
@@ -3285,7 +3290,6 @@ private:
 
                 if (inner->is_full())
                 {
-                    log_lock(inner, lock_type_inner_split);
                     split_inner_node(inner, splitkey, splitnode, slot);
 
                     TLX_BTREE_PRINT("BTree::insert_descend done split_inner:" <<
@@ -3642,6 +3646,8 @@ private:
         TLX_BTREE_ASSERT(inner->is_full());
 
         unsigned short mid = (inner->slotuse >> 1);
+
+        log_split(inner, mid);
 
         TLX_BTREE_PRINT("BTree::split_inner: mid " << mid <<
                         " addslot " << addslot);

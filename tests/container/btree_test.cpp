@@ -73,6 +73,11 @@ bool prt_retry = prt_lock;
 bool prt_op = true;
 bool prt_split = true;
 
+enum { // lock id in Mapl nodes
+    MAPL_NONE = 65535, // not a mapl node
+    MAPL_FREE_LIST_MTX = 65534 // free list mtx in mapl node
+};
+
 enum {
   STACK_START_TO_PRINT = 3,
   NUM_STACK_TO_PRINT = 4
@@ -2096,6 +2101,7 @@ struct LogInfo {
     union {
         struct { // LOG_LOCK
             int gen;
+            unsigned short sliceid;
             unsigned short level;
             unsigned short slotuse;
             unsigned int numreader;
@@ -2253,7 +2259,8 @@ void log_split(void *node, int split_key) {
 }
 
 void log_lock(void* node __attribute__((unused)),
-              int lock_type_enum __attribute__((unused))) {
+              int lock_type_enum __attribute__((unused)),
+              unsigned short sliceid = MAPL_NONE) {
     auto& tinfo = local_debug_info.tinfo;
     size_t idx = cur_debug_log_info.fetch_add(
         1, std::memory_order_relaxed);
@@ -2288,6 +2295,7 @@ void log_lock(void* node __attribute__((unused)),
             log_info.max = leafp->slotdata[leafp->slotuse - 1];
             log_info.numreader = leafp->mutex_.numreader;
             log_info.haswriter = leafp->mutex_.haswriter;
+            log_info.sliceid = sliceid;
             log_info.readerswaiting = leafp->mutex_.readerswaiting;
             log_info.writerswaiting = leafp->mutex_.writerswaiting;
             log_info.upgradewaiting = leafp->mutex_.upgradewaiting;
@@ -2298,6 +2306,7 @@ void log_lock(void* node __attribute__((unused)),
             log_info.max = innerp->slotkey[innerp->slotuse - 1];
             log_info.numreader = innerp->mutex_.numreader;
             log_info.haswriter = innerp->mutex_.haswriter;
+            log_info.sliceid = sliceid;
             log_info.readerswaiting = innerp->mutex_.readerswaiting;
             log_info.writerswaiting = innerp->mutex_.writerswaiting;
             log_info.upgradewaiting = innerp->mutex_.upgradewaiting;
@@ -2328,8 +2337,14 @@ bool print_log_record(const LogInfo& info) {
         std::cout << format_time(info.timestamp)
                   << " thread " << info.threadidx
                   << " node " << info.node
-                  << "[" << info.min << "," << info.max << "]"
-                  << " (g" << info.gen
+                  << "[" << info.min << "," << info.max << "]";
+        if (info.sliceid == MAPL_FREE_LIST_MTX) {
+            std::cout << " free_hdr";
+        }
+        else if (info.sliceid != MAPL_NONE) {
+            std::cout << " slice[" << info.sliceid << "]";
+        }
+        std::cout << " (g" << info.gen
                   << " c" << info.slotuse
                   << " L" << info.level
                   << ") (r" << info.numreader
