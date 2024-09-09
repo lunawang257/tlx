@@ -417,25 +417,33 @@ private:
         void readlock_slice(const key_type& key) {
             int slice_num = get_slicenum(key);
             Slice& slice = slices[slice_num];
-            slice.lock.read_lock(sched_getcpu());
+            if constexpr (concurrent) {
+                slice.lock.read_lock(sched_getcpu());
+            }
         }
 
         void writelock_slice(const key_type& key) {
             int slice_num = get_slicenum(key);
             Slice& slice = slices[slice_num];
-            slice.lock.write_lock();
+            if constexpr (concurrent) {
+                slice.lock.write_lock();
+            }
         }
 
         void read_unlock_slice(const key_type& key) {
             int slice_num = get_slicenum(key);
             Slice& slice = slices[slice_num];
-            slice.lock.read_unlock();
+            if constexpr (concurrent) {
+                slice.lock.read_unlock();
+            }
         }
 
         void write_unlock_slice(const key_type& key) {
             int slice_num = get_slicenum(key);
             Slice& slice = slices[slice_num];
-            slice.lock.write_unlock();
+            if constexpr (concurrent) {
+                slice.lock.write_unlock();
+            }
         }
 
         int get_slicenum(const key_type& key) const {
@@ -449,16 +457,24 @@ private:
         }
 
         bool is_full() {
-            free_slot_mtx.read_lock();
+            if constexpr (concurrent) {
+                free_slot_mtx.read_lock();
+            }
             bool full = (free_slot_head == free_slot_end);
-            free_slot_mtx.read_unlock();
+            if constexpr (concurrent) {
+                free_slot_mtx.read_unlock();
+            }
             return full;
         }
 
         bool slice_insert(int slicenum, idx_t pos, const value_type& data) {
-            free_slot_mtx.write_lock();
+            if constexpr (concurrent) {
+                free_slot_mtx.write_lock();
+            }
             if (free_slot_head == free_slot_end) {
-                free_slot_mtx.write_unlock();
+                if constexpr (concurrent) {
+                    free_slot_mtx.write_unlock();
+                }
                 return false;
             }
 
@@ -473,7 +489,9 @@ private:
                 free_slot_head = *reinterpret_cast<idx_t*>(new_slot);
             }
             (*slotusep)++; // must update with free_slot_mtx locked
-            free_slot_mtx.write_unlock();
+            if constexpr (concurrent) {
+                free_slot_mtx.write_unlock();
+            }
 
             idx_t* idx_ar = slices[slicenum].index_array;
             idx_t* idx_end = idx_ar + slices[slicenum].slotuse;
@@ -488,7 +506,9 @@ private:
 
         void slice_erase(int slicenum, idx_t pos) {
             TLX_BTREE_ASSERT(slices[slicenum].slotuse > 0);
-            free_slot_mtx.write_lock();
+            if constexpr (concurrent) {
+                free_slot_mtx.write_lock();
+            }
 
             idx_t* idx_ar = slices[slicenum].index_array;
             idx_t end = idx_ar[pos];
@@ -503,14 +523,20 @@ private:
             std::copy(idx_ar + pos + 1, idx_ar + slices[slicenum].slotuse,
                     idx_ar + pos);
             (*slotusep)--;
-            free_slot_mtx.write_unlock();
+            if constexpr (concurrent) {
+                free_slot_mtx.write_unlock();
+            }
             slices[slicenum].slotuse--;
         }
 
         bool expand(int slice) {
-            free_slot_mtx.write_lock();
+            if constexpr (concurrent) {
+                free_slot_mtx.write_lock();
+            }
             if (free_slot_head == free_slot_end) {
-                free_slot_mtx.write_unlock();
+                if constexpr (concurrent) {
+                    free_slot_mtx.write_unlock();
+                }
                 return false;
             }
 
@@ -525,15 +551,21 @@ private:
 
             slices[slice].expand(new_slot);
             (*slotusep)++;
-            free_slot_mtx.write_unlock();
+            if constexpr (concurrent) {
+                free_slot_mtx.write_unlock();
+            }
             return true;
         }
 
         bool shrink(int s) {
-            free_slot_mtx.write_lock();
+            if constexpr (concurrent) {
+                free_slot_mtx.write_lock();
+            }
             Slice& slice = slices[s];
             if (*slotusep == 0) {
-                free_slot_mtx.write_unlock();
+                if constexpr (concurrent) {
+                    free_slot_mtx.write_unlock();
+                }
                 return false;
             }
 
@@ -548,7 +580,9 @@ private:
 
             slice.slotuse--;
             (*slotusep)--;
-            free_slot_mtx.write_unlock();
+            if constexpr (concurrent) {
+                free_slot_mtx.write_unlock();
+            }
             return true;
         }
     };
@@ -1003,9 +1037,13 @@ public:
             if (!mapl)
                 return (node::slotuse < leaf_slotmin);
             else {
-                mapl->free_slot_mtx.read_lock();
+                if constexpr (concurrent) {
+                    mapl->free_slot_mtx.read_lock();
+                }
                 bool underflow = (node::slotuse < leaf_slotmin);
-                mapl->free_slot_mtx.read_unlock();
+                if constexpr (concurrent) {
+                    mapl->free_slot_mtx.read_unlock();
+                }
                 return underflow;
             }
         }
@@ -1036,7 +1074,9 @@ public:
             TLX_BTREE_ASSERT(mapl);
             TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax); // technically gotta lock before this
 #ifndef NDEBUG
-            TLX_BTREE_ASSERT(mutex_.self_write_locked());
+            if constexpr (concurrent) {
+                TLX_BTREE_ASSERT(mutex_.self_write_locked());
+            }
 #endif
 
             value_type ordered[node::slotuse];
@@ -2146,8 +2186,10 @@ private:
         if (n->is_leafnode()) {
             LeafNode* ln = static_cast<LeafNode*>(n);
             typename LeafNode::alloc_type a(leaf_node_allocator());
-            TLX_BTREE_ASSERT(!ln->mutex_.read_locked());
-            TLX_BTREE_ASSERT(!ln->mutex_.write_locked());
+            if constexpr (concurrent) {
+                TLX_BTREE_ASSERT(!ln->mutex_.read_locked());
+                TLX_BTREE_ASSERT(!ln->mutex_.write_locked());
+            }
             std::allocator_traits<typename LeafNode::alloc_type>::destroy(a, ln);
 #ifndef NDEBUG
             memset(ln, GARBAGE, sizeof(LeafNode));
@@ -2160,8 +2202,10 @@ private:
             InnerNode* in = static_cast<InnerNode*>(n);
             typename InnerNode::alloc_type a(inner_node_allocator());
 #ifndef NDEBUG
-            TLX_BTREE_ASSERT(!in->mutex_.read_locked());
-            TLX_BTREE_ASSERT(!in->mutex_.write_locked());
+            if constexpr (concurrent) {
+                TLX_BTREE_ASSERT(!in->mutex_.read_locked());
+                TLX_BTREE_ASSERT(!in->mutex_.write_locked());
+            }
 #endif
             std::allocator_traits<typename InnerNode::alloc_type>::destroy(a, in);
 #ifndef NDEBUG
@@ -3311,6 +3355,9 @@ private:
                             goto retry;
                         }
                     }
+
+                    //the leaf node has received the write lock
+
                     if constexpr (optimism) {
                         if (!leaf->is_full()) {
                             (*parent_lock)->read_unlock(cpu_id);
@@ -3318,6 +3365,13 @@ private:
                         }
                     }
                     // printf("locked leaf lock from %p\n", leaf);
+                }
+                if (leaf->slotuse + 1 < leaf_slotmax && leaf->slotuse > leaf_slotmin + 1) {
+                    leaf->maplize();
+                    if constexpr (concurrent) {
+                        leaf->mutex_.write_unlock();
+                    }
+                    goto retry;
                 }
                 unsigned short slot = find_lower(leaf, key);
 
@@ -3379,11 +3433,15 @@ private:
                 }
                 return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
             } else { // MAPL leaf
-                leaf->mapl->writelock_slice(key);
+                if constexpr (concurrent) {
+                    leaf->mapl->writelock_slice(key);
+                }
 
                 int slice_num = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slice_num];
-                slice.lock.write_lock();
+                if constexpr (concurrent) {
+                    slice.lock.write_lock();
+                }
 
                 TLX_BTREE_ASSERT(!leaf->mapl->is_full());
 
@@ -3391,8 +3449,10 @@ private:
                 ind = find_lower(&slice, key);
 
                 if (ind < slice.slotuse && key_equal(slice.key(ind), key)) {
-                    slice.lock.write_unlock();
-                    leaf->mutex_.read_unlock(cpu_id);
+                    if constexpr (concurrent) {
+                        slice.lock.write_unlock();
+                        leaf->mutex_.read_unlock(cpu_id);
+                    }
                     return std::tuple<iterator, bool, bool>(
                         iterator(leaf, slice_num, ind), false, false);
                 }
@@ -3442,8 +3502,10 @@ private:
                 } else {
                     bool successful = leaf->mapl->slice_insert(slice_num, ind, value);
                     if (!successful) {
-                        slice.lock.write_unlock();
-                        leaf->mutex_.read_unlock(cpu_id);
+                        if constexpr (concurrent) {
+                            slice.lock.write_unlock();
+                            leaf->mutex_.read_unlock(cpu_id);
+                        }
                         return {{},{},true};
                     }
 
@@ -3451,8 +3513,10 @@ private:
                             std::tuple<iterator, bool, bool>(
                                 iterator(leaf, slice_num, ind),
                                 true, false);
-                    slice.lock.write_unlock();
-                    leaf->mutex_.read_unlock(cpu_id);
+                    if constexpr (concurrent) {
+                        slice.lock.write_unlock();
+                        leaf->mutex_.read_unlock(cpu_id);
+                    }
                     return ret_val;
                 }
             }
@@ -3503,7 +3567,9 @@ private:
 #endif
 
         LeafNode* newleaf = allocate_leaf();
-        newleaf->mutex_.write_lock();
+        if constexpr (concurrent) {
+            newleaf->mutex_.write_lock();
+        }
 
         int right_slotuse = mapl_size / 2;
         int left_slotuse = mapl_size - right_slotuse;
@@ -3959,7 +4025,9 @@ private:
                 unsigned short slot = find_lower(leaf, key);
                 if (slot >= leaf->slotuse || !key_equal(key, leaf->key(slot))) {
                     TLX_BTREE_PRINT("Could not find key " << key << " to erase.");
-                    leaf->mutex_.write_unlock();
+                    if constexpr (concurrent) {
+                        leaf->mutex_.write_unlock();
+                    }
                     return {btree_not_found, false};
                 }
                 // in this case the parent needs to do something
@@ -4019,11 +4087,15 @@ private:
             } else {
                 int slicenum = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slicenum];
-                slice.lock.write_lock();
+                if constexpr (concurrent) {
+                    slice.lock.write_lock();
+                }
                 unsigned short ind = find_lower(&slice, key);
                 if (ind >= slice.slotuse || !key_equal(key, slice.key(ind))) {
-                    slice.lock.write_unlock();
-                    leaf->mutex_.read_unlock(cpu_id);
+                    if constexpr (concurrent) {
+                        slice.lock.write_unlock();
+                        leaf->mutex_.read_unlock(cpu_id);
+                    }
                     return {btree_not_found, false};
                 }
 
@@ -4071,16 +4143,22 @@ private:
 
                 fix_underflow = leaf->is_underflow();
                 if (leaf == root_) {
-                    leaf->mapl->free_slot_mtx.write_lock();
+                    if constexpr (concurrent) {
+                        leaf->mapl->free_slot_mtx.write_lock();
+                    }
                     if (leaf->slotuse < 1 && fix_underflow) {
-                        if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
-                            leaf->mutex_.write_lock();
+                        if constexpr (concurrent) {
+                            if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
+                                leaf->mutex_.write_lock();
+                            }
                         }
                         if (leaf->mapl) {
                             leaf->unmaplize();
                         }
                     } else {
-                        leaf->mapl->free_slot_mtx.write_unlock();
+                        if constexpr (concurrent) {
+                            leaf->mapl->free_slot_mtx.write_unlock();
+                        }
                         fix_underflow = false;
                     }
                 }
@@ -4098,9 +4176,7 @@ private:
                         right_leaf_locked = true;
                         right_leaf->mutex_.write_lock();
                     }
-                }
 
-                if constexpr (concurrent) {
                     assert_leaf_write_locked(leaf);
                     assert_leaf_write_locked(left_leaf);
                     assert_leaf_write_locked(right_leaf);
@@ -4700,46 +4776,8 @@ private:
 
                 return myres;
             }
-            else // MAPL leaf
-            {
-#ifndef NDEBUG
-                TLX_BTREE_ASSERT(leaf->mutex_.self_read_locked());
-#endif
-
-                if (stats_.size > leaf->slotuse && leaf->is_underflow()) {
-                    tlx_die_unless(false); // bc i dont think ^ is necessary
-                    leaf->mutex_.write_unlock();
-                    return restart;
-                }
-
-                key_type key = key_type(); // XXX temp fix of compile error, to be removed
-                int slicenum = leaf->mapl->get_slicenum(key);
-                Slice& slice = leaf->mapl->slices[slicenum];
-                leaf->mapl->writelock_slice(key);
-
-                unsigned short ind = 0; // searching for stuff--TODO make function w/ binary search
-                while (ind < slice.slotuse
-                        && key_less(leaf->key(ind), key)) ++ind;
-
-                if (ind >= leaf->slotuse || !key_equal(leaf->key(ind), key)) {
-                    slice.lock.write_unlock();
-                    leaf->mutex_.read_unlock(sched_getcpu());
-                    return restart;
-                }
-
-                bool successful = leaf->mapl->shrink(slicenum);
-                if (!successful) {
-                    slice.lock.write_unlock();
-                    leaf->mutex_.read_unlock(sched_getcpu());
-                    return restart;
-                }
-
-                for (int i = ind; i < slice.slotuse; i++) {
-                    leaf->set(slicenum, i, leaf->get(slicenum, i + 1));
-                }
-
-                slice.lock.write_unlock();
-                leaf->mutex_.read_unlock(sched_getcpu());
+            else {// MAPL leaf
+                TLX_BTREE_ASSERT(false);
                 return btree_ok;
             }
         }
@@ -5402,21 +5440,25 @@ private:
         if (n->is_leafnode())
         {
             const LeafNode* leaf = static_cast<const LeafNode*>(n);
+            if (!leaf->mapl) {
+                tlx_die_unless(leaf == root_ || !leaf->is_underflow());
+                tlx_die_unless(leaf->slotuse > 0);
 
-            tlx_die_unless(leaf == root_ || !leaf->is_underflow());
-            tlx_die_unless(leaf->slotuse > 0);
+                for (unsigned short slot = 0; slot < leaf->slotuse - 1; ++slot)
+                {
+                    tlx_die_unless(
+                        key_lessequal(leaf->key(slot), leaf->key(slot + 1)));
+                }
 
-            for (unsigned short slot = 0; slot < leaf->slotuse - 1; ++slot)
-            {
-                tlx_die_unless(
-                    key_lessequal(leaf->key(slot), leaf->key(slot + 1)));
+                *minkey = leaf->key(0);
+                *maxkey = leaf->key(leaf->slotuse - 1);
+
+                ++vstats.leaves;
+                vstats.size += leaf->slotuse;
+            } else { //Mapl
+                //int slicenum = leaf->mapl->get_slicenum(key);
+                //Slice& slice = leaf->mapl->slices[slicenum];
             }
-
-            *minkey = leaf->key(0);
-            *maxkey = leaf->key(leaf->slotuse - 1);
-
-            ++vstats.leaves;
-            vstats.size += leaf->slotuse;
         }
         else // !n->is_leafnode()
         {

@@ -26,7 +26,7 @@ enum lock_type_enum {
     lock_type_write_unlock_notify_writer,
     lock_type_write_unlock_notify_reader,
     lock_type_inner_split,
-    lock_type_leaf_split,
+    lock_type_leaf_split
 };
 
 enum lock_requirement {
