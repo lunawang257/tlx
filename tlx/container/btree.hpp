@@ -324,6 +324,10 @@ private:
     struct Mapl;
     struct LockHelper;
 
+public:
+    struct LeafNode;
+private:
+
   #ifndef NDEBUG
   // debug mode
   using ReaderWriterLock = LockHelper;
@@ -386,13 +390,15 @@ private:
         value_type extra[mapl_size];
         int numslices;
         unsigned short* slotusep;
+        LeafNode* nodep;
 
         /*void free_slot(int slot) {
             *static_cast<idx_t*>(&extra[slot]) = free_slot_head;
             free_slot_head = slot;
         }*/
 
-        Mapl(value_type* slotdata, unsigned short* node_slotuse) {
+        Mapl(value_type* slotdata, unsigned short* node_slotuse,
+            LeafNode* leaf) {
             slotdatap = slotdata;
             slotusep = node_slotuse;
             auto slotuse = *node_slotuse;
@@ -403,8 +409,11 @@ private:
             for (int i = 0; i < numslices - 1; i++) {
                 slices[i].init(this, i * slice_size, slice_size);
                 slices[i].lock.sliceid = i;
+                slices[i].lock.nodep = leaf;
             }
+#ifndef NDEBUG
             free_slot_mtx.sliceid = -1;
+#endif
             idx_t last_slice_off = (numslices - 1) * slice_size;
             slices[numslices - 1].init(this, last_slice_off,
                                        slotuse - last_slice_off);
@@ -1105,7 +1114,7 @@ public:
 
         void maplize() {
             TLX_BTREE_ASSERT(!mapl);
-            mapl = new Mapl(slotdata, &(node::slotuse));
+            mapl = new Mapl(slotdata, &(node::slotuse), this);
         }
 
         void unmaplize() {
