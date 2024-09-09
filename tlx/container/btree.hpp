@@ -1024,8 +1024,7 @@ public:
         bool should_maplize() {
             TLX_BTREE_ASSERT(!mapl);
             int percent = mutex_.con_tracker.percent_waited();
-            if (percent >= maplize_threshold) return true;
-            else return false;
+            return percent >= maplize_threshold && node::slotuse >= 2 * slice_size;
         }
 
         void maplize() {
@@ -2448,7 +2447,7 @@ public:
             parent_lock->read_unlock(cpuid);
         }
 
-        if (leaf->mapl) {
+        if (!leaf->mapl) {
             unsigned short slot = find_lower(leaf, key);
             auto res = (slot < leaf->slotuse && key_equal(key, leaf->key(slot)));
             if constexpr(concurrent) {
