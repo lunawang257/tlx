@@ -1204,6 +1204,7 @@ public:
             if (idx == cur_slice_size) {
                 ++ctx->prev_slice;
                 ctx->prev_index += cur_slice_size;
+                ++slice_i;
                 idx = 0;
             }
 
@@ -1235,9 +1236,15 @@ public:
                 mapl->extra[idx - leaf_slotmax] = val;
         }
 
-        void print_mapl(std::ostream& os) const {
+        void indent(std::ostream& os, unsigned int depth) const {
+            for (unsigned int i = 0; i < depth; i++) os << "  ";
+        }
+
+        void print_mapl(std::ostream& os, unsigned int depth = 0) const {
+            indent(os, depth);
             os << "#slices=" << mapl->numslices << "\n";
             for (int i = 0; i < mapl->numslices; ++i) {
+                indent(os, depth);
                 os << "slice[" << i << "]: ";
                 const Slice& slice = mapl->slices[i];
                 for (int j = 0; j < slice.slotuse; ++j) {
@@ -1253,12 +1260,15 @@ public:
                 os << "\n";
             }
 
+            indent(os, depth);
             os << "Boundaries: ";
             for (int i = 0; i < mapl->numslices - 1; ++i) {
                 os << i << ':' << mapl->slice_boundary[i] << ' ';
             }
 
-            os << "\nFree list: ";
+            os << "\n";
+            indent(os, depth);
+            os << "Free list: ";
             idx_t idx = mapl->free_slot_head;
             while (idx != mapl->free_slot_end) {
                 os << idx << " ";
@@ -3499,8 +3509,6 @@ private:
 
                 unsigned short ind = 0; // searching for stuff
 
-            std::cout << "hoisaernteioarnte" << std::endl; // XXX
-            leaf->print_mapl(std::cout); // XXX
                 ind = find_lower(&slice, key);
 
                 if (ind < slice.slotuse && key_equal(slice.key(ind), key)) {
@@ -3531,6 +3539,7 @@ private:
 
                     if (key_greater(key, leaf->key(leaf->slotuse))) {
                         slot = find_lower(static_cast<LeafNode*>(*splitnode), key);
+                        leaf = static_cast<LeafNode*>(*splitnode);
                     } else {
                         slot = find_lower(leaf, key);
                     }
@@ -4239,6 +4248,10 @@ private:
                     if (leaf->mapl) {
                         leaf->unmaplize();
                     }
+                } else {
+                    if constexpr (concurrent) {
+                        leaf->mapl->free_slot_mtx.read_unlock();
+                    }                    
                 }
             }
 
@@ -4267,6 +4280,8 @@ private:
                 }
 
                 TLX_BTREE_ASSERT(!leaf->mapl);
+                if (left_leaf && left_leaf->mapl) left_leaf->unmaplize();
+                if (right_leaf && right_leaf->mapl) right_leaf->unmaplize();
                 // determine what to do about the underflow
 
                 // case : if this empty leaf is the root, then delete all nodes
@@ -5453,7 +5468,7 @@ private:
         {
             const LeafNode* leafnode = static_cast<const LeafNode*>(node);
             if (leafnode->mapl) {
-                leafnode->print_mapl(os);
+                leafnode->print_mapl(os, depth + 1);
             } else {
                 for (unsigned int i = 0; i < depth; i++) os << "  ";
                 os << "  leaf prev " << leafnode->prev_leaf <<

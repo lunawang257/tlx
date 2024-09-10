@@ -2628,6 +2628,8 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
                 exit(1);
             }
         }
+        //std::cout << "After iteration " << i << "\n";
+        //my_set.print(std::cout);
         //usleep(10 * 1000 * 1000ull); // sleep for debugging
     }
 
