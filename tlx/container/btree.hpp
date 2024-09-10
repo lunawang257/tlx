@@ -267,7 +267,7 @@ public:
     static const unsigned short slice_size = 3;
 #endif
     static const int extra_div = 2;
-    static const int mapl_size = static_cast<int>(leaf_slotmax / extra_div);
+    static const int mapl_size = 0; // static_cast<int>(leaf_slotmax / extra_div);
 
     //! Debug parameter: Enables expensive and thorough checking of the B+ tree
     //! invariants after each insert/erase operation.
@@ -1082,8 +1082,10 @@ public:
 
         //! True if the node's slots are full.
         bool is_full() const {
-            if (!mapl)
+            if (!mapl) {
+                TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax);
                 return (node::slotuse == leaf_slotmax);
+            }
             else
                 return (mapl->is_full());
         }
@@ -1128,7 +1130,7 @@ public:
 
         void unmaplize() {
             TLX_BTREE_ASSERT(mapl);
-            TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax); // technically gotta lock before this
+            TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax+ mapl_size); // technically gotta lock before this
 #ifndef NDEBUG
             if constexpr (concurrent) {
                 TLX_BTREE_ASSERT(mutex_.self_write_locked());
@@ -1202,6 +1204,7 @@ public:
             if (idx == cur_slice_size) {
                 ++ctx->prev_slice;
                 ctx->prev_index += cur_slice_size;
+                idx = 0;
             }
 
             return get(slice_i, idx);
