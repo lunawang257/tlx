@@ -54,6 +54,14 @@ extern void log_lock(void *node, int lock_type_enum, unsigned short sliceid);
 extern void log_split(void *nodep, int split_key);
 extern void log_mem_op(MemOpType optype,void *node, int num_inner, int num_leaves);
 extern void log_retry(void *node);
+extern void log_str(const char *str);
+
+#define LOG_STR(s)                              \
+    {                                           \
+        std::stringstream ss;                   \
+        ss << s;                                \
+        log_str(ss.str().c_str());              \
+    }
 
 #define VERIFY_NODE(verify, treep, nodep)       \
     if (verify) treep->verify_one_node(nodep);
@@ -65,6 +73,7 @@ extern void log_retry(void *node);
 #define log_mem_op(optype, node, num_inner, num_leaves)
 #define log_op(op, key, res, set_size, thread_id)
 #define log_retry(node)
+#define LOG_STR(s)
 #define before_assert()
 #define VERIFY_NODE(verify, treep, nodep)
 

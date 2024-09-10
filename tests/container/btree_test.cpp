@@ -2074,6 +2074,7 @@ enum LogType {
     LOG_RETRY,
     LOG_OP,
     LOG_SPLIT,
+    LOG_STRING
 };
 
 enum OpType {
@@ -2118,6 +2119,9 @@ struct LogInfo {
             int op_key;
             int op_res;
             int set_size;
+        };
+        struct { // LOG_STRING
+            char str[64];
         };
     };
 };
@@ -2255,6 +2259,17 @@ void log_split(void *node, int split_key) {
     }
 }
 
+void log_str(const char *str) {
+    size_t idx = cur_debug_log_info.fetch_add(
+        1, std::memory_order_relaxed);
+
+    LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
+    log_info.logtype = LOG_STRING;
+    log_info.timestamp = std::chrono::high_resolution_clock::now();
+    log_info.threadidx = local_debug_info.tinfo ? local_debug_info.tinfo->threadidx : 0;
+    strlcpy(log_info.str, str, sizeof(log_info.str));
+}
+
 void log_lock(void* node __attribute__((unused)),
               int lock_type_enum __attribute__((unused)),
               unsigned short sliceid = MAPL_NONE) {
@@ -2298,13 +2313,14 @@ void log_lock(void* node __attribute__((unused)),
                 if (sliceid == MAPL_FREE_LIST_MTX) {
                     lockp = &mapl->free_slot_mtx;
                 }
-                else {
+                else if (sliceid != MAPL_NONE) {
                     lockp = &mapl->slices[sliceid].lock;
                 }
             } else {
                 // leafp not locked, can't get min/max on mapl
-                log_info.min = leafp->min_key();
-                log_info.max = leafp->max_key();
+                //log_info.min = leafp->min_key();
+                //log_info.max = leafp->max_key();
+                log_info.min = log_info.max = 0;
                 log_info.slice = nullptr;
             }
 
@@ -2423,6 +2439,15 @@ bool print_log_record(const LogInfo& info) {
                   << "\tkey=" << std::setw(2) << info.op_key
                   << "\tres=" << info.op_res
                   << "\tset_size=" << info.set_size
+                  << std::endl;
+        break;
+    case LOG_STRING:
+        if (!prt_op) {
+            return true;
+        }
+        std::cout << format_time(info.timestamp)
+                  << " thread " << info.threadidx
+                  << " " << info.str
                   << std::endl;
         break;
     default:
