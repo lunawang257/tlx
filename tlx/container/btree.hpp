@@ -635,7 +635,7 @@ private:
 
         BTree *treep;
         node *nodep;
-        unsigned short sliceid;
+        unsigned short sliceid = MAPL_NONE;
 
 #ifdef TLX_BTREE_DEBUG
         std::unordered_set<std::thread::id> curwrite;
@@ -3408,26 +3408,32 @@ private:
             unsigned short slot = -1;
         retry:
             if constexpr (concurrent) {
-                leaf->mutex_.read_lock();
+                if constexpr (optimism) {
+                    leaf->mutex_.read_lock();
+                }
+                else {
+                    leaf->mutex_.write_lock();
+                }
             }
             if (!leaf->mapl) {
                 if constexpr (concurrent) {
-                    // printf("trying to lock leaf lock from %p\n", leaf);
-                    if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
-                        leaf->mutex_.write_lock();
-                        if (leaf->should_maplize()) {
-                            leaf->maplize();
-                        }
-                        if (leaf->mapl) {
-                            leaf->mutex_.write_unlock();
-                            goto retry;
-                        }
-                    }
-
-                    //the leaf node has received the write lock
-
                     if constexpr (optimism) {
+                        // printf("trying to lock leaf lock from %p\n", leaf);
+                        if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
+                            // has race here, if leaf becomes mapl, retry with read lock
+                            leaf->mutex_.write_lock();
+                            if (!leaf->mapl && leaf->should_maplize()) {
+                                leaf->maplize();
+                            }
+                            if (leaf->mapl) {
+                                leaf->mutex_.write_unlock();
+                                goto retry;
+                            }
+                        }
+
+                        //the leaf node has received the write lock
                         if (!leaf->is_full()) {
+                            TLX_BTREE_ASSERT(*parent_lock);
                             (*parent_lock)->read_unlock(cpu_id);
                             *parent_lock = nullptr;
                         }
@@ -3514,36 +3520,47 @@ private:
                 if (ind < slice.slotuse && key_equal(slice.key(ind), key)) {
                     if constexpr (concurrent) {
                         slice.lock.write_unlock();
-                        leaf->mutex_.read_unlock(cpu_id);
+                        if constexpr (optimism) {
+                            leaf->mutex_.read_unlock(cpu_id);
+                        }
+                        else {
+                            leaf->mutex_.write_unlock();
+                        }
                     }
                     return std::tuple<iterator, bool, bool>(
                         iterator(leaf, slice_num, ind), false, false);
                 }
 
                 if (leaf->is_full()) {
+                    slice.lock.write_unlock();
                     if constexpr (concurrent) {
                         if constexpr (optimism) {
-                            slice.lock.write_unlock();
                             leaf->mutex_.read_unlock(cpu_id);
                             return {{},{},true};
                         }
                     }
-                    if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
-                        leaf->mutex_.write_lock();
+                    if constexpr (optimism) {
+                        if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
+                            // race may happen here, just retry to make it simple
+                            return {{},{},true};
+                        }
                     }
 
                     if (leaf->mapl) {
                         leaf->unmaplize();
                         split_leaf_node(leaf, splitkey, splitnode);
                     }
-
-                    if (key_greater(key, leaf->key(leaf->slotuse))) {
-                        slot = find_lower(static_cast<LeafNode*>(*splitnode), key);
-                        leaf = static_cast<LeafNode*>(*splitnode);
-                    } else {
-                        slot = find_lower(leaf, key);
+                    else {
+                        // never released the node during upgrade, so this won't happen
+                        TLX_BTREE_ASSERT(false);
                     }
 
+                    if (key_greater(key, leaf->key(leaf->slotuse))) {
+                        leaf = static_cast<LeafNode*>(*splitnode);
+                    }
+                    slot = find_lower(leaf, key);
+
+                    LOG_STR("mapl full " << leaf << " split slot=" << slot);
                     // check if insert slot is in the split sibling node
                     /*if (ind >= leaf->slotuse)
                     {
@@ -3577,10 +3594,21 @@ private:
                 } else {
                     bool successful = leaf->mapl->slice_insert(slice_num, ind, value);
                     if (!successful) {
+                        // node full due to other threads inserted elsewhere
                         if constexpr (concurrent) {
                             slice.lock.write_unlock();
-                            leaf->mutex_.read_unlock(cpu_id);
+                            if constexpr (optimism) {
+                                leaf->mutex_.read_unlock(cpu_id);
+                            }
+                            else {
+                                leaf->mutex_.write_unlock();
+                            }
                         }
+                        else {
+                            TLX_BTREE_ASSERT(false);
+                        }
+                        LOG_STR("leaf " << leaf << " full k=" << key <<
+                                " slice=" << slice_num);
                         return {{},{},true};
                     }
 
@@ -3590,7 +3618,12 @@ private:
                                 true, false);
                     if constexpr (concurrent) {
                         slice.lock.write_unlock();
-                        leaf->mutex_.read_unlock(cpu_id);
+                        if constexpr (optimism) {
+                            leaf->mutex_.read_unlock(cpu_id);
+                        }
+                        else {
+                            leaf->mutex_.write_unlock();
+                        }
                     }
                     return ret_val;
                 }
@@ -4251,7 +4284,7 @@ private:
                 } else {
                     if constexpr (concurrent) {
                         leaf->mapl->free_slot_mtx.read_unlock();
-                    }                    
+                    }
                 }
             }
 
