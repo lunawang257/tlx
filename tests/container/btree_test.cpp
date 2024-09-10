@@ -2058,7 +2058,7 @@ int seqnum = 0;
 bool in_multi_test = false;
 set_type my_multi_thread_set;
 
-const int NUM_THREADS = 1;
+const int NUM_THREADS = 2;
 size_t cur_numthreads = NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;
@@ -2287,20 +2287,32 @@ void log_lock(void* node __attribute__((unused)),
         if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
             set_type::btree_impl::LeafNode *leafp =
                 static_cast<set_type::btree_impl::LeafNode *>(nodep);
+            auto mapl = leafp->mapl;
+            auto lockp = &leafp->mutex_;
 
-            log_info.min = leafp->min_key();
-            log_info.max = leafp->max_key();
-            log_info.numreader = leafp->mutex_.numreader;
-            log_info.haswriter = leafp->mutex_.haswriter;
             log_info.sliceid = sliceid;
-            if (leafp->mapl) {
-                log_info.slice = leafp->mapl->slices + sliceid;
+
+            if (mapl) {
+                log_info.min = log_info.max = 0;
+                log_info.slice = mapl->slices + sliceid;
+                if (sliceid == MAPL_FREE_LIST_MTX) {
+                    lockp = &mapl->free_slot_mtx;
+                }
+                else {
+                    lockp = &mapl->slices[sliceid].lock;
+                }
             } else {
+                // leafp not locked, can't get min/max on mapl
+                log_info.min = leafp->min_key();
+                log_info.max = leafp->max_key();
                 log_info.slice = nullptr;
             }
-            log_info.readerswaiting = leafp->mutex_.readerswaiting;
-            log_info.writerswaiting = leafp->mutex_.writerswaiting;
-            log_info.upgradewaiting = leafp->mutex_.upgradewaiting;
+
+            log_info.numreader = lockp->numreader;
+            log_info.haswriter = lockp->haswriter;
+            log_info.readerswaiting = lockp->readerswaiting;
+            log_info.writerswaiting = lockp->writerswaiting;
+            log_info.upgradewaiting = lockp->upgradewaiting;
         } else {
             set_type::btree_impl::InnerNode *innerp =
                 static_cast<set_type::btree_impl::InnerNode *>(nodep);

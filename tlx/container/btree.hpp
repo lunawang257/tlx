@@ -4079,7 +4079,7 @@ private:
                 if (!leaf->mapl) {
                     if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
                         leaf->mutex_.write_lock();
-                        if (leaf->should_maplize()) {
+                        if (!leaf->mapl && leaf->should_maplize()) {
                             leaf->maplize();
                         }
                         if (leaf->mapl) {
