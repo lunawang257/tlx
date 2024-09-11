@@ -9,9 +9,9 @@ void test_maplize_perf() {
     const size_t num_selections = 1000000;  // Number of selections
 
     // Initialize the leaf array
-    std::vector<test_leaf_type<TestSlotMax>> leaf_array(array_size);
+    std::vector<typename TestType<TestSlotMax>::test_leaf_type> leaf_array(array_size);
     for (auto& leaf : leaf_array) {
-        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
+        TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
     }
 
     // Random number generator for selecting leaves
