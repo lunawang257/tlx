@@ -4129,25 +4129,31 @@ private:
             bool left_leaf_locked __attribute__((unused)) = false;
             bool right_leaf_locked __attribute__((unused)) = false;
             LeafNode* leaf = static_cast<LeafNode*>(curr);
+            int slicenum;
+
             if constexpr (concurrent) {
-            retry:
-                leaf->mutex_.read_lock();
-                if (!leaf->mapl) {
-                    if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
-                        leaf->mutex_.write_lock();
-                        if (leaf != root_ && !leaf->mapl && leaf->should_maplize()) {
-                            leaf->maplize();
-                        }
-                        if (leaf->mapl) {
-                            leaf->mutex_.write_unlock();
-                            goto retry;
+                if constexpr (optimism) {
+                retry:
+                    leaf->mutex_.read_lock();
+                    if (!leaf->mapl) {
+                        if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
+                            // other threads may change leaf here
+                            leaf->mutex_.write_lock();
+                            if (leaf != root_ && !leaf->mapl && leaf->should_maplize()) {
+                                leaf->maplize();
+                            }
+                            if (leaf->mapl) {
+                                leaf->mutex_.write_unlock();
+                                goto retry;
+                            }
                         }
                     }
+                    (*parent_lock)->read_unlock(cpu_id);
+                    *parent_lock = nullptr;
                 }
-                // if constexpr (optimism) {
-                //     (*parent_lock)->read_unlock(cpu_id);
-                //     *parent_lock = nullptr;
-                // }
+                else {
+                    leaf->mutex_.write_lock();
+                }
             }
             LeafNode* left_leaf = static_cast<LeafNode*>(left);
             LeafNode* right_leaf = static_cast<LeafNode*>(right);
@@ -4223,16 +4229,21 @@ private:
 
                 fix_underflow = leaf->is_underflow() && !(leaf == root_ && leaf->slotuse >= 1);
             } else {
-                int slicenum = leaf->mapl->get_slicenum(key);
+                slicenum = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slicenum];
-                if constexpr (concurrent) {
+                if constexpr (concurrent && !optimism) {
                     slice.lock.write_lock();
                 }
                 unsigned short ind = find_lower(&slice, key);
                 if (ind >= slice.slotuse || !key_equal(key, slice.key(ind))) {
                     if constexpr (concurrent) {
-                        slice.lock.write_unlock();
-                        leaf->mutex_.read_unlock(cpu_id);
+                        if constexpr (optimism) {
+                            slice.lock.write_unlock();
+                            leaf->mutex_.read_unlock(cpu_id);
+                        }
+                        else {
+                            leaf->mutex_.write_unlock();
+                        }
                     }
                     return {btree_not_found, false};
                 }
@@ -4425,8 +4436,12 @@ private:
             if constexpr (concurrent) {
                 if (!leaf->mapl) leaf->mutex_.write_unlock();
                 else {
-                    leaf->mapl->write_unlock_slice(key);
-                    leaf->mutex_.read_unlock(cpu_id);
+                    if constexpr (optimism) {
+                        leaf->mapl->slices[slicenum].lock.write_unlock();
+                        leaf->mutex_.read_unlock(cpu_id);
+                    } else {
+                        leaf->mutex_.write_unlock();
+                    }
                 }
                 if (left_leaf_locked) left_leaf->mutex_.write_unlock();
                 if (right_leaf_locked) right_leaf->mutex_.write_unlock();
