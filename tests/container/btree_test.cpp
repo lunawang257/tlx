@@ -7,18 +7,10 @@
  *
  * All rights reserved. Published under the Boost Software License, Version 1.0
  ******************************************************************************/
-
 #define TLX_BTREE_TEST
 #define TLX_BTREE_DEBUG
 
-#if __APPLE__
-extern thread_local int local_thread_id;
-
-// Apple M1 doesn't support sched_getcpu. Just use the thread in the thread local var
-inline int sched_getcpu() {
-    return local_thread_id;
-}
-#endif
+#include "cpu_compatibility.hpp"
 
 #if defined(TLX_BTREE_TEST) && defined(TLX_BTREE_DEBUG) && !defined(NDEBUG)
 extern void before_assert(void);
@@ -2709,18 +2701,17 @@ void test_mapl() {}
 
 #else
 
-typedef unsigned short val_type;
-const int TestSlotMax = 8;
-typedef tlx::btree_set<
-    val_type, std::less<val_type>,
-    struct tlx::btree_default_traits<
-        val_type, val_type,
-        TestSlotMax * (sizeof(val_type) + sizeof(void*)),
-        TestSlotMax * sizeof(val_type)>,
-    std::allocator<val_type> /* Allocator */,
-    true /* concurrent */ > test_set_type;
+#include <tlx/container/btree_set.hpp>
+#include "btree_test.hpp"
 
-typedef test_set_type::btree_impl::LeafNode test_leaf_type;
+
+#include <iostream>
+#include <vector>
+#include <random>
+#include <chrono>
+#include <memory>
+
+const int test_slot_max = 8;
 
 // Function to trim leading/trailing spaces and empty lines from a string
 std::string trim(const std::string& input) {
@@ -2744,17 +2735,9 @@ std::string trim(const std::string& input) {
     return result;
 }
 
-void set_leaf_data(test_leaf_type *leaf,
-                   const std::vector<val_type>& v) {
-    TLX_BTREE_ASSERT(v.size() < test_set_type::btree_impl::leaf_slotmax);
-    for (size_t i = 0; i < v.size(); ++i) {
-        leaf->slotdata[i] = v[i];
-    }
-    leaf->slotuse = v.size();
-}
-
+template<int TestSlotMax>
 void verify_mapl(const char *testname,
-                 const test_leaf_type& leaf,
+                 const test_leaf_type<TestSlotMax>& leaf,
                  const char *expected_c) {
     std::stringstream ss;
     leaf.print_mapl(ss);
@@ -2780,18 +2763,20 @@ void verify_mapl(const char *testname,
         }                                               \
     }
 
-void slice_insert(test_leaf_type *leaf, val_type val) {
-    test_set_type ts;
+template<int TestSlotMax>
+void slice_insert(test_leaf_type<TestSlotMax> *leaf, val_type val) {
+    test_btree_type<TestSlotMax> ts;
 
-    const auto& key = test_set_type::btree_impl::key_of_value::get(val);
+    const auto& key = test_btree_type<TestSlotMax>::btree_impl::key_of_value::get(val);
     int slicenum = leaf->mapl->get_slicenum(key);
     auto* slice = leaf->mapl->slices + slicenum;
     int pos = ts.tree_.find_lower(slice, key);
     leaf->mapl->slice_insert(slicenum, pos, val);
 }
 
-void slice_erase(test_leaf_type *leaf, test_set_type::btree_impl::key_type key) {
-    test_set_type ts;
+template<int TestSlotMax>
+void slice_erase(test_leaf_type<TestSlotMax> *leaf, typename test_btree_type<TestSlotMax>::btree_impl::key_type key) {
+    test_btree_type<TestSlotMax> ts;
 
     int slicenum = leaf->mapl->get_slicenum(key);
     auto* slice = leaf->mapl->slices + slicenum;
@@ -2799,20 +2784,22 @@ void slice_erase(test_leaf_type *leaf, test_set_type::btree_impl::key_type key) 
     leaf->mapl->slice_erase(slicenum, pos);
 }
 
+template<int TestSlotMax>
 bool mapl_has_extra() {
-    test_leaf_type leaf(nullptr);
-    set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+    test_leaf_type<TestSlotMax> leaf(nullptr);
+    set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
     leaf.maplize();
     return sizeof(leaf.mapl->extra) != 0;
 }
 
+template<int TestSlotMax>
 void test_mapl_with_extra() {
     {
-        test_leaf_type leaf(nullptr);
-        set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        test_leaf_type<TestSlotMax> leaf(nullptr);
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
-        verify_mapl("aligned", leaf, R"(
+        verify_mapl<TestSlotMax>("aligned", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]: 3:40 4:50 5:60
@@ -2823,8 +2810,8 @@ Free list: 6 7 8 9 10 11
         VERIFY_EQ(leaf.mapl->get_slicenum(60), 1);
 
         // insert key
-        slice_insert(&leaf, 15);
-        verify_mapl("insert 15", leaf, R"(
+        slice_insert<TestSlotMax>(&leaf, 15);
+        verify_mapl<TestSlotMax>("insert 15", leaf, R"(
 #slices=2
 slice[0]: 0:10 6:15 1:20 2:30
 slice[1]: 3:40 4:50 5:60
@@ -2832,8 +2819,8 @@ Boundaries: 0:30
 Free list: 7 8 9 10 11
 )");
 
-        slice_insert(&leaf, 35);
-        verify_mapl("insert 35", leaf, R"(
+        slice_insert<TestSlotMax>(&leaf, 35);
+        verify_mapl<TestSlotMax>("insert 35", leaf, R"(
 #slices=2
 slice[0]: 0:10 6:15 1:20 2:30
 slice[1]: 7:35 3:40 4:50 5:60
@@ -2841,8 +2828,8 @@ Boundaries: 0:30
 Free list: 8 9 10 11
 )");
 
-        slice_insert(&leaf, 33);
-        verify_mapl("insert 33", leaf, R"(
+        slice_insert<TestSlotMax>(&leaf, 33);
+        verify_mapl<TestSlotMax>("insert 33", leaf, R"(
 #slices=2
 slice[0]: 0:10 6:15 1:20 2:30
 slice[1]: 8:33 7:35 3:40 4:50 5:60
@@ -2850,8 +2837,8 @@ Boundaries: 0:30
 Free list: 9 10 11
 )");
 
-        slice_insert(&leaf, 31);
-        verify_mapl("insert 31", leaf, R"(
+        slice_insert<TestSlotMax>(&leaf, 31);
+        verify_mapl<TestSlotMax>("insert 31", leaf, R"(
 #slices=2
 slice[0]: 0:10 6:15 1:20 2:30
 slice[1]: 9:31 8:33 7:35 3:40 4:50 5:60
@@ -2861,11 +2848,11 @@ Free list: 10 11
     }
 
     {
-        test_leaf_type leaf(nullptr);
-        set_leaf_data(&leaf, {10, 20, 30, 40, 50});
+        test_leaf_type<TestSlotMax> leaf(nullptr);
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
         leaf.maplize();
 
-        verify_mapl("unaligned", leaf, R"(
+        verify_mapl<TestSlotMax>("unaligned", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]: 3:40 4:50
@@ -2882,17 +2869,17 @@ Free list: 5 6 7 8 9 10 11
     }
 
     {
-        test_leaf_type leaf(nullptr);
-        set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        test_leaf_type<TestSlotMax> leaf(nullptr);
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
         // bc i messed up writing the tests
-        slice_insert(&leaf, 15);
+        slice_insert<TestSlotMax>(&leaf, 15);
         //leaf.print_mapl(std::cout);
 
         // erase key
-        slice_erase(&leaf, 40);
-        verify_mapl("erase 40", leaf, R"(
+        slice_erase<TestSlotMax>(&leaf, 40);
+        verify_mapl<TestSlotMax>("erase 40", leaf, R"(
 #slices=2
 slice[0]: 0:10 6:15 1:20 2:30
 slice[1]: 4:50 5:60
@@ -2900,8 +2887,8 @@ Boundaries: 0:30
 Free list: 3 7 8 9 10 11
 )");
 
-        slice_erase(&leaf, 15);
-        verify_mapl("erase 15", leaf, R"(
+        slice_erase<TestSlotMax>(&leaf, 15);
+        verify_mapl<TestSlotMax>("erase 15", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]: 4:50 5:60
@@ -2909,8 +2896,8 @@ Boundaries: 0:30
 Free list: 6 3 7 8 9 10 11
 )");
 
-        slice_erase(&leaf, 60);
-        verify_mapl("erase 60", leaf, R"(
+        slice_erase<TestSlotMax>(&leaf, 60);
+        verify_mapl<TestSlotMax>("erase 60", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]: 4:50
@@ -2918,8 +2905,8 @@ Boundaries: 0:30
 Free list: 5 6 3 7 8 9 10 11
 )");
 
-        slice_erase(&leaf, 50);
-        verify_mapl("erase 50", leaf, R"(
+        slice_erase<TestSlotMax>(&leaf, 50);
+        verify_mapl<TestSlotMax>("erase 50", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]:
@@ -2931,13 +2918,14 @@ Free list: 4 5 6 3 7 8 9 10 11
     std::cout << "[PASS] " << __func__ << "()\n";
 }
 
+template<int TestSlotMax>
 void test_mapl_without_extra() { // array 'extra' is empty
     {
-        test_leaf_type leaf(nullptr);
-        set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        test_leaf_type<TestSlotMax> leaf(nullptr);
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
-        verify_mapl("aligned", leaf, R"(
+        verify_mapl<TestSlotMax>("aligned", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]: 3:40 4:50 5:60
@@ -2948,8 +2936,8 @@ Free list: 6 7
         VERIFY_EQ(leaf.mapl->get_slicenum(60), 1);
 
         // insert key
-        slice_insert(&leaf, 15);
-        verify_mapl("insert 15", leaf, R"(
+        slice_insert<TestSlotMax>(&leaf, 15);
+        verify_mapl<TestSlotMax>("insert 15", leaf, R"(
 #slices=2
 slice[0]: 0:10 6:15 1:20 2:30
 slice[1]: 3:40 4:50 5:60
@@ -2957,8 +2945,8 @@ Boundaries: 0:30
 Free list: 7
 )");
 
-        slice_insert(&leaf, 35);
-        verify_mapl("insert 35", leaf, R"(
+        slice_insert<TestSlotMax>(&leaf, 35);
+        verify_mapl<TestSlotMax>("insert 35", leaf, R"(
 #slices=2
 slice[0]: 0:10 6:15 1:20 2:30
 slice[1]: 7:35 3:40 4:50 5:60
@@ -2968,11 +2956,11 @@ Free list:
     }
 
     {
-        test_leaf_type leaf(nullptr);
-        set_leaf_data(&leaf, {10, 20, 30, 40, 50});
+        test_leaf_type<TestSlotMax> leaf(nullptr);
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
         leaf.maplize();
 
-        verify_mapl("unaligned", leaf, R"(
+        verify_mapl<TestSlotMax>("unaligned", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]: 3:40 4:50
@@ -2989,17 +2977,17 @@ Free list: 5 6 7
     }
 
     {
-        test_leaf_type leaf(nullptr);
-        set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        test_leaf_type<TestSlotMax> leaf(nullptr);
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
         // bc i messed up writing the tests
-        slice_insert(&leaf, 15);
+        slice_insert<TestSlotMax>(&leaf, 15);
         //leaf.print_mapl(std::cout);
 
         // erase key
-        slice_erase(&leaf, 40);
-        verify_mapl("erase 40", leaf, R"(
+        slice_erase<TestSlotMax>(&leaf, 40);
+        verify_mapl<TestSlotMax>("erase 40", leaf, R"(
 #slices=2
 slice[0]: 0:10 6:15 1:20 2:30
 slice[1]: 4:50 5:60
@@ -3007,8 +2995,8 @@ Boundaries: 0:30
 Free list: 3 7
 )");
 
-        slice_erase(&leaf, 15);
-        verify_mapl("erase 15", leaf, R"(
+        slice_erase<TestSlotMax>(&leaf, 15);
+        verify_mapl<TestSlotMax>("erase 15", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]: 4:50 5:60
@@ -3016,8 +3004,8 @@ Boundaries: 0:30
 Free list: 6 3 7
 )");
 
-        slice_erase(&leaf, 60);
-        verify_mapl("erase 60", leaf, R"(
+        slice_erase<TestSlotMax>(&leaf, 60);
+        verify_mapl<TestSlotMax>("erase 60", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]: 4:50
@@ -3025,8 +3013,8 @@ Boundaries: 0:30
 Free list: 5 6 3 7
 )");
 
-        slice_erase(&leaf, 50);
-        verify_mapl("erase 50", leaf, R"(
+        slice_erase<TestSlotMax>(&leaf, 50);
+        verify_mapl<TestSlotMax>("erase 50", leaf, R"(
 #slices=2
 slice[0]: 0:10 1:20 2:30
 slice[1]:
@@ -3039,11 +3027,11 @@ Free list: 4 5 6 3 7
 }
 
 void test_mapl() {
-    if (mapl_has_extra()) {
-        test_mapl_with_extra();
+    if (mapl_has_extra<test_slot_max>()) {
+        test_mapl_with_extra<test_slot_max>();
     }
     else {
-        test_mapl_without_extra();
+        test_mapl_without_extra<test_slot_max>();
     }
 }
 
@@ -3052,6 +3040,7 @@ void test_mapl() {
 int main() {
     std::cout << "seed: " << seed << std::endl;
     std::cout << "pid: " << getpid() << std::endl;
+
     /*
     test_simple();
     if (tlx_more_tests) {

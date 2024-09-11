@@ -33,6 +33,8 @@
 
 #include <lock_type.hpp>
 
+#include "cpu_compatibility.hpp"
+
 #ifdef NDEBUG
 #define DBG(foo)
 #else
@@ -332,16 +334,13 @@ private:
     // if uint8_t is used, max slotuse will be about 255 / 1.5 ~ 170
     using idx_t = int16_t;
 
+public:
     struct Mapl;
     struct LockHelper;
 
-#ifndef NDEBUG
+//xxxx To be fixed
 public:
     struct LeafNode;
-private:
-#else
-    struct LeafNode;
-#endif
 
     DBG(using ReaderWriterLock = LockHelper;)
     DBG(using ReaderWriterLock2 = LockHelper;)
@@ -1007,6 +1006,7 @@ public:
 
     //! Extended structure of a leaf node in memory. Contains pairs of keys and
     //! data items. Key and data slots are kept together in value_type.
+    public:
     struct LeafNode : public node {
         //! Define an related allocator for the LeafNode structs.
         typedef typename std::allocator_traits<Allocator>::template rebind_alloc<LeafNode> alloc_type;
@@ -1023,6 +1023,13 @@ public:
         value_type slotdata[leaf_slotmax]; // NOLINT
 
         Mapl* mapl = nullptr;
+
+        LeafNode() : node(nullptr) {
+        #ifndef NDEBUG
+            mutex_.nodep = this;
+            mutex_.treep = nullptr;
+        #endif
+        }
 
         LeafNode(BTree *tree) : node(tree) {
         #ifndef NDEBUG
@@ -1100,7 +1107,9 @@ public:
             if (!mapl)
                 return (node::slotuse < leaf_slotmin);
             else {
+#ifndef NDEBUG
                 TLX_BTREE_ASSERT(mapl->free_slot_mtx.self_read_locked());
+#endif
                 bool underflow = (node::slotuse < leaf_slotmin);
                 return underflow;
             }

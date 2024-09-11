@@ -8,15 +8,6 @@
 
 #define VTX_BTREE_CONCUR_TEST
 
-#if __APPLE__
-extern thread_local int local_thread_id;
-
-// Apple M1 doesn't support sched_getcpu. Just use the thread in the thread local var
-inline int sched_getcpu() {
-    return local_thread_id;
-}
-#endif
-
 #include <tlx/container/slow_lock_btree_set.hpp>
 #include <tlx/container/slow_lock_btree_map.hpp>
 
