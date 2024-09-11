@@ -2050,7 +2050,7 @@ int seqnum = 0;
 bool in_multi_test = false;
 set_type my_multi_thread_set;
 
-const int NUM_THREADS = 2;
+const size_t NUM_THREADS = 2;
 size_t cur_numthreads = NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;
@@ -2113,7 +2113,7 @@ struct LogInfo {
             int set_size;
         };
         struct { // LOG_STRING
-            char str[64];
+            char str[200];
         };
     };
 };
@@ -2219,18 +2219,14 @@ void log_mem_op(MemOpType optype, void *node,
 }
 
 void log_split(void *node, int split_key) {
-    auto& tinfo = local_debug_info.tinfo;
-
     size_t idx = cur_debug_log_info.fetch_add(
         1, std::memory_order_relaxed);
 
     LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
     log_info.logtype = LOG_LOCK;
+    log_info.threadidx =
+        local_debug_info.tinfo ? local_debug_info.tinfo->threadidx : 0;
 
-    if (tinfo) {
-        tinfo->cur_node = node;
-        log_info.threadidx = tinfo->threadidx;
-    }
     set_type::btree_impl::node *nodep =
         static_cast<set_type::btree_impl::node *>(node);
     if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
@@ -2238,8 +2234,8 @@ void log_split(void *node, int split_key) {
             static_cast<set_type::btree_impl::LeafNode *>(nodep);
 
         log_info.lock_type_enum = lock_type_leaf_split;
-        log_info.min = leafp->slotdata[0];
-        log_info.max = leafp->slotdata[leafp->slotuse - 1];
+        log_info.min = leafp->min_key();
+        log_info.max = leafp->max_key();
         log_info.split_key = leafp->slotdata[split_key];
     } else {
         set_type::btree_impl::InnerNode *innerp =
@@ -2248,6 +2244,32 @@ void log_split(void *node, int split_key) {
         log_info.min = innerp->slotkey[0];
         log_info.max = innerp->slotkey[innerp->slotuse - 1];
         log_info.split_key = innerp->slotkey[split_key];
+    }
+}
+
+void log_node(void *node) {
+    size_t idx = cur_debug_log_info.fetch_add(
+        1, std::memory_order_relaxed);
+
+    LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
+    log_info.logtype = LOG_LOCK;
+    log_info.threadidx =
+        local_debug_info.tinfo ? local_debug_info.tinfo->threadidx : 0;
+
+    set_type::btree_impl::node *nodep =
+        static_cast<set_type::btree_impl::node *>(node);
+    log_info.lock_type_enum = lock_type_node;
+    if (nodep->level == 0 && nodep->slotuse != 0) { // leaf
+        set_type::btree_impl::LeafNode *leafp =
+            static_cast<set_type::btree_impl::LeafNode *>(nodep);
+
+        log_info.min = leafp->min_key();
+        log_info.max = leafp->max_key();
+    } else {
+        set_type::btree_impl::InnerNode *innerp =
+            static_cast<set_type::btree_impl::InnerNode *>(nodep);
+        log_info.min = innerp->slotkey[0];
+        log_info.max = innerp->slotkey[innerp->slotuse - 1];
     }
 }
 
@@ -2263,7 +2285,7 @@ void log_str(const char *str) {
 }
 
 void log_lock(void* node __attribute__((unused)),
-              int lock_type_enum __attribute__((unused)),
+              int lock_type __attribute__((unused)),
               unsigned short sliceid = MAPL_NONE) {
     auto& tinfo = local_debug_info.tinfo;
     size_t idx = cur_debug_log_info.fetch_add(
@@ -2272,7 +2294,7 @@ void log_lock(void* node __attribute__((unused)),
     LogInfo& log_info = debug_log_info[idx % TOTAL_DEBUG_LOG_INFO];
     if (tinfo) {
         tinfo->cur_node = node;
-        tinfo->op = lock_type_enum;
+        tinfo->op = lock_type;
         log_info.threadidx = tinfo->threadidx;
     }
     log_info.logtype = LOG_LOCK;
@@ -2299,8 +2321,8 @@ void log_lock(void* node __attribute__((unused)),
 
             log_info.sliceid = sliceid;
 
+            log_info.min = log_info.max = 0;
             if (mapl) {
-                log_info.min = log_info.max = 0;
                 log_info.slice = mapl->slices + sliceid;
                 if (sliceid == MAPL_FREE_LIST_MTX) {
                     lockp = &mapl->free_slot_mtx;
@@ -2309,11 +2331,21 @@ void log_lock(void* node __attribute__((unused)),
                     lockp = &mapl->slices[sliceid].lock;
                 }
             } else {
-                // leafp not locked, can't get min/max on mapl
-                //log_info.min = leafp->min_key();
-                //log_info.max = leafp->max_key();
-                log_info.min = log_info.max = 0;
                 log_info.slice = nullptr;
+            }
+            // get min/max only if leaf is locked
+            if (lock_type == lock_type_read_got ||
+                lock_type == lock_type_read_unlock ||
+                lock_type == lock_type_read_unlock_notify_writer ||
+                lock_type == lock_type_write_got ||
+                lock_type == lock_type_write_unlock ||
+                lock_type == lock_type_write_unlock_notify_upgrader ||
+                lock_type == lock_type_write_unlock_notify_writer ||
+                lock_type == lock_type_write_unlock_notify_reader ||
+                lock_type == lock_type_upgrade_got ||
+                lock_type == lock_type_try_upgrade_got) {
+                log_info.min = leafp->min_key();
+                log_info.max = leafp->max_key();
             }
 
             log_info.numreader = lockp->numreader;
@@ -2334,7 +2366,7 @@ void log_lock(void* node __attribute__((unused)),
             log_info.upgradewaiting = innerp->mutex_.upgradewaiting;
         }
     }
-    log_info.lock_type_enum = lock_type_enum;
+    log_info.lock_type_enum = lock_type;
 
     get_stack_addr(log_info.addrs);
 }
@@ -2346,7 +2378,7 @@ const char *MemOpName[] = {
     "free leaf"
 };
 
-bool print_log_record(const LogInfo& info) {
+bool print_log_record(const LogInfo& info, int n) {
     std::lock_guard<std::mutex> printlock(printmtx);
     switch (info.logtype) {
     case LOG_LOCK:
@@ -2356,7 +2388,8 @@ bool print_log_record(const LogInfo& info) {
         if (info.lock_type_enum == 0) {
             return false; // empty record stop printing
         }
-        std::cout << format_time(info.timestamp)
+        std::cout << std::setw(5) << std::setfill(' ') << n << " "
+                  << format_time(info.timestamp)
                   << " thread " << info.threadidx
                   << " node " << info.node
                   << "[" << info.min << "," << info.max << "]";
@@ -2450,15 +2483,16 @@ bool print_log_record(const LogInfo& info) {
 
 void print_all_lock_records() {
   size_t i;
+  size_t n = 0;
   size_t cur_index = cur_debug_log_info % TOTAL_DEBUG_LOG_INFO;
   for (i = cur_index; i < debug_log_info.size(); ++i) {
-      if (!print_log_record(debug_log_info[i])) {
+      if (!print_log_record(debug_log_info[i], n++)) {
           break;
       }
   }
 
   for (i = 0; i < cur_index; ++i) {
-      print_log_record(debug_log_info[i]);
+      print_log_record(debug_log_info[i], n++);
   }
 }
 
@@ -2665,7 +2699,7 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
     cleanup_thread_info();
 }
 
-void test_multithread(size_t initial_size) {
+void test_multithread(size_t initial_size, int num_threads) {
     in_multi_test = true;
     // Probability out of 100
     int insert_prob = 33;
@@ -2676,7 +2710,13 @@ void test_multithread(size_t initial_size) {
     // Register signal handler for SIGUSR1
     std::signal(SIGUSR1, signal_handler);
 
-    cur_numthreads = NUM_THREADS; // for debug printing TODO
+    cur_numthreads = num_threads; // for debug printing TODO
+
+    // reset from previous runs
+    my_multi_thread_set.clear();
+    for (auto& e : truth_source) {
+        e.in_set = false;
+    }
 
     // prepare the set to start with random items
     while (my_multi_thread_set.size() < initial_size) {
@@ -2687,7 +2727,7 @@ void test_multithread(size_t initial_size) {
     }
 
     std::vector<std::thread> threads;
-    for (int i = 0; i < NUM_THREADS; ++i) {
+    for (int i = 0; i < num_threads; ++i) {
         threads.emplace_back(thread_func, std::ref(my_multi_thread_set), insert_prob, lookup_prob, i);
     }
     for (auto& th : threads) {
@@ -3064,6 +3104,11 @@ int main() {
         bool one_line = false;
         int prt_interval = one_line ? 40 : 500;
         size_t initial_size;
+        int num_threads;
+
+        // always test some single thread cases first as sanity test
+        int single_thread_passes =
+            std::min(1000, std::max(1, total_passes / 100));
 
         for (int i = 0; i < total_passes; i++) {
             if (i % 2 == 0) {
@@ -3071,14 +3116,10 @@ int main() {
             } else {
                 initial_size = INITIAL_SIZE; // test tall tree
             }
-            test_multithread(initial_size);
-            my_multi_thread_set.clear();
+            num_threads = (i < single_thread_passes) ? 1 : NUM_THREADS;
+            test_multithread(initial_size, num_threads);
             debug_log_info.resize(0);
             debug_log_info.resize(TOTAL_DEBUG_LOG_INFO);
-
-            for (auto& e : truth_source) {
-                e.in_set = false;
-            }
 
             if (i != 0 && i % prt_interval == 0) {
                 double ts_now = tlx::timestamp();
