@@ -361,6 +361,7 @@ public:
         }
 
         const key_type& key(size_t s) const {
+            TLX_BTREE_ASSERT(s >= 0 && s < static_cast<size_t>(slotuse));
             idx_t slot = index_array[s];
             TLX_BTREE_ASSERT(slot >= 0 && slot < mapl->free_slot_end);
             if (slot < leaf_slotmax)
@@ -376,11 +377,6 @@ public:
             int chunk_num = i / chunk_size;
             i -= chunk_num * chunk_size;
             return chunk_arr[chunk_num][i];*/
-        }
-
-        void expand(idx_t slot_ind) {
-            index_array[slotuse] = slot_ind;
-            slotuse++;
         }
     } __attribute__((__aligned__(CACHE_LINE_SIZE)));
 
@@ -398,9 +394,17 @@ public:
         key_type* slice_boundary = nullptr;
         value_type *slotdatap;
         value_type extra[mapl_size];
-        int numslices;
+        union {
+            int numslices;
+            int slotuse; // allow find_lower()
+        };
         unsigned short* slotusep;
         DBG(LeafNode* nodep;)
+
+        const key_type& key(size_t s) const { // allow find_lower()
+            TLX_BTREE_ASSERT(s >= 0 && s < static_cast<size_t>(numslices));
+            return slice_boundary[s];
+        }
 
         /*void free_slot(int slot) {
             *static_cast<idx_t*>(&extra[slot]) = free_slot_head;
@@ -414,6 +418,8 @@ public:
             auto slotuse = *node_slotuse;
             numslices = (slotuse + slice_size - 1) / slice_size;
             TLX_BTREE_ASSERT(numslices > 1);
+
+            DBG(nodep = leaf;)
 
             slices = new Slice[numslices];
             for (int i = 0; i < numslices - 1; i++) {
@@ -499,13 +505,32 @@ public:
             return full;
         }
 
+        template <bool optimism = true>
         bool slice_insert(int slicenum, idx_t pos, const value_type& data) {
+            TLX_BTREE_ASSERT(slicenum >= 0 && slicenum < numslices);
+            TLX_BTREE_ASSERT(pos >= 0 && pos <= slices[slicenum].slotuse);
             if constexpr (concurrent) {
-                free_slot_mtx.write_lock();
+#ifndef NDEBUG
+                TLX_BTREE_ASSERT(nodep->mutex_.write_locked() ||
+                                 slices[slicenum].lock.write_locked());
+#endif
+                if constexpr (optimism) {
+                    free_slot_mtx.write_lock();
+                } else {
+#ifndef NDEBUG
+                    TLX_BTREE_ASSERT(nodep->mutex_.write_locked());
+#endif
+                }
             }
             if (free_slot_head == free_slot_end) {
                 if constexpr (concurrent) {
-                    free_slot_mtx.write_unlock();
+                    if constexpr (optimism) {
+                        free_slot_mtx.write_unlock();
+                    } else {
+#ifndef NDEBUG
+                        TLX_BTREE_ASSERT(nodep->mutex_.write_locked());
+#endif
+                    }
                 }
                 return false;
             }
@@ -522,7 +547,15 @@ public:
             }
             (*slotusep)++; // must update with free_slot_mtx locked
             if constexpr (concurrent) {
-                free_slot_mtx.write_unlock();
+                if constexpr (concurrent) {
+                    if constexpr (optimism) {
+                        free_slot_mtx.write_unlock();
+                    } else {
+#ifndef NDEBUG
+                        TLX_BTREE_ASSERT(nodep->mutex_.write_locked());
+#endif
+                    }
+                }
             }
 
             idx_t* idx_ar = slices[slicenum].index_array;
@@ -536,10 +569,22 @@ public:
             return true;
         }
 
+        template <bool optimism = true>
         void slice_erase(int slicenum, idx_t pos) {
+            TLX_BTREE_ASSERT(slicenum >= 0 && slicenum < numslices);
             TLX_BTREE_ASSERT(slices[slicenum].slotuse > 0);
             if constexpr (concurrent) {
-                free_slot_mtx.write_lock();
+#ifndef NDEBUG
+                TLX_BTREE_ASSERT(nodep->mutex_.write_locked() ||
+                                 slices[slicenum].lock.write_locked());
+#endif
+                if constexpr (optimism) {
+                    free_slot_mtx.write_lock();
+                } else {
+#ifndef NDEBUG
+                    TLX_BTREE_ASSERT(nodep->mutex_.write_locked());
+#endif
+                }
             }
 
             idx_t* idx_ar = slices[slicenum].index_array;
@@ -556,66 +601,15 @@ public:
                     idx_ar + pos);
             (*slotusep)--;
             if constexpr (concurrent) {
-                free_slot_mtx.write_unlock();
+                if constexpr (optimism) {
+                    free_slot_mtx.write_unlock();
+                } else {
+#ifndef NDEBUG
+                    TLX_BTREE_ASSERT(nodep->mutex_.write_locked());
+#endif
+                }
             }
             slices[slicenum].slotuse--;
-        }
-
-        bool expand(int slice) {
-            if constexpr (concurrent) {
-                free_slot_mtx.write_lock();
-            }
-            if (free_slot_head == free_slot_end) {
-                if constexpr (concurrent) {
-                    free_slot_mtx.write_unlock();
-                }
-                return false;
-            }
-
-            idx_t new_slot = free_slot_head;
-            TLX_BTREE_ASSERT(new_slot < free_slot_end);
-            if (new_slot < leaf_slotmax)
-                free_slot_head = *reinterpret_cast<idx_t*>(
-                    &slotdatap[free_slot_head]);
-            else
-                free_slot_head = *reinterpret_cast<idx_t*>(
-                    &extra[free_slot_head - leaf_slotmax]);
-
-            slices[slice].expand(new_slot);
-            (*slotusep)++;
-            if constexpr (concurrent) {
-                free_slot_mtx.write_unlock();
-            }
-            return true;
-        }
-
-        bool shrink(int s) {
-            if constexpr (concurrent) {
-                free_slot_mtx.write_lock();
-            }
-            Slice& slice = slices[s];
-            if (*slotusep == 0) {
-                if constexpr (concurrent) {
-                    free_slot_mtx.write_unlock();
-                }
-                return false;
-            }
-
-            idx_t to_del = slice.index_array[slice.slotuse - 1];
-            if (to_del < leaf_slotmax)
-                *reinterpret_cast<idx_t*>(&slotdatap[to_del]) =
-                    free_slot_head;
-            else
-                *reinterpret_cast<idx_t*>(&extra[to_del - leaf_slotmax]) =
-                    free_slot_head;
-            free_slot_head = to_del;
-
-            slice.slotuse--;
-            (*slotusep)--;
-            if constexpr (concurrent) {
-                free_slot_mtx.write_unlock();
-            }
-            return true;
         }
     };
 
@@ -737,7 +731,6 @@ public:
             }
             log_lock(nodep, lock_type_read, sliceid);
             lock_type lock(mutex);
-            addtoread();
             if (haswriter || writerswaiting > 0
                     || upgradewaiting > 0) {
                 readerswaiting++;
@@ -752,6 +745,7 @@ public:
             } else {
                 con_tracker.track_no_wait();
             }
+            addtoread();
             numreader++;
             VERIFY_NODE(verify, treep, nodep);
             log_lock(nodep, lock_type_read_got, sliceid);
@@ -1056,8 +1050,17 @@ public:
 
         const key_type& min_key() const {
             if (mapl) {
-                Slice& slice = mapl->slices[0];
-                return slice.key(0);
+                // find the last non-empty slice
+                for (int slicenum = 0;
+                     slicenum < mapl->numslices;
+                     ++slicenum) {
+                    Slice& slice = mapl->slices[slicenum];
+                    if (slice.slotuse > 0) {
+                        return slice.key(0);
+                    }
+                }
+                TLX_BTREE_ASSERT(false);
+                return mapl->slices[0].key(0);
             } else {
                 return key(0);
             }
@@ -1139,11 +1142,14 @@ public:
         }
 
         void maplize() {
+            LOG_STR("before maplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(!mapl);
             mapl = new Mapl(slotdata, &(node::slotuse), this);
+            LOG_STR("after maplize " << this << " min=" << min_key() << " max=" << max_key());
         }
 
         void unmaplize() {
+            LOG_STR("before unmaplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(mapl);
             TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax+ mapl_size); // technically gotta lock before this
 #ifndef NDEBUG
@@ -1161,6 +1167,7 @@ public:
                 slotdata[i] = ordered[i];
             }
             mapl = nullptr;
+            LOG_STR("after unmaplize " << this << " min=" << min_key() << " max=" << max_key());
         }
 
         /*void readlock() {
@@ -1208,7 +1215,7 @@ public:
         // only allow to get data in sequential manner
         const value_type& get_overall(int i, MaplKeyContext *ctx) const {
             TLX_BTREE_ASSERT(mapl);
-            TLX_BTREE_ASSERT(i >= ctx->prev_index);
+            TLX_BTREE_ASSERT(i >= ctx->prev_index && i < node::slotuse);
 
             idx_t slice_i = ctx->prev_slice + 1;
             idx_t idx = i - ctx->prev_index;
@@ -1221,6 +1228,13 @@ public:
                 ctx->prev_index += cur_slice_size;
                 ++slice_i;
                 idx = 0;
+
+                // skip empty slices
+                while (mapl->slices[slice_i].slotuse == 0 &&
+                       slice_i < mapl->numslices) {
+                    ++ctx->prev_slice;
+                    ++slice_i;
+                }
             }
 
             return get(slice_i, idx);
@@ -3519,6 +3533,9 @@ private:
                 leaf->slotdata[slot] = value;
                 leaf->slotuse++;
 
+                LOG_STR("insert done " << leaf << " slot=" << slot << " min="
+                        << leaf->key(0) << " max=" << leaf->key(leaf->slotuse - 1) << "\n");
+
                 if (splitnode && leaf != *splitnode && slot == leaf->slotuse - 1)
                 {
                     // special case: the node was split, and the insert is at the
@@ -3615,8 +3632,9 @@ private:
                     }
                     return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
                 } else {
-                    bool successful = leaf->mapl->slice_insert(slice_num, ind, value);
+                    bool successful = leaf->mapl->template slice_insert<optimism>(slice_num, ind, value);
                     if (!successful) {
+                        LOG_STR("insert to mapl " << leaf << " failed min=" << leaf->min_key() << " max=" << leaf->max_key());
                         // node full due to other threads inserted elsewhere
                         if constexpr (concurrent) {
                             slice.lock.write_unlock();
@@ -3663,6 +3681,7 @@ private:
         unsigned short mid = (leaf->slotuse >> 1);
 
         TLX_BTREE_PRINT("BTree::split_leaf_node on " << leaf);
+        LOG_STR("before split leaf=" << leaf << " min=" << leaf->min_key() << " max=" << leaf->max_key());
 
         LeafNode* newleaf = allocate_leaf();
 
@@ -3688,8 +3707,12 @@ private:
 
         *out_newkey = leaf->key(leaf->slotuse - 1);
         *out_newleaf = newleaf;
+
+        LOG_STR("after split leaf=" << leaf << " min=" << leaf->min_key() << " max=" << leaf->max_key());
+        LOG_STR("after split newleaf=" << leaf << " min=" << newleaf->min_key() << " max=" << newleaf->max_key());
     }
 
+    template <bool optimism>
     void split_mapl_leaf(LeafNode* leaf,
                          key_type* out_newkey, node** out_newleaf) {
         TLX_BTREE_ASSERT(leaf->mapl->is_full());
@@ -4231,7 +4254,9 @@ private:
             } else {
                 slicenum = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slicenum];
-                if constexpr (concurrent && !optimism) {
+                if constexpr (concurrent && optimism) {
+                    // in pessimistic mode leaf has the right lock, no need
+                    // to lock the slice
                     slice.lock.write_lock();
                 }
                 unsigned short ind = find_lower(&slice, key);
@@ -4268,16 +4293,16 @@ private:
                 {
                     std::stringstream ss;
                     leaf->print_mapl(ss);
-                    LOG_STR("before erase slice:" << slicenum
+                    LOG_STR("before erase leaf " << leaf << " slice:" << slicenum
                             << " ind:" << ind << " " << ss.str());
                 }
 #endif
-                leaf->mapl->slice_erase(slicenum, ind);
+                leaf->mapl->template slice_erase<optimism>(slicenum, ind);
 #ifndef NDEBUG
                 {
                     std::stringstream ss;
                     leaf->print_mapl(ss);
-                    LOG_STR("after erase slice:" << slicenum
+                    LOG_STR("after erase leaf " << leaf << " slice:" << slicenum
                             << " ind:" << ind << " " << ss.str());
                 }
 #endif
@@ -4291,7 +4316,7 @@ private:
                     if constexpr (concurrent && optimism) {
                         TLX_BTREE_ASSERT(false);
                     }
-                    const key_type& to_set = slice.key(ind - 1);
+                    const key_type& to_set = leaf->max_key();
 
                     if (parent && parentslot < parent->slotuse) {
                         TLX_BTREE_ASSERT(parent->childid[parentslot] == curr);

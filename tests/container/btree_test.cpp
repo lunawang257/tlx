@@ -2050,7 +2050,7 @@ int seqnum = 0;
 bool in_multi_test = false;
 set_type my_multi_thread_set;
 
-const size_t NUM_THREADS = 2;
+const size_t NUM_THREADS = 4;
 size_t cur_numthreads = NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;
@@ -2334,16 +2334,8 @@ void log_lock(void* node __attribute__((unused)),
                 log_info.slice = nullptr;
             }
             // get min/max only if leaf is locked
-            if (lock_type == lock_type_read_got ||
-                lock_type == lock_type_read_unlock ||
-                lock_type == lock_type_read_unlock_notify_writer ||
-                lock_type == lock_type_write_got ||
-                lock_type == lock_type_write_unlock ||
-                lock_type == lock_type_write_unlock_notify_upgrader ||
-                lock_type == lock_type_write_unlock_notify_writer ||
-                lock_type == lock_type_write_unlock_notify_reader ||
-                lock_type == lock_type_upgrade_got ||
-                lock_type == lock_type_try_upgrade_got) {
+            if ((leafp->mutex_.self_read_locked() && !leafp->mapl) ||
+                leafp->mutex_.self_write_locked()) {
                 log_info.min = leafp->min_key();
                 log_info.max = leafp->max_key();
             }
@@ -2812,7 +2804,9 @@ void slice_insert(typename TestType<TestSlotMax>::test_leaf_type *leaf,
     int slicenum = leaf->mapl->get_slicenum(key);
     auto* slice = leaf->mapl->slices + slicenum;
     int pos = ts.tree_.find_lower(slice, key);
+    leaf->mapl->slices[slicenum].lock.write_lock();
     leaf->mapl->slice_insert(slicenum, pos, val);
+    leaf->mapl->slices[slicenum].lock.write_unlock();
 }
 
 template<int TestSlotMax>
@@ -2823,7 +2817,9 @@ void slice_erase(typename TestType<TestSlotMax>::test_leaf_type *leaf,
     int slicenum = leaf->mapl->get_slicenum(key);
     auto* slice = leaf->mapl->slices + slicenum;
     int pos = ts.tree_.find_lower(slice, key);
+    leaf->mapl->slices[slicenum].lock.write_lock();
     leaf->mapl->slice_erase(slicenum, pos);
+    leaf->mapl->slices[slicenum].lock.write_unlock();
 }
 
 template<int TestSlotMax>
