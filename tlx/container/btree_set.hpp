@@ -152,11 +152,7 @@ public:
 
     //! \}
 
-#ifdef NDEBUG
-private:
-#else
-public:
-#endif
+public: //TO Be Fixed
     //! \name Tree Implementation Object
     //! \{
 

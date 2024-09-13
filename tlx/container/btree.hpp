@@ -56,6 +56,9 @@ enum { // lock id in Mapl nodes
     MAPL_FREE_LIST_MTX = 65534 // free list mtx in mapl node
 };
 
+// 0-100, if >30% locks waited, maplize the leaf. Unmaplize logic not done yet
+unsigned short maplize_threshold = 30;
+
 extern bool in_multi_test;
 
 namespace tlx {
@@ -259,8 +262,6 @@ public:
     //! in an inner node. If fewer slots are used, the inner node will be
     //! merged or slots shifted from it's siblings.
     static const unsigned short inner_slotmin = (inner_slotmax / 2);
-
-    static const unsigned short maplize_threshold = 0;
 
 #ifdef NDEBUG
     static const unsigned short slice_size = 8;
@@ -2452,11 +2453,7 @@ public:
 
     //! \}
 
-#ifdef NDEBUG
-private:
-#else
-public:
-#endif
+public: //To be fixed
     //! \name B+ Tree Node Binary Search Functions
     //! \{
 

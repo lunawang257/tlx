@@ -753,25 +753,26 @@ void TestFactory_Map<TestClass>::call_testrunner(size_t items) {
 void print_usage(const char *program_name) {
     std::cout << "Usage: " << program_name << " [options]\n"
               << "Options:\n"
-              << "  -o        Use old Slow Lock Btree\n"
-              << "  -t <num>  Set BT_THREADS (default: 1)\n"
-              << "  -m <num>  Set BT_MIN (default: 0)\n"
-              << "  -M <num>  Set BT_MAX (default: 0)\n"
-              << "  -r <num>  Set BT_REPEAT (default: 0)\n"
+              << "  -h        Print this help message and exit\n"
               << "  -i <num>  Set BT_INSERT_P (default: 0)\n"
               << "  -l <num>  Set BT_LOOKUP_P (default: 0)\n"
               << "  -L <root|no-root|all|none> Lock which nodes (default: all)\n"
+              << "  -m <num>  Set BT_MIN (default: 0)\n"
+              << "  -M <num>  Set BT_MAX (default: 0)\n"
+              << "  -o        Use old Slow Lock Btree\n"
+              << "  -r <num>  Set BT_REPEAT (default: 0)\n"
               << "  -R <num>  Set expected root slot, -2 means slotmax-2 (default: 0)\n"
               << "  -s        Skip std::set (now always skipped)\n"
               << "  -S <num>  Set slotmax, must be one of 4, 8, 16, 32, 64, 128, 256\n"
-              << "  -h        Print this help message and exit\n";
+              << "  -t <num>  Set BT_THREADS (default: 1)\n"
+              << "  -T <num>  Maplize threshold percentage, if locks waits more than this percent, maplize it";
 }
 
 //! Speed test them!
 int main(int argc, char *argv[]) {
     std::set<size_t> valid_max_slots = {4, 8, 16, 32, 64, 128, 256};
     int opt;
-    while ((opt = getopt(argc, argv, "ot:m:M:r:R:i:l:L:sS:h")) != -1) {
+    while ((opt = getopt(argc, argv, "hi:l:L:m:M:or:R:sS:t:T:")) != -1) {
         switch (opt) {
         case 'o':
             g_use_slbtree = true;
@@ -830,6 +831,12 @@ int main(int argc, char *argv[]) {
             if (valid_max_slots.find(g_slot_max) == valid_max_slots.end()) {
                 std::cerr << "Invalid slot max " << optarg << std::endl;
                 return EXIT_FAILURE;
+            }
+            break;
+        case 'T':
+            maplize_threshold = atol(optarg);
+            if (maplize_threshold < 0 || maplize_threshold > 100) {
+                std::cerr << "Invalid maplize threshold " << optarg << " must be 0-100\n";
             }
             break;
         case 'h':
