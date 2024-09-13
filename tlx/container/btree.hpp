@@ -354,10 +354,14 @@ public:
         void init(Mapl *p, idx_t off, idx_t startsize) {
             mapl = p;
             slotuse = startsize;
-            index_array = new idx_t[mapl_size];
+            index_array = new idx_t[leaf_slotmax + mapl_size];
             for (idx_t i = 0; i < startsize; ++i) {
                 index_array[i] = off + i;
             }
+        }
+
+        ~Slice() {
+            delete[] index_array;
         }
 
         const key_type& key(size_t s) const {
@@ -394,22 +398,9 @@ public:
         key_type* slice_boundary = nullptr;
         value_type *slotdatap;
         value_type extra[mapl_size];
-        union {
-            int numslices;
-            int slotuse; // allow find_lower()
-        };
+        int numslices;
         unsigned short* slotusep;
         DBG(LeafNode* nodep;)
-
-        const key_type& key(size_t s) const { // allow find_lower()
-            TLX_BTREE_ASSERT(s >= 0 && s < static_cast<size_t>(numslices));
-            return slice_boundary[s];
-        }
-
-        /*void free_slot(int slot) {
-            *static_cast<idx_t*>(&extra[slot]) = free_slot_head;
-            free_slot_head = slot;
-        }*/
 
         Mapl(value_type* slotdata, unsigned short* node_slotuse,
             LeafNode* leaf __attribute__((unused))) {
@@ -450,6 +441,11 @@ public:
                 *reinterpret_cast<idx_t*>(&val) = i + 1;
             }
             free_slot_head = slotuse;
+        }
+
+        ~Mapl() {
+            delete[] slices;
+            delete[] slice_boundary;
         }
 
         void readlock_slice(const key_type& key) {
@@ -1048,10 +1044,10 @@ public:
 
         mutable ReaderWriterLock2 mutex_;
 
+        Mapl* mapl = nullptr;
+
         //! Array of (key, data) pairs
         value_type slotdata[leaf_slotmax]; // NOLINT
-
-        Mapl* mapl = nullptr;
 
         LeafNode() : node(nullptr) {
         #ifndef NDEBUG
@@ -1068,6 +1064,9 @@ public:
         }
 
         ~LeafNode() {
+            if (mapl) {
+                delete mapl;
+            }
         }
 
         //! Set variables to initial values
@@ -1201,6 +1200,7 @@ public:
             for (int i = 0; i < node::slotuse; i++) {
                 slotdata[i] = ordered[i];
             }
+            delete mapl;
             mapl = nullptr;
             LOG_STR("after unmaplize " << this << " min=" << min_key() << " max=" << max_key());
         }
