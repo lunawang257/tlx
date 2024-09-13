@@ -487,9 +487,44 @@ public:
         int get_slicenum(const key_type& key) const {
             key_compare mapl_key_less;
             unsigned short slice = 0;
-            // TODO: use binary search if numslices is bigger than a threshold
-            while (slice < numslices - 1
-                    && mapl_key_less(slice_boundary[slice], key)) ++slice;
+            unsigned short num_boundaries = numslices - 1;
+
+            if (num_boundaries == 0) return 0;
+#ifdef NDEBUG
+            if (num_boundaries > traits::binsearch_threshold) {
+#else
+            if (true) { // debug mode always exercise binary search
+#endif
+                unsigned short lo = 0, hi = num_boundaries;
+
+                while (lo < hi)
+                {
+                    unsigned short mid = (lo + hi) >> 1;
+
+                    if (!mapl_key_less(slice_boundary[mid], key)) {
+                        // key <= slice_boundary[mid]
+                        hi = mid; // key <= mid
+                    }
+                    else {
+                        lo = mid + 1; // key > mid
+                    }
+                }
+                slice = lo;
+
+#ifndef NDEBUG
+                // verify result using simple linear search
+                unsigned short slice_verify = 0;
+                while (slice_verify < num_boundaries
+                       && mapl_key_less(slice_boundary[slice_verify], key))
+                    ++slice_verify;
+                TLX_BTREE_ASSERT(slice == slice_verify);
+#endif
+            }
+            else {
+                while (slice < num_boundaries
+                       && mapl_key_less(slice_boundary[slice], key))
+                    ++slice;
+            }
 
             return slice;
         }
