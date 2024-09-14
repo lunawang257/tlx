@@ -156,7 +156,7 @@ public:
 
     //! \}
 
-private:
+public:
     //! \name Tree Implementation Object
     //! \{
 

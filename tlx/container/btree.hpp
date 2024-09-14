@@ -392,7 +392,7 @@ public:
     };
 
     struct Mapl {
-        static const ssize_t numslices = (leaf_slotmax+slice_size-1)/slice_size;
+        static const ssize_t numslices = (leaf_slotmax + slice_size - 1) / slice_size;
         Slice slices[numslices];
         idx_t free_slot_head;
         ReaderWriterLock2 free_slot_mtx;

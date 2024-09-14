@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <map>
 #include <tlx/container/btree.hpp>
-#include "btree_test.hpp"
+#include "btree_speedtest_leaf.hpp"
 
 const char* help_message = R"(
 Usage:
@@ -57,47 +57,63 @@ Usage:
 #define FOR_EACH_(N, what, x, ...) CONCATENATE(FOR_EACH_, N)(what, x, __VA_ARGS__)
 #define FOR_EACH(what, x, ...) FOR_EACH_(FOR_EACH_NARG(x, __VA_ARGS__), what, x, __VA_ARGS__)
 
+int seed = 1;
 const int MAX_KEY_RANGE = 1000;
-const int MAX_SHORT_VALUE_RANGE = 1000;
-const int LEAF_ARRAY_SIZE = 1000;
+const int LEAF_ARRAY_SIZE = 2; //1000;
 int NUM_ITERATIONS = 1000000;
 
-// Function to generate a single random value of type val_type
-template<int TestSlotMax, typename val_type, int ValSize>
-val_type generate_random_value(std::mt19937& rng) {
-    std::uniform_int_distribution<int> key_dist(1, MAX_KEY_RANGE); // Random keys in the range [1..100]
+template<int TestSlotMax, int ValSize>
+void set_leaf_data(typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type *leaf,
+                   const std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_value_type>& v,
+                   bool sorted = false) {
+    TLX_BTREE_ASSERT(v.size() < test_btree_type::leaf_slotmax);
 
-    if constexpr (std::is_same_v<val_type, short_val_type>) {
-        // Generate random value for short_val_type
-        std::uniform_int_distribution<short_val_type> short_dist(1, MAX_SHORT_VALUE_RANGE);
-        return short_dist(rng);
-    } else if constexpr (std::is_same_v<val_type, long_val_type<ValSize>>) {
-        // Generate random value for long_val_type
-        long_val_type<ValSize> val;
-        val.key = key_dist(rng); // Random key
-
-        // Fill the value array with random characters
-        std::generate(std::begin(val.value), std::end(val.value), [&]() { return static_cast<char>(key_dist(rng)); });
-
-        return val;
+    // Sort the values if the sorted flag is true
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_value_type> sorted_values = v;  // Create a copy for sorting if necessary
+    if (sorted) {
+        std::sort(sorted_values.begin(), sorted_values.end(),
+            typename SpeedTestType<TestSlotMax, ValSize>::ValueComparator());
     }
+
+    // Copy the (optionally sorted) values into the leaf's slotdata
+    for (size_t i = 0; i < sorted_values.size(); ++i) {
+        leaf->slotdata[i] = sorted_values[i];
+    }
+
+    // Set the number of used slots
+    leaf->slotuse = sorted_values.size();
+}
+
+// Function to generate a single random value of type val_type
+template<int TestSlotMax, int ValSize>
+SpeedTestType<TestSlotMax, ValSize>::test_value_type generate_random_value(std::mt19937& rng) {
+    std::uniform_int_distribution<key_type> key_dist(1, MAX_KEY_RANGE); // Random keys in the range [1..100]
+
+    key_type key = key_dist(rng); // Random key
+
+    // Generate random value for long_val_type
+    long_val_type<ValSize> data;
+    // Fill the value array with random characters
+    std::generate(std::begin(data.value), std::end(data.value), [&]() { return static_cast<char>(key_dist(rng)); });
+
+    return typename SpeedTestType<TestSlotMax, ValSize>::test_value_type(key, data);
 }
 
 // Function to generate random values
-template<int TestSlotMax, typename val_type, int ValSize>
-std::vector<val_type> generate_random_values() {
+template<int TestSlotMax, int ValSize>
+std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_value_type> generate_random_values() {
     // Determine the number of slots to fill
     size_t num_slots = static_cast<size_t>(TestSlotMax * 0.75); // 75% of TestSlotMax
 
-    std::vector<val_type> values;
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_value_type> values;
     values.reserve(num_slots);
 
     // Random number generator setup
-    std::mt19937 rng(std::random_device{}());
+    std::mt19937 rng(seed);
 
     for (size_t i = 0; i < num_slots; ++i) {
         // Use the extracted function to generate a random value
-        values.push_back(generate_random_value<TestSlotMax, val_type, ValSize>(rng));
+        values.push_back(generate_random_value<TestSlotMax, ValSize>(rng));
     }
 
     return values;
@@ -107,15 +123,24 @@ std::vector<val_type> generate_random_values() {
  * Each leaf is filled with 75% of TestSlotMax slots of val_type data with
  * random keys within [1..100] and random values.
 */
-template<int TestSlotMax, typename val_type, int ValSize>
-void initialize_leaf_array(std::vector<typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type>& leaf_array,
+template<int TestSlotMax, int ValSize>
+void initialize_leaf_array(std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type>& leaf_array,
+        typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type *btree,
         bool sorted = false) {
     // Initialize the leaf array
+    int n = 0;
     for (auto& leaf : leaf_array) {
-        const std::vector<val_type> values = generate_random_values<TestSlotMax, val_type, ValSize>();
-        //TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
-        TestType<TestSlotMax, val_type, ValSize>::set_leaf_data(&leaf, values, sorted);
+        // placement new to initialize the leaf
+        std::cout << "leaf[" << n << "].slotuse: " << &leaf.slotuse << std::endl;
+        new (&leaf) typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type(btree);
+
+        const std::vector<typename SpeedTestType<TestSlotMax,ValSize>::test_value_type> values =
+            generate_random_values<TestSlotMax, ValSize>();
+
+        set_leaf_data<TestSlotMax, ValSize>(&leaf, values, sorted);
+        ++n;
     }
+    std::cout << "Initialized " << n << " leaves" << std::endl;
 }
 
 /*
@@ -148,10 +173,10 @@ void initialize_leaf_array(std::vector<typename TestType<TestSlotMax, val_type, 
     * calculated and printed.
 */
 // Function to perform the insert operation
-template<int TestSlotMax, typename val_type, int ValSize>
-void perform_mapl_insert_operation(typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type& leaf,
+template<int TestSlotMax, int ValSize>
+void perform_mapl_insert_operation(typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type& leaf,
                               std::mt19937& rng,
-                              const val_type& val,
+                              const typename SpeedTestType<TestSlotMax,ValSize>::test_value_type& val,
                               std::chrono::duration<double>& total_insert_time,
                               size_t& insert_count) {
     size_t sliceNo = leaf.mapl->numslices > 0 ? rng() % leaf.mapl->numslices : 0;
@@ -166,8 +191,8 @@ void perform_mapl_insert_operation(typename TestType<TestSlotMax, val_type, ValS
 }
 
 // Function to perform the delete operation
-template<int TestSlotMax, typename val_type, int ValSize>
-void perform_mapl_delete_operation(typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type& leaf,
+template<int TestSlotMax, int ValSize>
+void perform_mapl_delete_operation(typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type& leaf,
                               std::mt19937& rng,
                               std::chrono::duration<double>& total_delete_time,
                               size_t& delete_count) {
@@ -189,16 +214,17 @@ void perform_mapl_delete_operation(typename TestType<TestSlotMax, val_type, ValS
 }
 
 // Main performance test function
-template<int TestSlotMax, typename val_type = short_val_type, int ValSize = 0>
+template<int TestSlotMax, int ValSize>
 void test_maplize_insert_delete_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
+    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
-    std::vector<typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type> leaf_array(array_size);
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array
-    initialize_leaf_array<TestSlotMax, val_type, ValSize>(leaf_array);
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt);
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
@@ -206,7 +232,7 @@ void test_maplize_insert_delete_perf() {
     }
 
     // Random number generator setup
-    std::mt19937 rng(std::random_device{}());
+    std::mt19937 rng(seed);
     std::uniform_int_distribution<size_t> leaf_dist(0, array_size - 1);
     std::uniform_real_distribution<double> action_dist(0.0, 1.0);
 
@@ -222,20 +248,20 @@ void test_maplize_insert_delete_perf() {
         // Calculate 50% and 75% of TestSlotMax
         size_t slotuse_50 = static_cast<size_t>(TestSlotMax * 0.5);
         //size_t slotuse_75 = static_cast<size_t>(TestSlotMax * 0.75);
-        val_type val = generate_random_value<TestSlotMax, val_type, ValSize>(rng);
+        typename SpeedTestType<TestSlotMax, ValSize>::test_value_type val = generate_random_value<TestSlotMax, ValSize>(rng);
 
         // Check the slotuse of the leaf and decide the operation
         if (leaf.slotuse > slotuse_50 && leaf.slotuse < TestSlotMax) {
             // Randomly decide to insert or delete
             if (action_dist(rng) < 0.5) {
-                perform_mapl_insert_operation<TestSlotMax, val_type, ValSize>(leaf, rng, val, total_insert_time, insert_count);
+                perform_mapl_insert_operation<TestSlotMax, ValSize>(leaf, rng, val, total_insert_time, insert_count);
             } else {
-                perform_mapl_delete_operation<TestSlotMax, val_type, ValSize>(leaf, rng, total_delete_time, delete_count);
+                perform_mapl_delete_operation<TestSlotMax, ValSize>(leaf, rng, total_delete_time, delete_count);
             }
         } else if (leaf.slotuse <= slotuse_50) {
-            perform_mapl_insert_operation<TestSlotMax, val_type, ValSize>(leaf, rng, val, total_insert_time, insert_count);
+            perform_mapl_insert_operation<TestSlotMax, ValSize>(leaf, rng, val, total_insert_time, insert_count);
         } else if (leaf.slotuse == TestSlotMax) {
-            perform_mapl_delete_operation<TestSlotMax, val_type, ValSize>(leaf, rng, total_delete_time, delete_count);
+            perform_mapl_delete_operation<TestSlotMax, ValSize>(leaf, rng, total_delete_time, delete_count);
         }
     }
 
@@ -248,10 +274,10 @@ void test_maplize_insert_delete_perf() {
 }
 
 // Function to perform the insert operation
-template<int TestSlotMax, typename val_type, int ValSize>
-void perform_insert_operation(typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type& leaf,
+template<int TestSlotMax, int ValSize>
+void perform_insert_operation(typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type& leaf,
                               size_t slot,
-                              const val_type& value,
+                              const typename SpeedTestType<TestSlotMax, ValSize>::test_value_type& value,
                               std::chrono::duration<double>& total_insert_time,
                               size_t& insert_count) {
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -268,8 +294,8 @@ void perform_insert_operation(typename TestType<TestSlotMax, val_type, ValSize>:
 }
 
 // Function to perform the delete operation
-template<int TestSlotMax, typename val_type, int ValSize>
-void perform_delete_operation(typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type& leaf,
+template<int TestSlotMax, int ValSize>
+void perform_delete_operation(typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type& leaf,
                               size_t slot,
                               std::chrono::duration<double>& total_delete_time,
                               size_t& delete_count) {
@@ -286,19 +312,20 @@ void perform_delete_operation(typename TestType<TestSlotMax, val_type, ValSize>:
 }
 
 // Main performance test function
-template<int TestSlotMax, typename val_type = short_val_type, int ValSize = 0>
+template<int TestSlotMax, int ValSize = 0>
 void test_insert_delete_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
+    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
-    std::vector<typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type> leaf_array(array_size);
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array
-    initialize_leaf_array<TestSlotMax, val_type, ValSize>(leaf_array);
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt);
 
     // Random number generator setup
-    std::mt19937 rng(std::random_device{}());
+    std::mt19937 rng(seed);
     std::uniform_int_distribution<size_t> leaf_dist(0, array_size - 1);
     std::uniform_real_distribution<double> action_dist(0.0, 1.0);
 
@@ -317,20 +344,20 @@ void test_insert_delete_perf() {
 
         // Generate a random slot and value for insertion
         size_t slot = rng() % leaf.slotuse; // Random slot within current slotuse
-        val_type val = generate_random_value<TestSlotMax, val_type, ValSize>(rng); //random value
+        typename SpeedTestType<TestSlotMax, ValSize>::test_value_type val = generate_random_value<TestSlotMax, ValSize>(rng); //random value
 
         // Check the slotuse of the leaf and decide the operation
         if (leaf.slotuse > slotuse_50 && leaf.slotuse < slotuse_100) {
             // Randomly decide to insert or delete
             if (action_dist(rng) < 0.5) {
-                perform_insert_operation<TestSlotMax, val_type, ValSize>(leaf, slot, val, total_insert_time, insert_count);
+                perform_insert_operation<TestSlotMax, ValSize>(leaf, slot, val, total_insert_time, insert_count);
             } else {
-                perform_delete_operation<TestSlotMax, val_type, ValSize>(leaf, slot, total_delete_time, delete_count);
+                perform_delete_operation<TestSlotMax, ValSize>(leaf, slot, total_delete_time, delete_count);
             }
         } else if (leaf.slotuse == slotuse_50) {
-            perform_insert_operation<TestSlotMax, val_type, ValSize>(leaf, slot, val, total_insert_time, insert_count);
+            perform_insert_operation<TestSlotMax, ValSize>(leaf, slot, val, total_insert_time, insert_count);
         } else if (leaf.slotuse == slotuse_100) {
-            perform_delete_operation<TestSlotMax, val_type, ValSize>(leaf, slot, total_delete_time, delete_count);
+            perform_delete_operation<TestSlotMax, ValSize>(leaf, slot, total_delete_time, delete_count);
         }
     }
 
@@ -343,17 +370,18 @@ void test_insert_delete_perf() {
 }
 
 // Unit test function
-template<int TestSlotMax, typename val_type = short_val_type, int ValSize = 0>
+template<int TestSlotMax, int ValSize = 0>
 void test_maplize_perf() {
     const size_t array_size = LEAF_ARRAY_SIZE;  // Size of the leaf array
     size_t num_selections = NUM_ITERATIONS;  // Number of selections
+    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Initialize the leaf array
-    std::vector<typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type> leaf_array(array_size);
-    initialize_leaf_array<TestSlotMax, val_type, ValSize>(leaf_array);
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt);
 
     // Random number generator for selecting leaves
-    std::mt19937 rng(std::random_device{}());
+    std::mt19937 rng(seed);
     std::uniform_int_distribution<size_t> dist(0, array_size - 1);
 
     // Time measurements
@@ -366,12 +394,14 @@ void test_maplize_perf() {
         auto& leaf = leaf_array[index];
 
         if (leaf.mapl) {
+            std::cout << i << ": Unmaplizing leaf\t" << index << std::endl;
             auto start_time = std::chrono::high_resolution_clock::now();
             leaf.unmaplize();
             auto end_time = std::chrono::high_resolution_clock::now();
             total_unmaplize_time += end_time - start_time;
             ++unmaplize_count;
         } else {
+            std::cout << i << ": Maplizing leaf\t" << index << std::endl;
             auto start_time = std::chrono::high_resolution_clock::now();
             leaf.maplize();
             auto end_time = std::chrono::high_resolution_clock::now();
@@ -390,22 +420,23 @@ void test_maplize_perf() {
 }
 
 // Main performance test function for lookup
-template<int TestSlotMax, typename val_type = short_val_type, int ValSize = 0>
+template<int TestSlotMax, int ValSize>
 void test_lookup_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
     constexpr int key_range = MAX_KEY_RANGE;
+    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
-    std::vector<typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type> leaf_array(array_size);
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array with sorted values
-    initialize_leaf_array<TestSlotMax, val_type, ValSize>(leaf_array, true); // Pass true for sorted
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt, true); // Pass true for sorted
 
     // Random number generator setup
-    std::mt19937 rng(std::random_device{}());
+    std::mt19937 rng(seed);
     std::uniform_int_distribution<size_t> leaf_dist(0, array_size - 1);
-    std::uniform_int_distribution<unsigned short> key_dist(1, key_range); // Assuming key range is [1, 100]
+    std::uniform_int_distribution<key_type> key_dist(1, key_range); // Assuming key range is [1, 100]
 
     // Time measurement variables
     std::chrono::duration<double> total_lookup_time(0);
@@ -417,13 +448,13 @@ void test_lookup_perf() {
         auto& leaf = leaf_array[leaf_dist(rng)];
 
         // Generate a random key
-        val_type key = generate_random_value<TestSlotMax, val_type, ValSize>(rng);
+        key_type key = key_dist(rng); // Random key
 
         // Start time measurement
         auto start_time = std::chrono::high_resolution_clock::now();
 
         // Perform lookup using the find_lower function
-        typename TestType<TestSlotMax, val_type, ValSize>::test_set_type ts;
+        typename SpeedTestType<TestSlotMax, ValSize>::test_map_type ts;
         unsigned short slot = ts.tree_.find_lower(&leaf, key);
 
         // End time measurement
@@ -441,17 +472,18 @@ void test_lookup_perf() {
 }
 
 // Main performance test function for lookup
-template<int TestSlotMax, typename val_type = short_val_type, int ValSize = 0>
+template<int TestSlotMax, int ValSize>
 void test_maplize_lookup_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
     constexpr int key_range = MAX_KEY_RANGE;
+    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
-    std::vector<typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type> leaf_array(array_size);
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array with sorted values
-    initialize_leaf_array<TestSlotMax, val_type, ValSize>(leaf_array, true); // Pass true for sorted
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt, true); // Pass true for sorted
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
@@ -459,16 +491,16 @@ void test_maplize_lookup_perf() {
     }
 
     // Random number generator setup
-    std::mt19937 rng(std::random_device{}());
+    std::mt19937 rng(seed);
     std::uniform_int_distribution<size_t> leaf_dist(0, array_size - 1);
-    std::uniform_int_distribution<unsigned short> key_dist(1, key_range); // Assuming key range is [1, 100]
+    std::uniform_int_distribution<key_type> key_dist(1, key_range); // Assuming key range is [1, 100]
 
     // Time measurement variables
     std::chrono::duration<double> total_lookup_time(0);
     size_t total_pos = 0;
 
     // Perform lookup using the find_lower function
-    typename TestType<TestSlotMax, val_type, ValSize>::test_set_type ts;
+    typename SpeedTestType<TestSlotMax, ValSize>::test_map_type ts;
 
     // Perform the operations for the specified number of iterations
     for (size_t i = 0; i < num_iterations; ++i) {
@@ -476,7 +508,7 @@ void test_maplize_lookup_perf() {
         auto& leaf = leaf_array[leaf_dist(rng)];
 
         // Generate a random key
-        val_type key = generate_random_value<TestSlotMax, val_type, ValSize>(rng);
+        key_type key = key_dist(rng); // Random key
 
         // Start time measurement
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -499,16 +531,17 @@ void test_maplize_lookup_perf() {
     std::cout << "Max Slots: " << TestSlotMax << " Value Size: " << ValSize << " Total number of pos accessed: " << total_pos << std::endl;
 }
 
-template<int TestSlotMax, typename val_type = short_val_type, int ValSize = 0>
+template<int TestSlotMax, int ValSize = 0>
 void test_maplize_structure()
 {
     constexpr size_t array_size = 1; // Size of the leaf array
+    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
-    std::vector<typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type> leaf_array(array_size);
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array with sorted values
-    initialize_leaf_array<TestSlotMax, val_type, ValSize>(leaf_array, true); // Pass true for sorted
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt, true); // Pass true for sorted
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
@@ -519,7 +552,7 @@ void test_maplize_structure()
         for (int i = 0; i < leaf.mapl->numslices; ++i) {
             std::cout << "Slice " << i + 1 << ":" << std::endl;
 
-            typename TestType<TestSlotMax, val_type, ValSize>::test_btree_type::Slice *slice = &leaf.mapl->slices[i];
+            typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type::Slice *slice = &leaf.mapl->slices[i];
 
             // Print slotuse
             std::cout << "  Slot Use: " << slice->slotuse << std::endl;
@@ -579,6 +612,9 @@ std::string testOptionToString(TestOption opt) {
 }
 
 int main(int argc, char* argv[]) {
+    seed = std::random_device{}();
+    seed = 1;
+    std::cout << "seed: " << seed << "\n";
 
    /*  test_maplize_structure<22>();
 
@@ -655,7 +691,7 @@ int main(int argc, char* argv[]) {
 #define RUN_MAPLIZE(slots, size)                                        \
         if (slot_max == (slots)) {                                      \
             if (val_size == (size)) {                                   \
-                test_maplize_perf<slots, long_val_type<size>, size>();  \
+                test_maplize_perf<slots, size>();  \
                 test_invoked = true;                                    \
             }                                                           \
         }
@@ -679,10 +715,10 @@ int main(int argc, char* argv[]) {
             if (val_size == (size)) {                           \
                 if (is_mapl) {                                  \
                     test_maplize_insert_delete_perf             \
-                        <slots, long_val_type<size>, size>();   \
+                        <slots, size>();   \
                 } else {                                        \
                     test_insert_delete_perf                     \
-                        <slots, long_val_type<size>, size>();   \
+                        <slots, size>();   \
                 }                                               \
                 test_invoked = true;                            \
             }                                                   \
@@ -707,10 +743,10 @@ int main(int argc, char* argv[]) {
             if (val_size == (size)) {                           \
                 if (is_mapl) {                                  \
                     test_maplize_lookup_perf                    \
-                        <slots, long_val_type<size>, size>();   \
+                        <slots, size>();   \
                 } else {                                        \
                     test_lookup_perf                            \
-                        <slots, long_val_type<size>, size>();   \
+                        <slots, size>();   \
                 }                                               \
                 test_invoked = true;                            \
             }                                                   \
@@ -727,24 +763,6 @@ int main(int argc, char* argv[]) {
         FOR_EACH(RUN_LOOKUP_SLOT_256, 16, 32, 64, 128, 256, 512);
         FOR_EACH(RUN_LOOKUP_SLOT_512, 16, 32, 64, 128, 256, 512);
     }
-
-    /*
-    //test_maplize_perf for TestSlotMax = 64, 128, 256, and 512 respectively
-    //test_maplize_perf<64>();
-    //test_maplize_perf<64, long_val_type<16>, 16>();
-
-    //test_maplize_insert_delete_perf<64>();
-    test_maplize_insert_delete_perf<128, long_val_type<64>, 64>();
-
-    //test_insert_delete_perf<64>();
-    test_insert_delete_perf<128, long_val_type<64>, 64>();
-
-    //test_lookup_perf<64>();
-    //test_lookup_perf<64, long_val_type<16>, 16>();
-
-    //test_maplize_lookup_perf<64>();
-    //test_maplize_lookup_perf<64, long_val_type<16>, 16>();
-    */
 
     if (!test_invoked) {
         std::cout << "No tests were invoked. Maybe didn't specify the right slots or value size?\n";

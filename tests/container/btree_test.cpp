@@ -2796,6 +2796,27 @@ void verify_mapl(const char *testname,
     }
 
 template<int TestSlotMax>
+void set_leaf_data(typename TestType<TestSlotMax>::test_leaf_type *leaf,
+                   const std::vector<short_val_type>& v,
+                   bool sorted = false) {
+    TLX_BTREE_ASSERT(v.size() < TestType<TestSlotMax>::test_btree_type::leaf_slotmax);
+
+    // Sort the values if the sorted flag is true
+    std::vector<short_val_type> sorted_values = v;  // Create a copy for sorting if necessary
+    if (sorted) {
+        std::sort(sorted_values.begin(), sorted_values.end());
+    }
+
+    // Copy the (optionally sorted) values into the leaf's slotdata
+    for (size_t i = 0; i < sorted_values.size(); ++i) {
+        leaf->slotdata[i] = sorted_values[i];
+    }
+
+    // Set the number of used slots
+    leaf->slotuse = sorted_values.size();
+}
+
+template<int TestSlotMax>
 void slice_insert(typename TestType<TestSlotMax>::test_leaf_type *leaf,
                   short_val_type val) {
     typename TestType<TestSlotMax>::test_set_type ts;
@@ -2825,7 +2846,7 @@ void slice_erase(typename TestType<TestSlotMax>::test_leaf_type *leaf,
 template<int TestSlotMax>
 bool mapl_has_extra() {
     typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
-    TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+    set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
     leaf.maplize();
     verify_mapl<TestSlotMax>("maplize", leaf, R"(
     #slices=3
@@ -2843,7 +2864,7 @@ template<int TestSlotMax>
 void test_mapl_with_extra() {
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
-        TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
         verify_mapl<TestSlotMax>("aligned", leaf, R"(
@@ -2896,7 +2917,7 @@ Free list: 10 11
 
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
-        TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50});
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
         leaf.maplize();
 
         verify_mapl<TestSlotMax>("unaligned", leaf, R"(
@@ -2917,7 +2938,7 @@ Free list: 5 6 7 8 9 10 11
 
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
-        TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
         // bc i messed up writing the tests
@@ -2969,7 +2990,7 @@ template<int TestSlotMax>
 void test_mapl_without_extra() { // array 'extra' is empty
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
-        TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
@@ -3007,7 +3028,7 @@ Free list:
 
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
-        TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50});
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
         leaf.maplize();
 
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
@@ -3029,7 +3050,7 @@ Free list: 5 6 7
 
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
-        TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
+        set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
 #slices=3
