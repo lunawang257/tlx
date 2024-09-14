@@ -357,12 +357,23 @@ public:
         void init(Mapl *p, idx_t off, idx_t startsize) {
             mapl = p;
             slotuse = startsize;
+            TLX_BTREE_ASSERT(slotuse >= 0 && slotuse <= leaf_slotmax);
             for (idx_t i = 0; i < startsize; ++i) {
                 index_array[i] = off + i;
             }
+
+            DBG(
+                for (idx_t i = startsize; i < leaf_slotmax; i++) {
+                    index_array[i] = -1; // Set all bytes to 0xFF
+                }
+            )
         }
 
         ~Slice() {
+            DBG(
+                // Use memset to set all elements to -1
+                std::memset(index_array, -1, sizeof(index_array));  // Set all bytes to 0xFF
+            )
         }
 
         const key_type& key(size_t s) const {
@@ -411,30 +422,35 @@ public:
 
             DBG(nodep = leaf;)
 
-            // Calculate the size for all slices except the last one
-            int used_slice_size = (slotuse + numslices - 1) / numslices;  // ceil(slotuse / numslices)
+            // Calculate the lower bound of size for all slices
+            int lb_slice_size = slotuse / numslices;  // floor(slotuse / numslices)
+            int lb_slotuse_extra = slotuse % numslices;
+            int slotuse_offset = 0;
 
             // Fill each slice except the last one with used_slice_size
-            for (int i = 0; i < numslices - 1; ++i) {
-                slices[i].init(this, i * used_slice_size, used_slice_size);
+            for (int i = 0; i < numslices; ++i) {
+                if (lb_slotuse_extra > 0) {
+                    slices[i].init(this, slotuse_offset, lb_slice_size + 1);
+
+                    slotuse_offset += (lb_slice_size + 1);
+                    lb_slotuse_extra--;
+                } else {
+                    slices[i].init(this, slotuse_offset, lb_slice_size);
+                    slotuse_offset += lb_slice_size;
+                }
 
                 DBG(slices[i].lock.sliceid = i;)
                 DBG(slices[i].lock.nodep = leaf;)
             }
 
+            TLX_BTREE_ASSERT(lb_slice_size == 0);
+
             DBG(free_slot_mtx.sliceid = MAPL_FREE_LIST_MTX;)
             DBG(free_slot_mtx.nodep = leaf;)
 
-            idx_t last_slice_off = (numslices - 1) * used_slice_size;
-            Slice& last_slice = slices[numslices - 1];
-            last_slice.init(this, last_slice_off,
-                            slotuse - last_slice_off);
-            DBG(last_slice.lock.sliceid = numslices - 1;)
-            DBG(last_slice.lock.nodep = leaf;)
-
             for (int i = 0; i < numslices - 1; i++) {
                 slice_boundary[i] = key_of_value::get(
-                    slotdata[used_slice_size * (i + 1) - 1]);
+                    slotdata[slices[i].index_array[slices[i].slotuse-1]]);
             }
 
             // add all free slots to the free list
@@ -566,13 +582,15 @@ public:
             *new_slot = data;
 
             (slices[slicenum].slotuse)++;
+            TLX_BTREE_ASSERT(slices[slicenum].slotuse >= 0 &&
+                    slices[slicenum].slotuse < leaf_slotmax);
             return true;
         }
 
         template <bool optimism = true>
         void slice_erase(int slicenum, idx_t pos) {
             TLX_BTREE_ASSERT(slicenum >= 0 && slicenum < numslices);
-            TLX_BTREE_ASSERT(slices[slicenum].slotuse > 0);
+            TLX_BTREE_ASSERT(slices[slicenum].slotuse > 0 && slices[slicenum].slotuse <= leaf_slotmax);
             if constexpr (concurrent) {
 #ifndef NDEBUG
                 TLX_BTREE_ASSERT(nodep->mutex_.write_locked() ||

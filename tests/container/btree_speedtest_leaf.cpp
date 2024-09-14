@@ -58,8 +58,8 @@ Usage:
 #define FOR_EACH(what, x, ...) FOR_EACH_(FOR_EACH_NARG(x, __VA_ARGS__), what, x, __VA_ARGS__)
 
 int seed = 1;
-const int MAX_KEY_RANGE = 1000;
-const int LEAF_ARRAY_SIZE = 2; //1000;
+const int MAX_KEY_RANGE = 100;
+const int LEAF_ARRAY_SIZE = 10;
 int NUM_ITERATIONS = 1000000;
 
 template<int TestSlotMax, int ValSize>
@@ -125,22 +125,15 @@ std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_value_type> gener
 */
 template<int TestSlotMax, int ValSize>
 void initialize_leaf_array(std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type>& leaf_array,
-        typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type *btree,
         bool sorted = false) {
     // Initialize the leaf array
-    int n = 0;
     for (auto& leaf : leaf_array) {
         // placement new to initialize the leaf
-        std::cout << "leaf[" << n << "].slotuse: " << &leaf.slotuse << std::endl;
-        new (&leaf) typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type(btree);
-
         const std::vector<typename SpeedTestType<TestSlotMax,ValSize>::test_value_type> values =
             generate_random_values<TestSlotMax, ValSize>();
 
         set_leaf_data<TestSlotMax, ValSize>(&leaf, values, sorted);
-        ++n;
     }
-    std::cout << "Initialized " << n << " leaves" << std::endl;
 }
 
 /*
@@ -218,13 +211,12 @@ template<int TestSlotMax, int ValSize>
 void test_maplize_insert_delete_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
-    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
     std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array
-    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt);
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array);
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
@@ -312,17 +304,16 @@ void perform_delete_operation(typename SpeedTestType<TestSlotMax, ValSize>::test
 }
 
 // Main performance test function
-template<int TestSlotMax, int ValSize = 0>
+template<int TestSlotMax, int ValSize>
 void test_insert_delete_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
-    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
     std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array
-    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt);
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array);
 
     // Random number generator setup
     std::mt19937 rng(seed);
@@ -370,15 +361,14 @@ void test_insert_delete_perf() {
 }
 
 // Unit test function
-template<int TestSlotMax, int ValSize = 0>
+template<int TestSlotMax, int ValSize>
 void test_maplize_perf() {
     const size_t array_size = LEAF_ARRAY_SIZE;  // Size of the leaf array
     size_t num_selections = NUM_ITERATIONS;  // Number of selections
-    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Initialize the leaf array
     std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
-    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt);
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array);
 
     // Random number generator for selecting leaves
     std::mt19937 rng(seed);
@@ -425,13 +415,12 @@ void test_lookup_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
     constexpr int key_range = MAX_KEY_RANGE;
-    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
     std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array with sorted values
-    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt, true); // Pass true for sorted
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, true); // Pass true for sorted
 
     // Random number generator setup
     std::mt19937 rng(seed);
@@ -477,13 +466,12 @@ void test_maplize_lookup_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
     constexpr int key_range = MAX_KEY_RANGE;
-    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
     std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array with sorted values
-    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt, true); // Pass true for sorted
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, true); // Pass true for sorted
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
@@ -531,17 +519,16 @@ void test_maplize_lookup_perf() {
     std::cout << "Max Slots: " << TestSlotMax << " Value Size: " << ValSize << " Total number of pos accessed: " << total_pos << std::endl;
 }
 
-template<int TestSlotMax, int ValSize = 0>
+template<int TestSlotMax, int ValSize>
 void test_maplize_structure()
 {
     constexpr size_t array_size = 1; // Size of the leaf array
-    typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type bt;
 
     // Create a leaf array with the specified size
     std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
 
     // Initialize the leaf array with sorted values
-    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, &bt, true); // Pass true for sorted
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, true); // Pass true for sorted
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
