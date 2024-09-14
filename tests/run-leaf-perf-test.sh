@@ -4,11 +4,11 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_leaf"
 
-iter=100000
+iter=1000000
 
-for slotMax in 256 512
+for slotMax in 512
 do
-   for valSize in 256 512
+   for valSize in 512
    do
       for testType in update lookup
       do

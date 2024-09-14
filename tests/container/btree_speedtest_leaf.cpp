@@ -59,7 +59,7 @@ Usage:
 
 const int MAX_KEY_RANGE = 1000;
 const int MAX_SHORT_VALUE_RANGE = 1000;
-const int LEAF_ARRAY_SIZE = 10000;
+const int LEAF_ARRAY_SIZE = 1000;
 int NUM_ITERATIONS = 1000000;
 
 // Function to generate a single random value of type val_type
@@ -154,7 +154,7 @@ void perform_mapl_insert_operation(typename TestType<TestSlotMax, val_type, ValS
                               const val_type& val,
                               std::chrono::duration<double>& total_insert_time,
                               size_t& insert_count) {
-    size_t sliceNo = leaf.mapl->numslices() > 0 ? rng() % leaf.mapl->numslices() : 0;
+    size_t sliceNo = leaf.mapl->numslices > 0 ? rng() % leaf.mapl->numslices : 0;
     size_t pos = leaf.mapl->slices[sliceNo].slotuse > 0 ? rng() % (leaf.mapl->slices[sliceNo].slotuse + 1) : 0;
 
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -171,11 +171,11 @@ void perform_mapl_delete_operation(typename TestType<TestSlotMax, val_type, ValS
                               std::mt19937& rng,
                               std::chrono::duration<double>& total_delete_time,
                               size_t& delete_count) {
-    size_t sliceNo = leaf.mapl->numslices() > 0 ? rng() % leaf.mapl->numslices() : 0;
+    size_t sliceNo = leaf.mapl->numslices > 0 ? rng() % leaf.mapl->numslices : 0;
 
     // Find a slice with a non-zero slotuse
     while (leaf.mapl->slices[sliceNo].slotuse == 0) {
-        sliceNo = (sliceNo + 1) % leaf.mapl->numslices();
+        sliceNo = (sliceNo + 1) % leaf.mapl->numslices;
     }
 
     size_t pos = leaf.mapl->slices[sliceNo].slotuse > 0 ? rng() % leaf.mapl->slices[sliceNo].slotuse : 0;
@@ -516,7 +516,7 @@ void test_maplize_structure()
 
         std::cout << "Slices Information:" << std::endl;
 
-        for (int i = 0; i < leaf.mapl->numslices(); ++i) {
+        for (int i = 0; i < leaf.mapl->numslices; ++i) {
             std::cout << "Slice " << i + 1 << ":" << std::endl;
 
             typename TestType<TestSlotMax, val_type, ValSize>::test_btree_type::Slice *slice = &leaf.mapl->slices[i];
@@ -538,7 +538,7 @@ void test_maplize_structure()
 
         // Print the slice_boundary array
         std::cout << "Slice Boundaries:" << std::endl;
-        for (int i = 0; i < leaf.mapl->numslices() - 1; ++i) {
+        for (int i = 0; i < leaf.mapl->numslices - 1; ++i) {
             std::cout << "slice_boundary[" << i << "] = " << leaf.mapl->slice_boundary[i] << ", ";
         }
         std::cout << std::endl;
