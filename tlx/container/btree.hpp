@@ -349,20 +349,18 @@ public:
     struct Slice {
         Mapl *mapl;
         ReaderWriterLock lock;
-        idx_t* index_array = nullptr;
+        idx_t index_array[leaf_slotmax + mapl_size];
         int slotuse;
 
         void init(Mapl *p, idx_t off, idx_t startsize) {
             mapl = p;
             slotuse = startsize;
-            index_array = new idx_t[leaf_slotmax + mapl_size];
             for (idx_t i = 0; i < startsize; ++i) {
                 index_array[i] = off + i;
             }
         }
 
         ~Slice() {
-            delete[] index_array;
         }
 
         const key_type& key(size_t s) const {
