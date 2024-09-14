@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_set>
 #include <map>
+#include <tlx/container/btree.hpp>
 #include "btree_test.hpp"
 
 const char* help_message = R"(
@@ -131,13 +132,13 @@ void initialize_leaf_array(std::vector<typename TestType<TestSlotMax, val_type, 
     *   c. If the slotuse of the leaf is equal to 50% of TestSlotMax, insert operation is conducted.
     *   d. If the slotuse of the leaf is equal to 100% of TestSlotMax, delete operation is conducted.
     * 5. The insert operation is conducted as follows:
-    *     a. a sliceNo is selected within [0..leaf.numslices).
+    *     a. a sliceNo is selected within [0..leaf.numslices()).
     *     b. a pos is selected within [0..leaf.mapl->slices[sliceNo].slotuse].
     *     c. start time is recorded.
     *     d. leaf.mapl->slice_insert(sliceNo, pos, val) is called.
     *     e. end time is recorded.
     * 6. The delete operation is conducted as follows:
-    *    a. a sliceNo is selected within [0..leaf.numslices).
+    *    a. a sliceNo is selected within [0..leaf.numslices()).
     *    b. If the slotuse of the slice is 0, the slice is skipped and the next slice is selected.
     *    b. a pos is selected within [0..leaf.mapl->slices[sliceNo].slotuse).
     *    c. start time is recorded.
@@ -153,7 +154,7 @@ void perform_mapl_insert_operation(typename TestType<TestSlotMax, val_type, ValS
                               const val_type& val,
                               std::chrono::duration<double>& total_insert_time,
                               size_t& insert_count) {
-    size_t sliceNo = leaf.mapl->numslices > 0 ? rng() % leaf.mapl->numslices : 0;
+    size_t sliceNo = leaf.mapl->numslices() > 0 ? rng() % leaf.mapl->numslices() : 0;
     size_t pos = leaf.mapl->slices[sliceNo].slotuse > 0 ? rng() % (leaf.mapl->slices[sliceNo].slotuse + 1) : 0;
 
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -170,11 +171,11 @@ void perform_mapl_delete_operation(typename TestType<TestSlotMax, val_type, ValS
                               std::mt19937& rng,
                               std::chrono::duration<double>& total_delete_time,
                               size_t& delete_count) {
-    size_t sliceNo = leaf.mapl->numslices > 0 ? rng() % leaf.mapl->numslices : 0;
+    size_t sliceNo = leaf.mapl->numslices() > 0 ? rng() % leaf.mapl->numslices() : 0;
 
     // Find a slice with a non-zero slotuse
     while (leaf.mapl->slices[sliceNo].slotuse == 0) {
-        sliceNo = (sliceNo + 1) % leaf.mapl->numslices;
+        sliceNo = (sliceNo + 1) % leaf.mapl->numslices();
     }
 
     size_t pos = leaf.mapl->slices[sliceNo].slotuse > 0 ? rng() % leaf.mapl->slices[sliceNo].slotuse : 0;
@@ -498,6 +499,52 @@ void test_maplize_lookup_perf() {
     std::cout << "Max Slots: " << TestSlotMax << " Value Size: " << ValSize << " Total number of pos accessed: " << total_pos << std::endl;
 }
 
+template<int TestSlotMax, typename val_type = short_val_type, int ValSize = 0>
+void test_maplize_structure()
+{
+    constexpr size_t array_size = 1; // Size of the leaf array
+
+    // Create a leaf array with the specified size
+    std::vector<typename TestType<TestSlotMax, val_type, ValSize>::test_leaf_type> leaf_array(array_size);
+
+    // Initialize the leaf array with sorted values
+    initialize_leaf_array<TestSlotMax, val_type, ValSize>(leaf_array, true); // Pass true for sorted
+
+    // Maplize each leaf
+    for (auto& leaf : leaf_array) {
+        leaf.maplize();
+
+        std::cout << "Slices Information:" << std::endl;
+
+        for (int i = 0; i < leaf.mapl->numslices(); ++i) {
+            std::cout << "Slice " << i + 1 << ":" << std::endl;
+
+            typename TestType<TestSlotMax, val_type, ValSize>::test_btree_type::Slice *slice = &leaf.mapl->slices[i];
+
+            // Print slotuse
+            std::cout << "  Slot Use: " << slice->slotuse << std::endl;
+
+            // Print index_array
+            std::cout << "  Index Array: ";
+            if (slice->index_array != nullptr) {
+                for (int j = 0; j < slice->slotuse; ++j) {
+                    std::cout << slice->index_array[j] << " ";
+                }
+            } else {
+                std::cout << "nullptr (empty)";
+            }
+            std::cout << std::endl;
+        }
+
+        // Print the slice_boundary array
+        std::cout << "Slice Boundaries:" << std::endl;
+        for (int i = 0; i < leaf.mapl->numslices() - 1; ++i) {
+            std::cout << "slice_boundary[" << i << "] = " << leaf.mapl->slice_boundary[i] << ", ";
+        }
+        std::cout << std::endl;
+    }
+}
+
 #define FOR_EACH_SIZE(f) \
     f(32)                \
     f(64)                \
@@ -532,6 +579,11 @@ std::string testOptionToString(TestOption opt) {
 }
 
 int main(int argc, char* argv[]) {
+
+   /*  test_maplize_structure<22>();
+
+    return 1; */
+
     // Define long options
     static struct option long_options[] = {
         {"test", required_argument, nullptr, 't'},

@@ -2827,6 +2827,15 @@ bool mapl_has_extra() {
     typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
     TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
     leaf.maplize();
+    verify_mapl<TestSlotMax>("maplize", leaf, R"(
+    #slices=3
+    slice[0]: 0:10 1:20
+    slice[1]: 2:30 3:40
+    slice[2]: 4:50 5:60
+    Boundaries: 0:20 1:40
+    Free list: 6 7
+    )");
+
     return sizeof(leaf.mapl->extra) != 0;
 }
 
@@ -2963,32 +2972,35 @@ void test_mapl_without_extra() { // array 'extra' is empty
         TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
 
-        verify_mapl<TestSlotMax>("aligned", leaf, R"(
-#slices=2
-slice[0]: 0:10 1:20 2:30
-slice[1]: 3:40 4:50 5:60
-Boundaries: 0:30
+        verify_mapl<TestSlotMax>("maplize", leaf, R"(
+#slices=3
+slice[0]: 0:10 1:20
+slice[1]: 2:30 3:40
+slice[2]: 4:50 5:60
+Boundaries: 0:20 1:40
 Free list: 6 7
 )");
 
-        VERIFY_EQ(leaf.mapl->get_slicenum(60), 1);
+        VERIFY_EQ(leaf.mapl->get_slicenum(60), 2);
 
         // insert key
         slice_insert<TestSlotMax>(&leaf, 15);
         verify_mapl<TestSlotMax>("insert 15", leaf, R"(
-#slices=2
-slice[0]: 0:10 6:15 1:20 2:30
-slice[1]: 3:40 4:50 5:60
-Boundaries: 0:30
+#slices=3
+slice[0]: 0:10 6:15 1:20
+slice[1]: 2:30 3:40
+slice[2]: 4:50 5:60
+Boundaries: 0:20 1:40
 Free list: 7
 )");
 
         slice_insert<TestSlotMax>(&leaf, 35);
         verify_mapl<TestSlotMax>("insert 35", leaf, R"(
-#slices=2
-slice[0]: 0:10 6:15 1:20 2:30
-slice[1]: 7:35 3:40 4:50 5:60
-Boundaries: 0:30
+#slices=3
+slice[0]: 0:10 6:15 1:20
+slice[1]: 2:30 7:35 3:40
+slice[2]: 4:50 5:60
+Boundaries: 0:20 1:40
 Free list:
 )");
     }
@@ -2998,65 +3010,86 @@ Free list:
         TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50});
         leaf.maplize();
 
-        verify_mapl<TestSlotMax>("unaligned", leaf, R"(
-#slices=2
-slice[0]: 0:10 1:20 2:30
-slice[1]: 3:40 4:50
-Boundaries: 0:30
+        verify_mapl<TestSlotMax>("maplize", leaf, R"(
+#slices=3
+slice[0]: 0:10 1:20
+slice[1]: 2:30 3:40
+slice[2]: 4:50
+Boundaries: 0:20 1:40
 Free list: 5 6 7
 )");
 
         VERIFY_EQ(leaf.mapl->get_slicenum(5), 0);
         VERIFY_EQ(leaf.mapl->get_slicenum(10), 0);
-        VERIFY_EQ(leaf.mapl->get_slicenum(30), 0);
+        VERIFY_EQ(leaf.mapl->get_slicenum(30), 1);
         VERIFY_EQ(leaf.mapl->get_slicenum(35), 1);
         VERIFY_EQ(leaf.mapl->get_slicenum(40), 1);
-        VERIFY_EQ(leaf.mapl->get_slicenum(80), 1);
+        VERIFY_EQ(leaf.mapl->get_slicenum(80), 2);
     }
 
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         TestType<TestSlotMax>::set_leaf_data(&leaf, {10, 20, 30, 40, 50, 60});
         leaf.maplize();
+        verify_mapl<TestSlotMax>("maplize", leaf, R"(
+#slices=3
+slice[0]: 0:10 1:20
+slice[1]: 2:30 3:40
+slice[2]: 4:50 5:60
+Boundaries: 0:20 1:40
+Free list: 6 7
+)");
 
         // bc i messed up writing the tests
         slice_insert<TestSlotMax>(&leaf, 15);
+        verify_mapl<TestSlotMax>("insert 15", leaf, R"(
+#slices=3
+slice[0]: 0:10 6:15 1:20
+slice[1]: 2:30 3:40
+slice[2]: 4:50 5:60
+Boundaries: 0:20 1:40
+Free list: 7
+)");
         //leaf.print_mapl(std::cout);
 
         // erase key
         slice_erase<TestSlotMax>(&leaf, 40);
         verify_mapl<TestSlotMax>("erase 40", leaf, R"(
-#slices=2
-slice[0]: 0:10 6:15 1:20 2:30
-slice[1]: 4:50 5:60
-Boundaries: 0:30
+#slices=3
+slice[0]: 0:10 6:15 1:20
+slice[1]: 2:30
+slice[2]: 4:50 5:60
+Boundaries: 0:20 1:40
 Free list: 3 7
 )");
 
         slice_erase<TestSlotMax>(&leaf, 15);
         verify_mapl<TestSlotMax>("erase 15", leaf, R"(
-#slices=2
-slice[0]: 0:10 1:20 2:30
-slice[1]: 4:50 5:60
-Boundaries: 0:30
+#slices=3
+slice[0]: 0:10 1:20
+slice[1]: 2:30
+slice[2]: 4:50 5:60
+Boundaries: 0:20 1:40
 Free list: 6 3 7
 )");
 
         slice_erase<TestSlotMax>(&leaf, 60);
         verify_mapl<TestSlotMax>("erase 60", leaf, R"(
-#slices=2
-slice[0]: 0:10 1:20 2:30
-slice[1]: 4:50
-Boundaries: 0:30
+#slices=3
+slice[0]: 0:10 1:20
+slice[1]: 2:30
+slice[2]: 4:50
+Boundaries: 0:20 1:40
 Free list: 5 6 3 7
 )");
 
         slice_erase<TestSlotMax>(&leaf, 50);
         verify_mapl<TestSlotMax>("erase 50", leaf, R"(
-#slices=2
-slice[0]: 0:10 1:20 2:30
-slice[1]:
-Boundaries: 0:30
+#slices=3
+slice[0]: 0:10 1:20
+slice[1]: 2:30
+slice[2]:
+Boundaries: 0:20 1:40
 Free list: 4 5 6 3 7
 )");
     }
