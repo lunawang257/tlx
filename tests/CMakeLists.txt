@@ -63,6 +63,7 @@ tlx_build_only(cmdline_parser_example)
 tlx_build_only(container/btree_speedtest)
 tlx_build_only(container/btree_speedtest_concurrent)
 tlx_build_only(container/btree_speedtest_leaf)
+tlx_build_only(container/btree_test_plain)
 tlx_build_only(container/d_ary_heap_speedtest)
 tlx_build_only(sort_strings_example)
 

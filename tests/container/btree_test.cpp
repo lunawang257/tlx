@@ -2281,7 +2281,7 @@ void log_str(const char *str) {
     log_info.logtype = LOG_STRING;
     log_info.timestamp = std::chrono::high_resolution_clock::now();
     log_info.threadidx = local_debug_info.tinfo ? local_debug_info.tinfo->threadidx : 0;
-    strlcpy(log_info.str, str, sizeof(log_info.str));
+    strncpy(log_info.str, str, sizeof(log_info.str));
 }
 
 void log_lock(void* node __attribute__((unused)),
