@@ -449,38 +449,6 @@ public:
             delete[] slice_boundary;
         }
 
-        void readlock_slice(const key_type& key) {
-            int slice_num = get_slicenum(key);
-            Slice& slice = slices[slice_num];
-            if constexpr (concurrent) {
-                slice.lock.read_lock(sched_getcpu());
-            }
-        }
-
-        void writelock_slice(const key_type& key) {
-            int slice_num = get_slicenum(key);
-            Slice& slice = slices[slice_num];
-            if constexpr (concurrent) {
-                slice.lock.write_lock();
-            }
-        }
-
-        void read_unlock_slice(const key_type& key) {
-            int slice_num = get_slicenum(key);
-            Slice& slice = slices[slice_num];
-            if constexpr (concurrent) {
-                slice.lock.read_unlock();
-            }
-        }
-
-        void write_unlock_slice(const key_type& key) {
-            int slice_num = get_slicenum(key);
-            Slice& slice = slices[slice_num];
-            if constexpr (concurrent) {
-                slice.lock.write_unlock();
-            }
-        }
-
         int get_slicenum(const key_type& key) const {
             key_compare mapl_key_less;
             unsigned short slice = 0;
