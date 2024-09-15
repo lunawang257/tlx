@@ -633,6 +633,68 @@ public:
             }
             slices[slicenum].slotuse--;
         }
+
+        void rebalance() {
+            DBG(TLX_BTREE_ASSERT(nodep->mutex_.self_write_locked()));
+            int slotuse = *slotusep;
+            int perslice = (slotuse + numslices - 1) / numslices;
+            idx_t copy[slotuse];
+            int cur = 0;
+
+            for (int i = 0; i < numslices; i++) {
+                Slice& s = slices[i];
+                std::copy(s.index_array, s.index_array + s.slotuse, copy + cur);
+                cur += s.slotuse;
+            }
+
+            cur = 0;
+            for (int i = 0; i < numslices - 1; i++) {
+                Slice& s = slices[i];
+                std::copy(copy + cur, copy + cur + perslice, s.index_array);
+                s.slotuse = perslice;
+                slice_boundary[i] = s.key(s.slotuse - 1);
+                cur += perslice;
+            }
+            Slice& s = slices[numslices - 1];
+            std::copy(copy + cur, copy + slotuse, s.index_array);
+            s.slotuse = slotuse - cur;
+
+            /*for (int s = 1; s < numslices; s++) {
+                Slice& slice = slices[s];
+                Slice& prev_slice = slices[s - 1];
+                TLX_BTREE_ASSERT(!slice.lock.read_locked() && !slice.lock.write_locked());
+                idx_t& ind_arr = slice.index_array;
+                idx_t& prev_ind = prev_slice.index_array;
+
+                if (prev_slice.slotuse > perslice) { // prev has too much
+                    int to_move = last_slice.slotuse - perslice;
+                    TLX_BTREE_ASSERT(to_move <= slice_size - slice.slotuse);
+
+                    std::move(ind_arr[0], ind_arr[slice.slotuse - 1], ind_arr[to_move]);
+                    std::move(prev_ind[prev_slice.slotuse - to_move - 1], prev_ind[prev_slice.slotuse - 1], ind_arr[0]);
+
+                    slice.slotuse += to_move;
+                    prev_slice.slotuse -= to_move;
+
+                    slice_boundary[s - 1] = prev_ind[prev_slice.slotuse - 1];
+
+                } else if (prev_slice.slotuse < perslice) {
+                    int to_move = perslice - prev_slice.slotuse;
+                    TLX_BTREE_ASSERT(to_move <= slice.slotuse);
+
+                    std::move(ind_arr[0], ind_arr[to_move], prev_ind[prev_slice.slotuse]);
+                    std::move(ind_arr[to_move], ind_arr[slice.slotuse - 1], ind_arr[0]);
+
+                    slice.slotuse -= to_move;
+                    prev_ind += to_move;
+
+                    slice_boundary[s - 1] = prev_ind[prev_slice.slotuse - 1];
+                }
+
+
+                TLX_BTREE_ASSERT(prev_slice.slotuse == perslice);
+            }*/
+        }
     };
 
 
@@ -1176,7 +1238,7 @@ public:
         void unmaplize() {
             LOG_STR("before unmaplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(mapl);
-            TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax+ mapl_size); // technically gotta lock before this
+            TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax); // technically gotta lock before this
 #ifndef NDEBUG
             if constexpr (concurrent) {
                 TLX_BTREE_ASSERT(mutex_.self_write_locked());
