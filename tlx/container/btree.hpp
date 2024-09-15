@@ -392,11 +392,12 @@ public:
     };
 
     struct Mapl {
-        Slice slices[(leaf_slotmax+slice_size-1)/slice_size];
+        static const ssize_t numslices = (leaf_slotmax + slice_size - 1) / slice_size;
+        Slice slices[numslices];
         idx_t free_slot_head;
         ReaderWriterLock2 free_slot_mtx;
         const idx_t free_slot_end = leaf_slotmax + mapl_size;
-        key_type slice_boundary[sizeof(slices)-1];
+        key_type slice_boundary[numslices - 1];
         value_type *slotdatap;
         value_type extra[mapl_size];
         unsigned short* slotusep;
@@ -411,10 +412,10 @@ public:
             DBG(nodep = leaf;)
 
             // Calculate the size for all slices except the last one
-            int used_slice_size = (slotuse + numslices() - 1) / numslices();  // ceil(slotuse / numslices())
+            int used_slice_size = (slotuse + numslices - 1) / numslices;  // ceil(slotuse / numslices)
 
             // Fill each slice except the last one with used_slice_size
-            for (int i = 0; i < numslices() - 1; ++i) {
+            for (int i = 0; i < numslices - 1; ++i) {
                 slices[i].init(this, i * used_slice_size, used_slice_size);
 
                 DBG(slices[i].lock.sliceid = i;)
@@ -424,14 +425,14 @@ public:
             DBG(free_slot_mtx.sliceid = MAPL_FREE_LIST_MTX;)
             DBG(free_slot_mtx.nodep = leaf;)
 
-            idx_t last_slice_off = (numslices() - 1) * used_slice_size;
-            Slice& last_slice = slices[numslices() - 1];
+            idx_t last_slice_off = (numslices - 1) * used_slice_size;
+            Slice& last_slice = slices[numslices - 1];
             last_slice.init(this, last_slice_off,
                             slotuse - last_slice_off);
-            DBG(last_slice.lock.sliceid = numslices() - 1;)
+            DBG(last_slice.lock.sliceid = numslices - 1;)
             DBG(last_slice.lock.nodep = leaf;)
 
-            for (int i = 0; i < numslices() - 1; i++) {
+            for (int i = 0; i < numslices - 1; i++) {
                 slice_boundary[i] = key_of_value::get(
                     slotdata[used_slice_size * (i + 1) - 1]);
             }
@@ -448,17 +449,10 @@ public:
         ~Mapl() {
         }
 
-        int numslices() const {
-            int num_slices = sizeof(slices) / sizeof(slices[0]);
-
-            TLX_BTREE_ASSERT(num_slices > 1);
-            return num_slices;
-        }
-
         int get_slicenum(const key_type& key) const {
             key_compare mapl_key_less;
             unsigned short slice = 0;
-            unsigned short num_boundaries = numslices() - 1;
+            unsigned short num_boundaries = numslices - 1;
 
             if (num_boundaries == 0) return 0;
 #ifdef NDEBUG
@@ -513,7 +507,7 @@ public:
 
         template <bool optimism = true>
         bool slice_insert(int slicenum, idx_t pos, const value_type& data) {
-            TLX_BTREE_ASSERT(slicenum >= 0 && slicenum < numslices());
+            TLX_BTREE_ASSERT(slicenum >= 0 && slicenum < numslices);
             TLX_BTREE_ASSERT(pos >= 0 && pos <= slices[slicenum].slotuse);
             if constexpr (concurrent) {
 #ifndef NDEBUG
@@ -577,7 +571,7 @@ public:
 
         template <bool optimism = true>
         void slice_erase(int slicenum, idx_t pos) {
-            TLX_BTREE_ASSERT(slicenum >= 0 && slicenum < numslices());
+            TLX_BTREE_ASSERT(slicenum >= 0 && slicenum < numslices);
             TLX_BTREE_ASSERT(slices[slicenum].slotuse > 0);
             if constexpr (concurrent) {
 #ifndef NDEBUG
@@ -616,6 +610,68 @@ public:
                 }
             }
             slices[slicenum].slotuse--;
+        }
+    
+        void rebalance() {
+            TLX_BTREE_ASSERT(nodep->mutex_.self_write_locked());
+            int slotuse = *slotusep;
+            int perslice = (slotuse + numslices - 1) / numslices;
+            idx_t copy[slotuse];
+            int cur = 0;
+
+            for (int i = 0; i < numslices; i++) {
+                Slice& s = slices[i];
+                std::copy(s.index_array, s.index_array + s.slotuse, copy + cur);
+                cur += s.slotuse;
+            }
+
+            cur = 0;
+            for (int i = 0; i < numslices - 1; i++) {
+                Slice& s = slices[i];
+                std::copy(copy + cur, copy + cur + perslice, s.index_array);
+                s.slotuse = perslice;
+                slice_boundary[i] = s.key(s.slotuse - 1);
+                cur += perslice;
+            }
+            Slice& s = slices[numslices - 1];
+            std::copy(copy + cur, copy + slotuse, s.index_array);
+            s.slotuse = slotuse - cur;
+
+            /*for (int s = 1; s < numslices; s++) {
+                Slice& slice = slices[s];
+                Slice& prev_slice = slices[s - 1];
+                TLX_BTREE_ASSERT(!slice.lock.read_locked() && !slice.lock.write_locked());
+                idx_t& ind_arr = slice.index_array;
+                idx_t& prev_ind = prev_slice.index_array;
+
+                if (prev_slice.slotuse > perslice) { // prev has too much
+                    int to_move = last_slice.slotuse - perslice;
+                    TLX_BTREE_ASSERT(to_move <= slice_size - slice.slotuse);
+
+                    std::move(ind_arr[0], ind_arr[slice.slotuse - 1], ind_arr[to_move]);
+                    std::move(prev_ind[prev_slice.slotuse - to_move - 1], prev_ind[prev_slice.slotuse - 1], ind_arr[0]);
+
+                    slice.slotuse += to_move;
+                    prev_slice.slotuse -= to_move;
+
+                    slice_boundary[s - 1] = prev_ind[prev_slice.slotuse - 1];
+
+                } else if (prev_slice.slotuse < perslice) {
+                    int to_move = perslice - prev_slice.slotuse;
+                    TLX_BTREE_ASSERT(to_move <= slice.slotuse);
+
+                    std::move(ind_arr[0], ind_arr[to_move], prev_ind[prev_slice.slotuse]);
+                    std::move(ind_arr[to_move], ind_arr[slice.slotuse - 1], ind_arr[0]);
+
+                    slice.slotuse -= to_move;
+                    prev_ind += to_move;
+
+                    slice_boundary[s - 1] = prev_ind[prev_slice.slotuse - 1];
+                }
+
+
+                TLX_BTREE_ASSERT(prev_slice.slotuse == perslice);
+            }*/
         }
     };
 
@@ -1061,7 +1117,7 @@ public:
             if (mapl) {
                 // find the last non-empty slice
                 for (int slicenum = 0;
-                     slicenum < mapl->numslices();
+                     slicenum < mapl->numslices;
                      ++slicenum) {
                     Slice& slice = mapl->slices[slicenum];
                     if (slice.slotuse > 0) {
@@ -1078,7 +1134,7 @@ public:
         const key_type& max_key() const {
             if (mapl) {
                 // find the last non-empty slice
-                for (int slicenum = mapl->numslices() - 1;
+                for (int slicenum = mapl->numslices - 1;
                      slicenum >= 0;
                      --slicenum) {
                     Slice& slice = mapl->slices[slicenum];
@@ -1097,7 +1153,7 @@ public:
             if (mapl) {
                 unsigned short n = 0;
                 for (int slicenum = 0;
-                     slicenum < mapl->numslices();
+                     slicenum < mapl->numslices;
                      ++slicenum) {
                     Slice& slice = mapl->slices[slicenum];
                     n += slice.slotuse;
@@ -1160,7 +1216,7 @@ public:
         void unmaplize() {
             LOG_STR("before unmaplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(mapl);
-            TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax+ mapl_size); // technically gotta lock before this
+            TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax); // technically gotta lock before this
 #ifndef NDEBUG
             if constexpr (concurrent) {
                 TLX_BTREE_ASSERT(mutex_.self_write_locked());
@@ -1212,7 +1268,7 @@ public:
             idx_t i, cur = 0;
             ctx->prev_index = 0;
             for (i = 0, cur = 0;
-                 i < mapl->numslices() && cur < n;
+                 i < mapl->numslices && cur < n;
                  ++i, cur += mapl->slices[i].slotuse) {
                 ctx->prev_index += mapl->slices[i].slotuse;
             }
@@ -1241,7 +1297,7 @@ public:
 
                 // skip empty slices
                 while (mapl->slices[slice_i].slotuse == 0 &&
-                       slice_i < mapl->numslices()) {
+                       slice_i < mapl->numslices) {
                     ++ctx->prev_slice;
                     ++slice_i;
                 }
@@ -1281,8 +1337,8 @@ public:
 
         void print_mapl(std::ostream& os, unsigned int depth = 0) const {
             indent(os, depth);
-            os << "#slices=" << mapl->numslices() << "\n";
-            for (int i = 0; i < mapl->numslices(); ++i) {
+            os << "#slices=" << mapl->numslices << "\n";
+            for (int i = 0; i < mapl->numslices; ++i) {
                 indent(os, depth);
                 os << "slice[" << i << "]: ";
                 const Slice& slice = mapl->slices[i];
@@ -1301,7 +1357,7 @@ public:
 
             indent(os, depth);
             os << "Boundaries: ";
-            for (int i = 0; i < mapl->numslices() - 1; ++i) {
+            for (int i = 0; i < mapl->numslices - 1; ++i) {
                 os << i << ':' << mapl->slice_boundary[i] << ' ';
             }
 
@@ -4282,7 +4338,7 @@ private:
                 // in this case the parent needs to do something
                 // so in optimism mode we just fail back to the top
                 if constexpr (concurrent && optimism) {
-                    if (slicenum == leaf->mapl->numslices() - 1
+                    if (slicenum == leaf->mapl->numslices - 1
                         && ind == slice.slotuse - 1) {
                         slice.lock.write_unlock();
                         leaf->mutex_.read_unlock(cpu_id);
@@ -4317,7 +4373,7 @@ private:
 
                 // if the last key of the leaf was changed, the parent is notified
                 // and updates the key of this leaf
-                if (slicenum == leaf->mapl->numslices() - 1
+                if (slicenum == leaf->mapl->numslices - 1
                     && ind == slice.slotuse) {
                     if constexpr (concurrent && optimism) {
                         TLX_BTREE_ASSERT(false);
@@ -5677,20 +5733,20 @@ private:
             } else { // Mapl
                 unsigned short total_slots = 0;
                 for (int slicenum = 0;
-                     slicenum < leaf->mapl->numslices();
+                     slicenum < leaf->mapl->numslices;
                      ++slicenum) {
                     Slice& slice = leaf->mapl->slices[slicenum];
                     if (slicenum == 0) {
                         *minkey = slice.key(0);
                     }
-                    if (slicenum == leaf->mapl->numslices() - 1) {
+                    if (slicenum == leaf->mapl->numslices - 1) {
                         *maxkey = slice.key(slice.slotuse - 1);
                     }
                     for (idx_t i = 0; i < slice.slotuse - 1; ++i) {
                         tlx_die_unless(key_lessequal(
                                            slice.key(i), slice.key(i + 1)));
                     }
-                    if (slicenum < leaf->mapl->numslices() - 1) {
+                    if (slicenum < leaf->mapl->numslices - 1) {
                         if (!key_lessequal(
                                 slice.key(slice.slotuse - 1),
                                 leaf->mapl->slice_boundary[slicenum])) {
