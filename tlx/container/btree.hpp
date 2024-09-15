@@ -113,7 +113,14 @@ namespace tlx {
  * Generates default traits for a B+ tree used as a set or map. It estimates
  * leaf and inner node sizes by assuming a cache line multiple of 256 bytes.
 */
-template <typename Key, typename Value, uint32_t internal_bytes = 1024, uint64_t leaf_bytes = 1024>
+template <typename Key, typename Value, uint32_t internal_bytes = 1024,
+          uint64_t leaf_bytes = 1024,
+#ifdef NDEBUG
+          unsigned short slice_size = 8
+#else
+          unsigned short slice_size = 3
+#endif
+          >
 struct btree_default_traits {
     //! If true, the tree will self verify its invariants after each insert() or
     //! erase(). The header must have been compiled with TLX_BTREE_DEBUG
@@ -141,6 +148,8 @@ struct btree_default_traits {
     //! than this threshold. See notes at
     //! http://panthema.net/2013/0504-STX-B+Tree-Binary-vs-Linear-Search
     static const size_t binsearch_threshold = 256;
+
+    static const unsigned short slice_nominal_size = slice_size;
 };
 
 /*!
@@ -265,14 +274,9 @@ public:
     //! merged or slots shifted from it's siblings.
     static const unsigned short inner_slotmin = (inner_slotmax / 2);
 
-#ifdef NDEBUG
-    static const unsigned short slice_size = 8;
-#else
-    // use small number to simplify unit test
-    static const unsigned short slice_size = 3;
-#endif
-    static const int extra_div = 2;
-    static const int mapl_size = 0; // static_cast<int>(leaf_slotmax / extra_div);
+    static const unsigned short slice_size = traits::slice_nominal_size;
+
+    static const int mapl_size = 0; // not used any more
 
     //! Debug parameter: Enables expensive and thorough checking of the B+ tree
     //! invariants after each insert/erase operation.
