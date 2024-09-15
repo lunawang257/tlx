@@ -389,6 +389,12 @@ public:
             )
         }
 
+        bool is_full() const {
+            TLX_BTREE_ASSERT(slotuse >= 0 &&
+                             slotuse < slice_sizemax);
+            return slotuse == slice_sizemax;
+        }
+
         const key_type& key(size_t s) const {
             TLX_BTREE_ASSERT(s >= 0 && s < static_cast<size_t>(slotuse) &&
                              slotuse <= slice_sizemax);
@@ -431,6 +437,10 @@ public:
 
         Mapl(value_type* slotdata, unsigned short* node_slotuse,
             LeafNode* leaf __attribute__((unused))) {
+
+            // guarantee rebalance always makes slice not full
+            TLX_BTREE_ASSERT(slice_size < slice_sizemax);
+
             slotdatap = slotdata;
             slotusep = node_slotuse;
             auto slotuse = *node_slotuse;
@@ -487,10 +497,11 @@ public:
 
             if (num_boundaries == 0) return 0;
 #ifdef NDEBUG
-            if (num_boundaries > traits::binsearch_threshold) {
+            if (num_boundaries > traits::binsearch_threshold)
 #else
-            if (true) { // debug mode always exercise binary search
+            if (true) // debug mode always exercise binary search
 #endif
+            {
                 unsigned short lo = 0, hi = num_boundaries;
 
                 while (lo < hi)
@@ -3554,14 +3565,14 @@ private:
                         if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
                             // has race here, if leaf becomes mapl, retry with read lock
                             leaf->mutex_.write_lock();
-                            if (leaf != root_ && !leaf->mapl && leaf->should_maplize()) {
-                                leaf->maplize();
-                            }
-                            if (leaf->mapl) {
-                                // somebody (or self) maplized this
-                                leaf->mutex_.write_unlock();
-                                goto retry;
-                            }
+                        }
+                        if (leaf != root_ && !leaf->mapl && leaf->should_maplize()) {
+                            leaf->maplize();
+                        }
+                        if (leaf->mapl) {
+                            // somebody (or self) maplized this
+                            leaf->mutex_.write_unlock();
+                            goto retry;
                         }
 
                         //the leaf node has received the write lock
@@ -3647,28 +3658,69 @@ private:
                 }
                 return std::tuple<iterator, bool, bool>(iterator(leaf, slot), true, false);
             } else { // MAPL leaf
+                int slice_num = leaf->mapl->get_slicenum(key);
+                Slice* slice = leaf->mapl->slices + slice_num;
+
+                // no need to lock slice in pessimistic mode because leaf
+                // was already write locked
+                if constexpr (concurrent && !optimism) {
+                    slice->lock.write_lock();
+                }
+
                 // leaf has read lock, can free the parent lock now
                 if constexpr (concurrent && optimism) {
+                    if (slice->is_full() && !leaf->is_full()) {
+                        // lock the leaf to do rebalance
+                        slice->lock.write_unlock();
+                        if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
+                            // can safely wait for write lock here because
+                            // parent still has the read lock
+                            // due to race, any changes can happen to leaf
+                            leaf->mutex_.write_lock();
+                        }
+                        if (!leaf->mapl) {
+                            // too much has changed, retry
+                            leaf->mutex_.write_unlock();
+                            goto retry;
+                        }
+                        // anything could have changed, re-calc them
+                        slice_num = leaf->mapl->get_slicenum(key);
+                        slice = leaf->mapl->slices + slice_num;
+                    }
+                    TLX_BTREE_ASSERT(leaf->mapl);
+
+                    if (slice->is_full()) {
+                        leaf->mapl->rebalance();
+                        TLX_BTREE_ASSERT(!slice->is_full());
+                        if constexpr (concurrent && optimism) {
+                            // retry to lock leaf with read lock
+                            leaf->mutex_.write_unlock();
+                            goto retry;
+                        }
+                    } else {
+                        slice->lock.write_lock();
+                    }
+
                     if (!leaf->is_full()) {
                         TLX_BTREE_ASSERT(*parent_lock);
                         (*parent_lock)->read_unlock(cpu_id);
                         *parent_lock = nullptr;
                     }
-                }
-
-                int slice_num = leaf->mapl->get_slicenum(key);
-                Slice& slice = leaf->mapl->slices[slice_num];
-                if constexpr (concurrent) {
-                    slice.lock.write_lock();
+                } else { // either not concurrent or has write locked
+                    DBG(TLX_BTREE_ASSERT(!concurrent ||
+                                         leaf->mutex_.self_write_locked()));
+                    if (slice->is_full()) {
+                        leaf->mapl->rebalance();
+                    }
                 }
 
                 unsigned short ind = 0; // searching for stuff
 
-                ind = find_lower(&slice, key);
+                ind = find_lower(slice, key);
 
-                if (ind < slice.slotuse && key_equal(slice.key(ind), key)) {
+                if (ind < slice->slotuse && key_equal(slice->key(ind), key)) {
                     if constexpr (concurrent) {
-                        slice.lock.write_unlock();
+                        slice->lock.write_unlock();
                         if constexpr (optimism) {
                             leaf->mutex_.read_unlock(cpu_id);
                         }
@@ -3682,7 +3734,7 @@ private:
 
                 if (leaf->is_full()) {
                     // other threads have made this node full, must split
-                    slice.lock.write_unlock();
+                    slice->lock.write_unlock();
                     if constexpr (concurrent) {
                         if constexpr (optimism) {
                             LOG_STR("mapl full " << leaf << " retry to split");
@@ -3736,7 +3788,7 @@ private:
                         LOG_STR("insert to mapl " << leaf << " failed min=" << leaf->min_key() << " max=" << leaf->max_key());
                         // node full due to other threads inserted elsewhere
                         if constexpr (concurrent) {
-                            slice.lock.write_unlock();
+                            slice->lock.write_unlock();
                             if constexpr (optimism) {
                                 leaf->mutex_.read_unlock(cpu_id);
                             }
@@ -3757,7 +3809,7 @@ private:
                                 iterator(leaf, slice_num, ind),
                                 true, false);
                     if constexpr (concurrent) {
-                        slice.lock.write_unlock();
+                        slice->lock.write_unlock();
                         if constexpr (optimism) {
                             leaf->mutex_.read_unlock(cpu_id);
                         }
@@ -4261,13 +4313,13 @@ private:
                         if (!leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
                             // other threads may change leaf here
                             leaf->mutex_.write_lock();
-                            if (leaf != root_ && !leaf->mapl && leaf->should_maplize()) {
-                                leaf->maplize();
-                            }
-                            if (leaf->mapl) {
-                                leaf->mutex_.write_unlock();
-                                goto retry;
-                            }
+                        }
+                        if (leaf != root_ && !leaf->mapl && leaf->should_maplize()) {
+                            leaf->maplize();
+                        }
+                        if (leaf->mapl) {
+                            leaf->mutex_.write_unlock();
+                            goto retry;
                         }
                     }
                     (*parent_lock)->read_unlock(cpu_id);
