@@ -116,10 +116,11 @@ namespace tlx {
 template <typename Key, typename Value, uint32_t internal_bytes = 1024,
           uint64_t leaf_bytes = 1024,
 #ifdef NDEBUG
-          unsigned short slice_size = 8
+          unsigned short slice_size = 8,
 #else
-          unsigned short slice_size = 3
+          unsigned short slice_size = 3,
 #endif
+          unsigned short the_slice_size_max = 16
           >
 struct btree_default_traits {
     //! If true, the tree will self verify its invariants after each insert() or
@@ -150,6 +151,8 @@ struct btree_default_traits {
     static const size_t binsearch_threshold = 256;
 
     static const unsigned short slice_nominal_size = slice_size;
+
+    static const unsigned short slice_sizemax = the_slice_size_max;
 };
 
 /*!
@@ -274,7 +277,13 @@ public:
     //! merged or slots shifted from it's siblings.
     static const unsigned short inner_slotmin = (inner_slotmax / 2);
 
+    //! Computed MAPL B+ tree parameter: the number of slots a slice
+    //! has for a full leaf.
     static const unsigned short slice_size = traits::slice_nominal_size;
+
+    //! Computed MAPL B+ tree parameter: the max number of slots a slice
+    //! can hold. Slice::index_array is allocated based on this size
+    static const unsigned short slice_sizemax = traits::slice_sizemax;
 
     static const int mapl_size = 0; // not used any more
 
@@ -355,20 +364,20 @@ public:
     struct Slice {
         Mapl *mapl;
         ReaderWriterLock lock;
-        idx_t index_array[leaf_slotmax + mapl_size];
+        idx_t index_array[slice_sizemax];
         int slotuse;
 
         void init(Mapl *p, idx_t off, idx_t startsize) {
             mapl = p;
             slotuse = startsize;
-            TLX_BTREE_ASSERT(slotuse >= 0 && slotuse <= leaf_slotmax);
+            TLX_BTREE_ASSERT(slotuse >= 0 && slotuse <= slice_sizemax);
             for (idx_t i = 0; i < startsize; ++i) {
                 index_array[i] = off + i;
             }
 
             DBG(
-                for (idx_t i = startsize; i < leaf_slotmax; i++) {
-                    index_array[i] = -1; // Set all bytes to 0xFF
+                for (idx_t i = startsize; i < slice_sizemax; i++) {
+                    index_array[i] = GARBAGE;
                 }
             )
         }
@@ -376,12 +385,13 @@ public:
         ~Slice() {
             DBG(
                 // Use memset to set all elements to -1
-                std::memset(index_array, -1, sizeof(index_array));  // Set all bytes to 0xFF
+                std::memset(index_array, GARBAGE, sizeof(index_array));
             )
         }
 
         const key_type& key(size_t s) const {
-            TLX_BTREE_ASSERT(s >= 0 && s < static_cast<size_t>(slotuse));
+            TLX_BTREE_ASSERT(s >= 0 && s < static_cast<size_t>(slotuse) &&
+                             slotuse <= slice_sizemax);
             idx_t slot = index_array[s];
             TLX_BTREE_ASSERT(slot >= 0 && slot < mapl->free_slot_end);
             if (slot < leaf_slotmax)
@@ -391,7 +401,8 @@ public:
         }
 
         int get_ind(idx_t i) const {
-            TLX_BTREE_ASSERT(i < slotuse && i >= 0);
+            TLX_BTREE_ASSERT(i < slotuse && i >= 0 &&
+                             slotuse <= slice_sizemax);
             return index_array[i];
             /*i -= initial;
             int chunk_num = i / chunk_size;
@@ -529,6 +540,8 @@ public:
         bool slice_insert(int slicenum, idx_t pos, const value_type& data) {
             TLX_BTREE_ASSERT(slicenum >= 0 && slicenum < numslices);
             TLX_BTREE_ASSERT(pos >= 0 && pos <= slices[slicenum].slotuse);
+            TLX_BTREE_ASSERT(slices[slicenum].slotuse >= 0 &&
+                             slices[slicenum].slotuse < slice_sizemax);
             if constexpr (concurrent) {
 #ifndef NDEBUG
                 TLX_BTREE_ASSERT(nodep->mutex_.write_locked() ||
@@ -542,7 +555,8 @@ public:
 #endif
                 }
             }
-            if (free_slot_head == free_slot_end) {
+            if (free_slot_head == free_slot_end ||
+                slices[slicenum].slotuse == slice_sizemax) {
                 if constexpr (concurrent) {
                     if constexpr (optimism) {
                         free_slot_mtx.write_unlock();
@@ -566,6 +580,7 @@ public:
                 free_slot_head = *reinterpret_cast<idx_t*>(new_slot);
             }
             (*slotusep)++; // must update with free_slot_mtx locked
+            TLX_BTREE_ASSERT(*slotusep > 0 && *slotusep <= leaf_slotmax);
             if constexpr (concurrent) {
                 if constexpr (concurrent) {
                     if constexpr (optimism) {
@@ -587,7 +602,7 @@ public:
 
             (slices[slicenum].slotuse)++;
             TLX_BTREE_ASSERT(slices[slicenum].slotuse >= 0 &&
-                    slices[slicenum].slotuse < leaf_slotmax);
+                    slices[slicenum].slotuse < slice_sizemax);
             return true;
         }
 

@@ -3119,8 +3119,6 @@ Free list: 4 5 6 3 7
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
         leaf.maplize();
-std::cout << "leaf lol" << std::endl;
-leaf.print_mapl(std::cout); //XXX
         leaf.mutex_.write_lock();
         leaf.mapl->rebalance();
 
