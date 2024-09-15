@@ -443,7 +443,7 @@ public:
                 DBG(slices[i].lock.nodep = leaf;)
             }
 
-            TLX_BTREE_ASSERT(lb_slice_size == 0);
+            TLX_BTREE_ASSERT(lb_slotuse_extra == 0);
 
             DBG(free_slot_mtx.sliceid = MAPL_FREE_LIST_MTX;)
             DBG(free_slot_mtx.nodep = leaf;)

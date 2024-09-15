@@ -10,7 +10,7 @@
 
 const char* help_message = R"(
 Usage:
-  -t --test [update|lookup|maplize] Test option, update means insert and delete
+  -t --test [update|lookup|maplize|scan] Test option, update means insert and delete
   -m --is-mapl                      For update/lookup, whether run maplized version
   -i --iteration [num]              Number of iterations
   -s --slot-max [num]               Maximum slot value
@@ -59,8 +59,8 @@ Usage:
 
 int seed = 1;
 const int MAX_KEY_RANGE = 100;
-const int LEAF_ARRAY_SIZE = 10;
-int NUM_ITERATIONS = 1000000;
+const int LEAF_ARRAY_SIZE = 1000;
+int NUM_ITERATIONS = 100000;
 
 template<int TestSlotMax, int ValSize>
 void set_leaf_data(typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type *leaf,
@@ -520,6 +520,105 @@ void test_maplize_lookup_perf() {
 }
 
 template<int TestSlotMax, int ValSize>
+void test_maplize_scan_perf() {
+    constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
+    size_t num_iterations = NUM_ITERATIONS; // Number of iterations
+
+    // Create a leaf array with the specified size
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
+
+    // Initialize the leaf array with sorted values
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, false); // Pass true for sorted
+
+    // Maplize each leaf
+    for (auto& leaf : leaf_array) {
+        leaf.maplize();
+    }
+
+    // Random number generator setup
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<size_t> leaf_dist(0, array_size - 1);
+
+    // Time measurement variables
+    std::chrono::duration<double> total_scan_time(0);
+
+    // Perform lookup using the find_lower function
+    typename SpeedTestType<TestSlotMax, ValSize>::test_map_type ts;
+
+    // Perform the operations for the specified number of iterations
+    for (size_t i = 0; i < num_iterations; ++i) {
+        // Select a random leaf
+        auto& leaf = leaf_array[leaf_dist(rng)];
+
+        typename SpeedTestType<TestSlotMax, ValSize>::test_value_type ordered[leaf.slotuse];
+        typename SpeedTestType<TestSlotMax, ValSize>::test_btree_type::MaplKeyContext ctx;
+
+        // Start time measurement
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        for (int j = 0; j < leaf.slotuse; j++) {
+            ordered[j] = leaf.get_overall(j, &ctx);
+        }
+
+        // End time measurement
+        auto end_time = std::chrono::high_resolution_clock::now();
+
+        total_scan_time += end_time - start_time;
+    }
+
+    // Calculate and print the average lookup time
+    double avg_scan_time = total_scan_time.count() / num_iterations;
+
+    std::cout << "Max Slots: " << TestSlotMax << " Value Size: " << ValSize << " Average maplized scan time: " << avg_scan_time * 1e6 << " us" << std::endl;
+}
+
+template<int TestSlotMax, int ValSize>
+void test_scan_perf() {
+    constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
+    size_t num_iterations = NUM_ITERATIONS; // Number of iterations
+
+    // Create a leaf array with the specified size
+    std::vector<typename SpeedTestType<TestSlotMax, ValSize>::test_leaf_type> leaf_array(array_size);
+
+    // Initialize the leaf array with sorted values
+    initialize_leaf_array<TestSlotMax, ValSize>(leaf_array, false); // Pass true for sorted
+
+    // Random number generator setup
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<size_t> leaf_dist(0, array_size - 1);
+
+    // Time measurement variables
+    std::chrono::duration<double> total_scan_time(0);
+
+    // Perform lookup using the find_lower function
+    typename SpeedTestType<TestSlotMax, ValSize>::test_map_type ts;
+
+    // Perform the operations for the specified number of iterations
+    for (size_t i = 0; i < num_iterations; ++i) {
+        // Select a random leaf
+        auto& leaf = leaf_array[leaf_dist(rng)];
+
+        typename SpeedTestType<TestSlotMax, ValSize>::test_value_type ordered[leaf.slotuse];
+
+        // Start time measurement
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        for (int j = 0; j < leaf.slotuse; j++) {
+                ordered[j] = leaf.slotdata[j];
+        }
+        // End time measurement
+        auto end_time = std::chrono::high_resolution_clock::now();
+
+        total_scan_time += end_time - start_time;
+    }
+
+    // Calculate and print the average lookup time
+    double avg_scan_time = total_scan_time.count() / num_iterations;
+
+    std::cout << "Max Slots: " << TestSlotMax << " Value Size: " << ValSize << " Average scan time: " << avg_scan_time * 1e6 << " us" << std::endl;
+}
+
+template<int TestSlotMax, int ValSize>
 void test_maplize_structure()
 {
     constexpr size_t array_size = 1; // Size of the leaf array
@@ -577,6 +676,7 @@ enum TestOption {
     UPDATE,
     LOOKUP,
     MAPLIZE,
+    SCAN,
     INVALID
 };
 
@@ -585,6 +685,7 @@ TestOption stringToTestOption(const std::string& str) {
     if (str == "update") return UPDATE;
     else if (str == "lookup") return LOOKUP;
     else if (str == "maplize") return MAPLIZE;
+    else if (str == "scan") return SCAN;
     else return INVALID;
 }
 
@@ -594,6 +695,7 @@ std::string testOptionToString(TestOption opt) {
         case UPDATE: return "update";
         case LOOKUP: return "lookup";
         case MAPLIZE: return "maplize";
+        case SCAN: return "scan";
         default: return "invalid";
     }
 }
@@ -749,6 +851,34 @@ int main(int argc, char* argv[]) {
         FOR_EACH(RUN_LOOKUP_SLOT_128, 16, 32, 64, 128, 256, 512);
         FOR_EACH(RUN_LOOKUP_SLOT_256, 16, 32, 64, 128, 256, 512);
         FOR_EACH(RUN_LOOKUP_SLOT_512, 16, 32, 64, 128, 256, 512);
+    }
+
+    if (testOptions.contains(SCAN)) {
+
+#define RUN_SCAN(slots, size)                                 \
+        if (slot_max == (slots)) {                              \
+            if (val_size == (size)) {                           \
+                if (is_mapl) {                                  \
+                    test_maplize_scan_perf                    \
+                        <slots, size>();   \
+                } else {                                        \
+                    test_scan_perf                            \
+                        <slots, size>();   \
+                }                                               \
+                test_invoked = true;                            \
+            }                                                   \
+        }
+
+#define RUN_SCAN_SLOT_32(size) RUN_SCAN(32, size)
+#define RUN_SCAN_SLOT_64(size) RUN_SCAN(64, size)
+#define RUN_SCAN_SLOT_128(size) RUN_SCAN(128, size)
+#define RUN_SCAN_SLOT_256(size) RUN_SCAN(256, size)
+#define RUN_SCAN_SLOT_512(size) RUN_SCAN(512, size)
+        FOR_EACH(RUN_SCAN_SLOT_32, 16, 32, 64, 128, 256, 512);
+        FOR_EACH(RUN_SCAN_SLOT_64, 16, 32, 64, 128, 256, 512);
+        FOR_EACH(RUN_SCAN_SLOT_128, 16, 32, 64, 128, 256, 512);
+        FOR_EACH(RUN_SCAN_SLOT_256, 16, 32, 64, 128, 256, 512);
+        FOR_EACH(RUN_SCAN_SLOT_512, 16, 32, 64, 128, 256, 512);
     }
 
     if (!test_invoked) {
