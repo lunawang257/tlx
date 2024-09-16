@@ -428,7 +428,7 @@ public:
         Slice slices[numslices];
         idx_t free_slot_head;
         ReaderWriterLock2 free_slot_mtx;
-        const idx_t free_slot_end = leaf_slotmax + mapl_size;
+        static const idx_t free_slot_end = leaf_slotmax + mapl_size;
         key_type slice_boundary[numslices - 1];
         value_type *slotdatap;
         value_type extra[mapl_size];
@@ -663,27 +663,37 @@ public:
         void rebalance() {
             DBG(TLX_BTREE_ASSERT(nodep->mutex_.self_write_locked()));
             int slotuse = *slotusep;
-            int perslice = (slotuse + numslices - 1) / numslices;
+            int lb_slice_size = slotuse / numslices;  // floor(slotuse / numslices)
+            int lb_slotuse_extra = slotuse % numslices;
+
+            //int perslice = (slotuse + numslices - 1) / numslices;
             idx_t copy[slotuse];
             int cur = 0;
 
-            for (int i = 0; i < numslices; i++) {
+            for (int i = 0; i < numslices; ++i) {
                 Slice& s = slices[i];
                 std::copy(s.index_array, s.index_array + s.slotuse, copy + cur);
                 cur += s.slotuse;
             }
 
             cur = 0;
-            for (int i = 0; i < numslices - 1; i++) {
+            for (int i = 0; i < numslices; ++i) {
                 Slice& s = slices[i];
-                std::copy(copy + cur, copy + cur + perslice, s.index_array);
-                s.slotuse = perslice;
-                slice_boundary[i] = s.key(s.slotuse - 1);
-                cur += perslice;
+                int to_copy = lb_slice_size;
+                if (lb_slotuse_extra > 0) {
+                    ++to_copy;
+                    --lb_slotuse_extra;
+                }
+
+                std::copy(copy + cur, copy + cur + to_copy, s.index_array);
+                s.slotuse = to_copy;
+                if (i < numslices - 1) {
+                    slice_boundary[i] = s.key(s.slotuse - 1);
+                }
+                cur += to_copy;
             }
-            Slice& s = slices[numslices - 1];
-            std::copy(copy + cur, copy + slotuse, s.index_array);
-            s.slotuse = slotuse - cur;
+            TLX_BTREE_ASSERT(cur == slotuse);
+            TLX_BTREE_ASSERT(lb_slotuse_extra == 0);
 
             /*for (int s = 1; s < numslices; s++) {
                 Slice& slice = slices[s];
