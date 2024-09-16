@@ -47,23 +47,7 @@
 //#define BUSY_WAIT_LOCK
 //#define HYBRID_LOCK
 
-// Define the struct for all thread info, aligned on 64-byte boundary
-struct alignas(64) thread_info {
-    std::thread::id id;
-    int threadidx;
-    void* cur_node;
-    int op; // read, write, or upgrade
-};
-
-// Define the thread-local variable struct
-struct thread_debug_info {
-    thread_info* tinfo;
-};
-
 extern std::string format_current_time(void);
-
-// Thread-local storage for each thread's debug information
-thread_local thread_debug_info local_debug_info;
 
 enum { MAX_CPU = 6 }; // 6
 

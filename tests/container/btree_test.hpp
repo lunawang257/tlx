@@ -1,5 +1,5 @@
-#ifndef TLX_BTREE_TEST_HEADER
-#define TLX_BTREE_TEST_HEADER
+#ifndef TLX_BTREE_FAST_LOG_HEADER
+#define TLX_BTREE_FAST_LOG_HEADER
 
 #include <tlx/container/btree_set.hpp>
 
@@ -25,4 +25,4 @@ public:
     using test_leaf_type = typename test_btree_type::LeafNode;
 };
 
-#endif //#define TLX_BTREE_TEST_HEADER
+#endif //#define TLX_BTREE_FAST_LOG_HEADER

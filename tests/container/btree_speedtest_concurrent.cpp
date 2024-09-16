@@ -6,7 +6,7 @@
 #include <string>
 #include <unistd.h>
 
-#define VTX_BTREE_CONCUR_TEST
+#define TLX_BTREE_FAST_LOG
 
 #include <tlx/container/slow_lock_btree_set.hpp>
 #include <tlx/container/slow_lock_btree_map.hpp>

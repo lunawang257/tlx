@@ -107,7 +107,7 @@ extern const bool debug_print;
 extern int seq; // TODO delete
 thread_local int local_thread_id;
 
-#if defined(TLX_BTREE_TEST) && defined(TLX_BTREE_DEBUG) && !defined(NDEBUG)
+#if defined(TLX_BTREE_FAST_LOG) && defined(TLX_BTREE_DEBUG) && !defined(NDEBUG)
 
 extern void log_lock(void *node, int lock_type_enum, unsigned short sliceid);
 extern void log_split(void *nodep, int split_key);

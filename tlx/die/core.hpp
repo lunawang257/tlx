@@ -17,7 +17,7 @@
 #include <stdexcept>
 #include <string>
 
-#ifdef TLX_BTREE_TEST
+#ifdef TLX_BTREE_FAST_LOG
 extern void before_assert(void);
 #else
 inline void before_assert(void) {}
