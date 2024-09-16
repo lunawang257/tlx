@@ -17,6 +17,7 @@
 
 #include <tlx/die.hpp>
 #include <tlx/timestamp.hpp>
+#include "trace.h"
 
 // *** Settings
 
@@ -229,18 +230,18 @@ public:
 
         std::uniform_int_distribution<> key(0, max_key);
 
-        /*
+        
         // prepare the set to start with random items
         while (my_set.size() < items) {
             auto k = key(gen);
             my_set.insert(k);
         }
-        */
+       
 
-        // prepare the set with sequential items for lookup only testing
+        /* // prepare the set with sequential items for lookup only testing
         for (size_t i = 0; i < items; ++i) {
             my_set.insert(i);
-        }
+        } */
 
         if (g_root_slot != 0) { // insert more until reach the desired slots in root
             if (g_root_slot < 0) {
@@ -308,6 +309,9 @@ private:
         std::uniform_int_distribution<> key_dist(0, max_key);
         std::uniform_int_distribution<> dist(0, 99);
 
+        int seed = static_cast<int>(std::time(nullptr));
+        util::TraceZipfian zipf(seed, 0, max_key, 0.99);
+        
         local_thread_id = id;
 
         auto old_val = num_running.fetch_add(1, std::memory_order_relaxed);
@@ -320,7 +324,8 @@ private:
         }
 
         for (int i = 0; !stop && i < items; ++i) {
-            int key = key_dist(gen);
+            //int key = key_dist(gen);
+            uint64_t key = zipf.Next();
             int operation = dist(gen);
 
             if (operation < insert_prob) {
@@ -676,6 +681,9 @@ void testrunner_loop(size_t items, const std::string& container_name) {
               << g_lock_req_str << "\t"
               << million_ops_per_sec << "\t"
               << std::endl;
+    std::cout << "[Throughput] slot_max="<< g_slot_max << "; num_thread=" << cur_numthreads << "; throughput="
+              << million_ops_per_sec << " Mops/s"
+              << std::endl;
 }
 
 // Template magic to emulate a for_each slots. These templates will roll-out
@@ -727,6 +735,8 @@ void TestFactory_Set<TestClass>::call_testrunner(size_t items) {
             testrunner_loop<BtreeSet<128> >(items, "btree_set<128>");
         if (g_slot_max == 256)
             testrunner_loop<BtreeSet<256> >(items, "btree_set<256>");
+        if (g_slot_max == 512)
+            testrunner_loop<BtreeSet<512> >(items, "btree_set<512>");
     }
 #endif
 }
@@ -770,7 +780,7 @@ void print_usage(const char *program_name) {
 
 //! Speed test them!
 int main(int argc, char *argv[]) {
-    std::set<size_t> valid_max_slots = {4, 8, 16, 32, 64, 128, 256};
+    std::set<size_t> valid_max_slots = {4, 8, 16, 32, 64, 128, 256, 512};
     int opt;
     while ((opt = getopt(argc, argv, "hi:l:L:m:M:or:R:sS:t:T:")) != -1) {
         switch (opt) {
