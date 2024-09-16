@@ -14,17 +14,18 @@ struct long_val_type {
 // Define test_leaf_type using the redefined test_set_type template
 template<int TestSlotMax = 64,
          int ValSize = 8,
-         unsigned short SliceSize = 8>
+         unsigned short SliceSize = 8,
+         unsigned short SliceSizeMax = 16>
 class SpeedTestType {
 public:
 // Redefine tlx::btree_set as a template with TestSlotMax as a parameter
     using key_compare = std::less<key_type>;  // Default comparison function
 
     using traits = tlx::btree_default_traits<key_type,
-                        long_val_type<ValSize>,
+                        std::pair<const key_type, long_val_type<ValSize>>,
                         (sizeof(key_type) + sizeof(void*))*TestSlotMax,
-                        sizeof(long_val_type<ValSize>)*TestSlotMax,
-                        SliceSize>;  // Default traits
+                        sizeof(std::pair<const key_type, long_val_type<ValSize>>)*TestSlotMax,
+                        SliceSize, SliceSizeMax>;  // Default traits
 
     using allocator_type = std::allocator<std::pair<const key_type, long_val_type<ValSize>>>;  // Default allocator
 

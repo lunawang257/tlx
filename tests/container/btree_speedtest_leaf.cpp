@@ -15,56 +15,19 @@ Usage:
   -i --iteration [num]              Number of iterations
   -s --slot-max [num]               Maximum slot value
   -v --val-size [num]               Value size
+  -S --slice-size [num]             Slice Size
+  -M --slice-size-max [num]         Max Slice Size
   -h --help                         Show this help message
 )";
-
-#define STRINGIZE(arg)  STRINGIZE1(arg)
-#define STRINGIZE1(arg) STRINGIZE2(arg)
-#define STRINGIZE2(arg) #arg
-
-#define CONCATENATE(arg1, arg2)   CONCATENATE1(arg1, arg2)
-#define CONCATENATE1(arg1, arg2)  CONCATENATE2(arg1, arg2)
-#define CONCATENATE2(arg1, arg2)  arg1##arg2
-
-#define FOR_EACH_1(what, x, ...) what(x)
-#define FOR_EACH_2(what, x, ...)\
-  what(x);\
-  FOR_EACH_1(what,  __VA_ARGS__);
-#define FOR_EACH_3(what, x, ...)\
-  what(x);\
-  FOR_EACH_2(what, __VA_ARGS__);
-#define FOR_EACH_4(what, x, ...)\
-  what(x);\
-  FOR_EACH_3(what,  __VA_ARGS__);
-#define FOR_EACH_5(what, x, ...)\
-  what(x);\
- FOR_EACH_4(what,  __VA_ARGS__);
-#define FOR_EACH_6(what, x, ...)\
-  what(x);\
-  FOR_EACH_5(what,  __VA_ARGS__);
-#define FOR_EACH_7(what, x, ...)\
-  what(x);\
-  FOR_EACH_6(what,  __VA_ARGS__);
-#define FOR_EACH_8(what, x, ...)\
-  what(x);\
-  FOR_EACH_7(what,  __VA_ARGS__);
-
-#define FOR_EACH_NARG(...) FOR_EACH_NARG_(__VA_ARGS__, FOR_EACH_RSEQ_N())
-#define FOR_EACH_NARG_(...) FOR_EACH_ARG_N(__VA_ARGS__)
-#define FOR_EACH_ARG_N(_1, _2, _3, _4, _5, _6, _7, _8, N, ...) N
-#define FOR_EACH_RSEQ_N() 8, 7, 6, 5, 4, 3, 2, 1, 0
-
-#define FOR_EACH_(N, what, x, ...) CONCATENATE(FOR_EACH_, N)(what, x, __VA_ARGS__)
-#define FOR_EACH(what, x, ...) FOR_EACH_(FOR_EACH_NARG(x, __VA_ARGS__), what, x, __VA_ARGS__)
 
 int seed = 1;
 const int MAX_KEY_RANGE = 100;
 const int LEAF_ARRAY_SIZE = 1000;
 int NUM_ITERATIONS = 100000;
 
-template<int TestSlotMax, int ValSize, unsigned short SlotSize>
+template<int TestSlotMax, int ValSize, unsigned short SliceSize, unsigned short SliceSizeMax>
 class TestLeafPerf {
-    using SpeedTestT = SpeedTestType<TestSlotMax, ValSize, SlotSize>;
+    using SpeedTestT = SpeedTestType<TestSlotMax, ValSize, SliceSize, SliceSizeMax>;
     using LeafValueVector = std::vector<typename SpeedTestT::test_value_type>;
     using LeafVector = std::vector<typename SpeedTestT::test_leaf_type>;
     using UniDistKeyT = std::uniform_int_distribution<key_type>;
@@ -269,11 +232,11 @@ static void test_maplize_insert_delete_perf() {
 
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average maplize insert time: " << avg_insert_time * 1e6 << " us" << std::endl;
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average maplize delete time: " << avg_delete_time * 1e6 << " us" << std::endl;
 }
 
@@ -370,11 +333,11 @@ static void test_insert_delete_perf() {
 
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average insert time: " << avg_insert_time * 1e6 << " us" << std::endl;
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average delete time: " << avg_delete_time * 1e6 << " us" << std::endl;
 }
 
@@ -423,11 +386,11 @@ static void test_maplize_perf() {
     // Print results
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average maplize time: " << avg_maplize_time * 1e6 << " us" << std::endl;
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average unmaplize time: " << avg_unmaplize_time * 1e6 << " us" << std::endl;
 }
 
@@ -461,11 +424,11 @@ static void test_lookup_perf() {
         // Generate a random key
         key_type key = key_dist(rng); // Random key
 
+        // Perform lookup using the find_lower function
+        typename SpeedTestT::test_map_type ts;
         // Start time measurement
         auto start_time = std::chrono::high_resolution_clock::now();
 
-        // Perform lookup using the find_lower function
-        typename SpeedTestT::test_map_type ts;
         unsigned short slot = ts.tree_.find_lower(&leaf, key);
 
         // End time measurement
@@ -480,11 +443,11 @@ static void test_lookup_perf() {
 
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average lookup time: " << avg_lookup_time * 1e6 << " us" << std::endl;
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Total number of slots accessed: " << total_slots << std::endl;
 }
 
@@ -545,14 +508,35 @@ static void test_maplize_lookup_perf() {
 
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average maplized lookup time: " << avg_lookup_time * 1e6 << " us" << std::endl;
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Total number of pos accessed: " << total_pos << std::endl;
 }
 
+static void randomize_mapl_leaf_array(LeafVector& leaf_array) {
+    size_t num_iterations = 2* TestSlotMax; // Number of iterations
+    std::mt19937 rng(seed);
+
+    // Time measurement variables
+    size_t insert_count = 0, delete_count = 0;
+    DurationT total_insert_time(0), total_delete_time(0);
+
+    for (auto& leaf : leaf_array) {
+        // Perform the operations for the specified number of iterations
+        for (size_t i = 0; i < num_iterations; ++i) {
+            if (i % 2 == 0) {
+                // Generate a random slot and value for insertion
+                typename SpeedTestT::test_value_type val = generate_random_value(rng); //random value
+                perform_mapl_insert_operation(leaf, rng, val, total_insert_time, insert_count);
+            } else {
+                perform_mapl_delete_operation(leaf, rng, total_delete_time, delete_count);
+            }
+        }
+    }
+}
 
 static void test_maplize_scan_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
@@ -569,6 +553,8 @@ static void test_maplize_scan_perf() {
         leaf.maplize();
     }
 
+    randomize_mapl_leaf_array(leaf_array);
+
     // Random number generator setup
     std::mt19937 rng(seed);
     UniDistLeafT leaf_dist(0, array_size - 1);
@@ -579,21 +565,22 @@ static void test_maplize_scan_perf() {
     // Perform lookup using the find_lower function
     typename SpeedTestT::test_map_type ts;
 
+    int dummy_count = 0; // avoid compiler optimization
+
     // Perform the operations for the specified number of iterations
     for (size_t i = 0; i < num_iterations; ++i) {
         // Select a random leaf
         auto& leaf = leaf_array[leaf_dist(rng)];
 
-        typename SpeedTestT::test_value_type ordered[leaf.slotuse];
+        typename SpeedTestT::test_value_type ordered;
         typename SpeedTestT::test_btree_type::MaplKeyContext ctx;
 
         // Start time measurement
         auto start_time = std::chrono::high_resolution_clock::now();
 
-
         for (int j = 0; j < leaf.slotuse; j++) {
-
-            ordered[j] = leaf.get_overall(j, &ctx);
+            ordered = leaf.get_overall(j, &ctx);
+            dummy_count += (memchr(&ordered, 0, sizeof(ordered)) == nullptr);
         }
 
         // End time measurement
@@ -605,9 +592,13 @@ static void test_maplize_scan_perf() {
     // Calculate and print the average lookup time
     double avg_scan_time = total_scan_time.count() / num_iterations;
 
+    if (dummy_count == 123456789) {
+        std::cout << "dummy_count: " << dummy_count << "\n";
+    }
+
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average maplized scan time: " << avg_scan_time * 1e6 << " us" << std::endl;
 }
 
@@ -631,19 +622,21 @@ static void test_scan_perf() {
 
     // Perform lookup using the find_lower function
     typename SpeedTestT::test_map_type ts;
+    int dummy_count = 0; // avoid compiler optimization
 
     // Perform the operations for the specified number of iterations
     for (size_t i = 0; i < num_iterations; ++i) {
         // Select a random leaf
         auto& leaf = leaf_array[leaf_dist(rng)];
 
-        typename SpeedTestT::test_value_type ordered[leaf.slotuse];
+        typename SpeedTestT::test_value_type ordered;
 
         // Start time measurement
         auto start_time = std::chrono::high_resolution_clock::now();
 
         for (int j = 0; j < leaf.slotuse; j++) {
-                ordered[j] = leaf.slotdata[j];
+            ordered = leaf.slotdata[j];
+            dummy_count += (memchr(&ordered, 0, sizeof(ordered)) == nullptr);
         }
         // End time measurement
         auto end_time = std::chrono::high_resolution_clock::now();
@@ -654,9 +647,13 @@ static void test_scan_perf() {
     // Calculate and print the average lookup time
     double avg_scan_time = total_scan_time.count() / num_iterations;
 
+    if (dummy_count == 123456789) {
+        std::cout << "dummy_count: " << dummy_count << "\n";
+    }
+
     std::cout << "Max Slots: " << TestSlotMax
               << " Value Size: " << ValSize
-              << " SlotSize: " << SlotSize
+              << " SliceSize: " << SliceSize
               << " Average scan time: " << avg_scan_time * 1e6 << " us" << std::endl;
 }
 
@@ -684,7 +681,7 @@ static void test_maplize_structure()
 
             // Print slotuse
             std::cout << "  Slot Use: " << slice->slotuse
-                      << " SlotSize: " << SlotSize << std::endl;
+                      << " SliceSize: " << SliceSize << std::endl;
 
             // Print index_array
             std::cout << "  Index Array: ";
@@ -752,8 +749,9 @@ int main(int argc, char* argv[]) {
         {"is-mapl", required_argument, nullptr, 'm'},
         {"iteration", required_argument, nullptr, 'i'},
         {"slot-max", required_argument, nullptr, 's'},
-        {"slot-size", required_argument, nullptr, 'S'},
+        {"slice-size", required_argument, nullptr, 'S'},
         {"val-size", required_argument, nullptr, 'v'},
+        {"slice-size-max", required_argument, nullptr, 'M'},
         {"help", no_argument, nullptr, 'h'},
         {nullptr, 0, nullptr, 0} // End of options
     };
@@ -763,14 +761,15 @@ int main(int argc, char* argv[]) {
     int iteration = NUM_ITERATIONS;
     int slot_max = 0;
     int val_size = 0;
-    int slot_size = 0;
+    int slice_size = 0;
+    int slice_size_max = 0;
     int is_mapl = 0;
 
     int option_index = 0;
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "m:t:i:s:S:v:h", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "m:t:i:s:S:v:h:M:", long_options, &option_index)) != -1) {
         switch (c) {
         case 't': { // --test
             TestOption option = stringToTestOption(optarg);
@@ -793,11 +792,14 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             break;
+        case 'M': //--slot-max
+            slice_size_max = std::atoi(optarg);
+            break;
         case 's': // --slot-max
             slot_max = std::atoi(optarg);
             break;
         case 'S': // --slot-size
-            slot_size = std::atoi(optarg);
+            slice_size = std::atoi(optarg);
             break;
         case 'v': // --val-size
             val_size = std::atoi(optarg);
@@ -818,55 +820,61 @@ int main(int argc, char* argv[]) {
 
     bool test_invoked = false;
 
-#define RUN_MAPLIZE(slots, size, the_slot_size, is_mapl)                \
+#define RUN_MAPLIZE(slots, size, slice, slice_max)                      \
     if (testOptions.contains(MAPLIZE) &&                                \
         slot_max == (slots) &&                                          \
         val_size == (size) &&                                           \
-        slot_size == (the_slot_size)) {                                 \
-        TestLeafPerf<slots, size, the_slot_size>::test_maplize_perf();  \
+        slice_size == (slice) &&                                        \
+        slice_size_max == (slice_max)) {                                \
+        TestLeafPerf<slots, size, slice, slice_max>::                   \
+            test_maplize_perf();                                        \
         test_invoked = true;                                            \
     }
 
-#define RUN_UPDATE(slots, size, the_slot_size, the_is_mapl)             \
+#define RUN_UPDATE(slots, size, slice, slice_max)                       \
     if (testOptions.contains(UPDATE) &&                                 \
         slot_max == (slots) &&                                          \
         val_size == (size) &&                                           \
-        slot_size == (the_slot_size)) {                                 \
-        if (the_is_mapl) {                                              \
-            TestLeafPerf<slots, size, the_slot_size>::                  \
+        slice_size == (slice) &&    \
+        slice_size_max == (slice_max)) {                                \
+        if (is_mapl) {                                                  \
+            TestLeafPerf<slots, size, slice, slice_max>::               \
                 test_maplize_insert_delete_perf();                      \
         } else {                                                        \
-            TestLeafPerf<slots, size, the_slot_size>::                  \
+            TestLeafPerf<slots, size, slice, slice_max>::               \
                 test_insert_delete_perf();                              \
         }                                                               \
         test_invoked = true;                                            \
     }                                                                   \
 
-#define RUN_LOOKUP(slots, size, the_slot_size, the_is_mapl)             \
+#define RUN_LOOKUP(slots, size, slice, slice_max)                       \
     if (testOptions.contains(LOOKUP) &&                                 \
         slot_max == (slots) &&                                          \
         val_size == (size) &&                                           \
-        slot_size == (the_slot_size)) {                                 \
+        slice_size == (slice) &&                                        \
+        slice_size_max == (slice_max)) {                                \
         if (is_mapl) {                                                  \
-            TestLeafPerf<slots, size, the_slot_size>::                  \
+            TestLeafPerf<slots, size, slice, slice_max>::               \
                 test_maplize_lookup_perf();                             \
         } else {                                                        \
-            TestLeafPerf<slots, size, the_slot_size>::                  \
+            TestLeafPerf<slots, size, slice, slice_max>::               \
                 test_lookup_perf();                                     \
         }                                                               \
         test_invoked = true;                                            \
     }                                                                   \
 
-#define RUN_SCAN(slots, size, the_slot_size, the_is_mapl)               \
+#define RUN_SCAN(slots, size, slice, slice_max)                         \
     if (testOptions.contains(SCAN) &&                                   \
         slot_max == (slots) &&                                          \
         val_size == (size) &&                                           \
-        slot_size == (the_slot_size)) {                                 \
+        slice_size == (slice) &&                                        \
+        slice_size_max == (slice_max)) {                                \
         if (is_mapl) {                                                  \
-            TestLeafPerf<slots, size, the_slot_size>::                  \
+            TestLeafPerf<slots, size, slice, slice_max>::               \
                 test_maplize_scan_perf();                               \
         } else {                                                        \
-            TestLeafPerf<slots, size, the_slot_size>::test_scan_perf(); \
+            TestLeafPerf<slots, size, slice, slice_max>::               \
+                test_scan_perf();                                       \
         }                                                               \
         test_invoked = true;                                            \
     }                                                                   \
