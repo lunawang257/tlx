@@ -12,6 +12,7 @@
 #include <tlx/container/slow_lock_btree_map.hpp>
 
 #include <tlx/container/btree_set.hpp>
+#include <tlx/container/btree_map.hpp>
 
 #include <set>
 
@@ -34,8 +35,7 @@ ssize_t g_root_slot = 0;
 
 size_t g_slot_max = 64;
 
-//! number of threads operating at a time
-size_t cur_numthreads = 1;
+extern size_t cur_numthreads;
 
 bool skip_std_set = false;
 
@@ -277,8 +277,9 @@ public:
 
     static const char * op() { return "set_mixed_ops"; }
 
-private:
     SetType my_set;
+
+private:
     int insert_prob = INSERT_PROP;
     int lookup_prob = LOOKUP_PROP;
     int key_space_factor{2};
@@ -678,6 +679,57 @@ void testrunner_loop(size_t items, const std::string& container_name) {
               << std::endl;
 }
 
+template<int ValSize>
+struct long_val_type {
+    char value[ValSize];
+};
+
+template <int TestSlotMax, int ValSize = 8>
+struct TestType {
+    using key_type = size_t;
+    using val_type = key_type;
+    using key_compare = std::less<key_type>;
+    using traits = tlx::btree_default_traits<
+        key_type, val_type,
+        (sizeof(key_type) + sizeof(void*)) * TestSlotMax,
+        sizeof(val_type) * TestSlotMax>;
+    using allocator_type = std::allocator<key_type>;
+
+    using set_type = tlx::btree_set<
+        key_type, key_compare, traits,
+        allocator_type, true /* concurrent */>;
+
+#if 0 // TODO: switch to map
+    using val_type = std::pair<key_type, long_val_type<ValSize>>;
+    using allocator_type = std::allocator<val_type>;
+
+    using set_type = tlx::btree_map<
+        key_type, val_type, key_compare, traits,
+        allocator_type, true /* concurrent */>;
+#endif
+};
+
+#define FOR_EACH_SLOT_MAX(f) \
+    f(4) f(8) f(16) f(32) f(64) f(128) f(256)
+
+typedef Test_Set_MixedOp<TestType<64>::set_type> set_type;
+set_type *g_test_set;
+
+#include <tests/container/btree_fast_log.hpp>
+
+void run_mixedop(size_t items) {
+
+#define RUN_ON_SIZE(s)                                  \
+    if (g_slot_max == (s))                              \
+        testrunner_loop<                                \
+            Test_Set_MixedOp<TestType<(s)>::set_type>>( \
+                items, "btree_map<" #s ">");
+
+    FOR_EACH_SLOT_MAX(RUN_ON_SIZE)
+
+#undef RUN_ON_SIZE
+}
+
 // Template magic to emulate a for_each slots. These templates will roll-out
 // btree instantiations for each of the Low-High leaf/inner slot numbers.
 template <template <int Slots> class Functional, int Low, int High>
@@ -721,8 +773,9 @@ void TestFactory_Set<TestClass>::call_testrunner(size_t items) {
             testrunner_loop<BtreeSet<16> >(items, "btree_set<16>");
         if (g_slot_max == 32)
             testrunner_loop<BtreeSet<32> >(items, "btree_set<32>");
-        if (g_slot_max == 64)
+        if (g_slot_max == 64) {
             testrunner_loop<BtreeSet<64> >(items, "btree_set<64>");
+        }
         if (g_slot_max == 128)
             testrunner_loop<BtreeSet<128> >(items, "btree_set<128>");
         if (g_slot_max == 256)
@@ -873,7 +926,8 @@ int main(int argc, char *argv[]) {
         for (size_t items = min_items; items <= max_items; items *= 2)
         {
             std::cout << "set: mixed op (insert/find/erase) " << items << "\n";
-            TestFactory_Set<Test_Set_MixedOp>().call_testrunner(items);
+            run_mixedop(items);
+            //TestFactory_Set<Test_Set_MixedOp>().call_testrunner(items);
         }
         return 0;
     }

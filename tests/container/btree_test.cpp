@@ -1896,6 +1896,7 @@ typedef tlx::btree_set<
     true /* concurrent */ > set_type;
 
 set_type my_multi_thread_set;
+set_type* g_test_set = &my_multi_thread_set;
 
 #include <tests/container/btree_fast_log.hpp>
 

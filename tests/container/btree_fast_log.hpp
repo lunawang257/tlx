@@ -28,6 +28,8 @@ bool prt_retry = prt_lock;
 bool prt_op = true;
 bool prt_split = true;
 
+extern set_type *g_test_set;
+
 enum {
   STACK_START_TO_PRINT = 3,
   NUM_STACK_TO_PRINT = 4
@@ -608,7 +610,7 @@ void print_all_lock_records() {
 
 void print_threads_states(void)
 {
-    my_multi_thread_set.print(std::cout);
+    g_test_set->print(std::cout);
 #if 0
     for (size_t i = 0; i < cur_numthreads; ++i) {
         std::cout << "Thread " << i + thread_start_idx << " id: " << global_thread_info[i].id
