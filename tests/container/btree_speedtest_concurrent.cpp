@@ -35,8 +35,6 @@ ssize_t g_root_slot = 0;
 
 size_t g_slot_max = 64;
 
-extern size_t cur_numthreads;
-
 bool skip_std_set = false;
 
 lock_requirement g_lock_req = lock_all;
@@ -47,6 +45,9 @@ size_t INSERT_PROP = 15;
 
 //! random seed
 const int seed = 34234235; //std::random_device{}();
+
+const size_t NUM_THREADS = 4;
+size_t cur_numthreads = 1;
 
 //! Traits used for the speed tests, BTREE_DEBUG is not defined.
 template <int InnerSlots, int LeafSlots>

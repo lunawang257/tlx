@@ -1903,6 +1903,8 @@ set_type* g_test_set = &my_multi_thread_set;
 const size_t INITIAL_SIZE = 50;
 const int MAX_KEY = 100;
 const int NUM_OPERATIONS = 150;
+const size_t NUM_THREADS = 4;
+size_t cur_numthreads = NUM_THREADS;
 
 struct Entry {
     std::mutex mtx;

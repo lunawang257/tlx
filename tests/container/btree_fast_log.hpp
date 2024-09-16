@@ -170,8 +170,7 @@ std::string stack_sym(void * const addrs[NUM_STACK_TO_PRINT]) {
 }
 
 std::mutex printmtx;
-const size_t NUM_THREADS = 4;
-size_t cur_numthreads = NUM_THREADS;
+extern const size_t NUM_THREADS;
 const int thread_start_idx = 2;
 const bool debug_print = false;
 
@@ -612,7 +611,7 @@ void print_threads_states(void)
 {
     g_test_set->print(std::cout);
 #if 0
-    for (size_t i = 0; i < cur_numthreads; ++i) {
+    for (size_t i = 0; i < NUM_THREADS; ++i) {
         std::cout << "Thread " << i + thread_start_idx << " id: " << global_thread_info[i].id
             << " - Node: " << global_thread_info[i].cur_node
             << ", Operation: " << lock_type_to_string(global_thread_info[i].op)
