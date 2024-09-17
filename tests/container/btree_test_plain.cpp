@@ -110,7 +110,7 @@ std::vector<T> create_random_data_in_parallel(size_t n, size_t max_val,
     if (end > n) {
       end = n;
     }
-    if ((int)i == NUM_THREADS - 1) {
+    if (static_cast<int>(i) == NUM_THREADS - 1) {
       end = n;
     }
     std::random_device rd;
@@ -129,7 +129,7 @@ std::vector<T> create_zipf_data(size_t n, double theta = 0.99) {
     std::vector<T> zipfian_key_list{};
     zipfian_key_list.reserve(n);
     // Initialize it with time() as the random seed
-    Zipfian zipf{n, theta, (uint64_t)time(NULL)};
+    Zipfian zipf{n, theta, static_cast<uint64_t>(time(NULL))};
 
     // Populate the array with random numbers
     for (size_t i = 0; i < n; ++i) {
@@ -150,7 +150,7 @@ bool test_random_inserts(uint64_t max_size, std::seed_seq &seed, int trials, siz
     for (int cur_trial = 0; cur_trial <= trials; cur_trial++) {
         std::vector<T> data = create_random_data<T>(
             max_size, std::numeric_limits<T>::max(), seed);
-        printf("trials %d, inserts %lu; data.size=%lu; threads_num=%u\n", cur_trial, max_size,
+        printf("trials %d, inserts %lu; data.size=%lu; threads_num=%lu\n", cur_trial, max_size,
                data.size(), threads_num);
         tlx::btree_map<
             T, T, std::less<T>,
@@ -176,9 +176,9 @@ bool test_random_inserts(uint64_t max_size, std::seed_seq &seed, int trials, siz
     std::sort(insert_times.begin(), insert_times.end());
     printf("median insert time = %lu\n", insert_times[trials / 2]);
     std::cout << "num_thread=" << threads_num << "; throughput="
-              << ((double)max_size / insert_times[trials / 2]) << " Mops/s"
+              << (static_cast<double>(max_size) / insert_times[trials / 2]) << " Mops/s"
               << std::endl;
-    std::cout << "[moti] "<<threads_num<<","<<((double)max_size / insert_times[trials / 2]) << std::endl;
+    std::cout << "[moti] "<<threads_num<<","<<(static_cast<double>(max_size) / insert_times[trials / 2]) << std::endl;
 
     return true;
 }
@@ -226,9 +226,9 @@ bool test_zipfian_inserts(uint64_t max_size, int trials, size_t threads_num, dou
     std::sort(insert_times.begin(), insert_times.end());
     printf("median insert time = %lu\n", insert_times[trials / 2]);
     std::cout << "num_thread=" << threads_num << "; throughput="
-              << ((double)max_size / insert_times[trials / 2]) << " Mops/s"
+              << (static_cast<double>(max_size) / insert_times[trials / 2]) << " Mops/s"
               << std::endl;
-    std::cout << "[moti] "<<threads_num<<","<<((double)max_size / insert_times[trials / 2]) << std::endl;
+    std::cout << "[moti] "<<threads_num<<","<<(static_cast<double>(max_size) / insert_times[trials / 2]) << std::endl;
 
     return true;
 }
@@ -254,7 +254,7 @@ int main(int argc, char *argv[]) {
     ("random_inserts", "run parallel inserts where each threads inserts random elements")
     ("zipf_inserts", "run parallel inserts where each threads inserts random elements with zipfian distribution");
 
-  std::seed_seq seed{(uint64_t)time(NULL)};
+  std::seed_seq seed{static_cast<uint64_t>(time(NULL))};
   auto result = options.parse(argc, argv);
   uint32_t trials = result["trials"].as<int>();
   double theta = result["theta"].as<double>();

@@ -109,7 +109,7 @@ class SimpleInt64Random {
  */
 class Timer {
    private:
-    std::chrono::time_point<std::chrono::system_clock> start;
+    std::chrono::time_point<std::chrono::system_clock> start_;
     std::chrono::time_point<std::chrono::system_clock> end;
 
    public:
@@ -119,7 +119,7 @@ class Timer {
      * It takes an argument, which denotes whether the timer should start
      * immediately. By default it is true
      */
-    Timer(bool start = true) : start{}, end{} {
+    Timer(bool start = true) : start_{}, end{} {
         if (start == true) {
             Start();
         }
@@ -134,7 +134,7 @@ class Timer {
      * restart
      */
     inline void Start() {
-        start = std::chrono::system_clock::now();
+        start_ = std::chrono::system_clock::now();
 
         return;
     }
@@ -157,7 +157,7 @@ class Timer {
      * latest Start() and Stop()
      */
     inline double GetInterval() const {
-        std::chrono::duration<double> elapsed_seconds = end - start;
+        std::chrono::duration<double> elapsed_seconds = end - start_;
         return elapsed_seconds.count();
     }
 };
@@ -243,9 +243,9 @@ class Envp {
 class Zipfian {
    private:
     // number of items (input)
-    uint64_t n;
+    uint64_t n_;
     // skewness (input) in (0, 1); or, 0 = uniform, 1 = always zero
-    double theta;
+    double theta_;
     // only depends on theta
     double alpha;
     // only depends on theta
@@ -267,12 +267,12 @@ class Zipfian {
      */
     static double PowApprox(double a, double b) {
         // calculate approximation with fraction of the exponent
-        int e = (int)b;
+        int e = static_cast<int>(b);
         union {
             double d;
             int x[2];
         } u = {a};
-        u.x[1] = (int)((b - (double)e) * (double)(u.x[1] - 1072632447) +
+        u.x[1] = static_cast<int>((b - static_cast<double>(e)) * static_cast<double>(u.x[1] - 1072632447) +
                        1072632447.);
         u.x[0] = 0;
 
@@ -300,7 +300,7 @@ class Zipfian {
         }
 
         while (last_n < n) {
-            last_sum += 1. / PowApprox((double)last_n + 1., theta);
+            last_sum += 1. / PowApprox(static_cast<double>(last_n) + 1., theta);
             last_n++;
         }
 
@@ -315,7 +315,7 @@ class Zipfian {
      */
     static double FastRandD(uint64_t *state) {
         *state = (*state * 0x5deece66dUL + 0xbUL) & ((1UL << 48) - 1);
-        return (double)*state / (double)((1UL << 48) - 1);
+        return static_cast<double>(*state) / static_cast<double>((1UL << 48) - 1);
     }
 
    public:
@@ -342,8 +342,8 @@ class Zipfian {
         // This is ugly, but it is copied from C code, so let's preserve this
         memset(this, 0, sizeof(*this));
 
-        this->n = n;
-        this->theta = theta;
+        this->n_ = n;
+        this->theta_ = theta;
 
         if (theta == -1.) {
             rand_seed = rand_seed % n;
@@ -368,7 +368,7 @@ class Zipfian {
      * This is adapted from zipf_change_n()
      */
     void ChangeN(uint64_t n) {
-        this->n = n;
+        this->n_ = n;
 
         return;
     }
@@ -377,26 +377,26 @@ class Zipfian {
      * Get() - Return the next number in the Zipfian distribution
      */
     uint64_t Get() {
-        if (this->last_n != this->n) {
-            if (this->theta > 0. && this->theta < 1.) {
+        if (this->last_n != this->n_) {
+            if (this->theta_ > 0. && this->theta_ < 1.) {
                 this->zetan =
-                    Zeta(this->last_n, this->zetan, this->n, this->theta);
+                    Zeta(this->last_n, this->zetan, this->n_, this->theta_);
                 this->eta =
-                    (1. - PowApprox(2. / (double)this->n, 1. - this->theta)) /
-                    (1. - Zeta(0, 0., 2, this->theta) / this->zetan);
+                    (1. - PowApprox(2. / static_cast<double>(this->n_), 1. - this->theta_)) /
+                    (1. - Zeta(0, 0., 2, this->theta_) / this->zetan);
             }
-            this->last_n = this->n;
-            this->dbl_n = (double)this->n;
+            this->last_n = this->n_;
+            this->dbl_n = static_cast<double>(this->n_);
         }
 
-        if (this->theta == -1.) {
+        if (this->theta_ == -1.) {
             uint64_t v = this->rand_state;
-            if (++this->rand_state >= this->n) this->rand_state = 0;
+            if (++this->rand_state >= this->n_) this->rand_state = 0;
             return v;
-        } else if (this->theta == 0.) {
+        } else if (this->theta_ == 0.) {
             double u = FastRandD(&this->rand_state);
-            return (uint64_t)(this->dbl_n * u);
-        } else if (this->theta >= 40.) {
+            return static_cast<uint64_t>(this->dbl_n * u);
+        } else if (this->theta_ >= 40.) {
             return 0UL;
         } else {
             // from J. Gray et al. Quickly generating billion-record synthetic
@@ -411,7 +411,7 @@ class Zipfian {
             } else if (uz < this->thres) {
                 return 1UL;
             } else {
-                return (uint64_t)(this->dbl_n *
+                return static_cast<uint64_t>(this->dbl_n *
                                   PowApprox(this->eta * (u - 1.) + 1.,
                                             this->alpha));
             }
