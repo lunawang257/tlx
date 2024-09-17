@@ -609,7 +609,8 @@ void print_all_lock_records() {
 
 void print_threads_states(void)
 {
-    g_test_set->print(std::cout);
+    if (g_test_set && g_test_set->size() < 1500)
+        g_test_set->print(std::cout);
 #if 0
     for (size_t i = 0; i < NUM_THREADS; ++i) {
         std::cout << "Thread " << i + thread_start_idx << " id: " << global_thread_info[i].id

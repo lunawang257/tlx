@@ -1,4 +1,5 @@
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -7,6 +8,7 @@
 #include <unistd.h>
 
 #define TLX_BTREE_FAST_LOG
+#define TLX_BTREE_DEBUG
 
 #include <tlx/container/slow_lock_btree_set.hpp>
 #include <tlx/container/slow_lock_btree_map.hpp>
@@ -48,7 +50,7 @@ size_t INSERT_PROP = 15;
 const int seed = 34234235; //std::random_device{}();
 
 const size_t NUM_THREADS = 4;
-size_t cur_numthreads = 1;
+size_t cur_numthreads = 2;
 
 //! Traits used for the speed tests, BTREE_DEBUG is not defined.
 template <int InnerSlots, int LeafSlots>
@@ -231,13 +233,13 @@ public:
 
         std::uniform_int_distribution<> key(0, max_key);
 
-        
+
         // prepare the set to start with random items
         while (my_set.size() < items) {
             auto k = key(gen);
             my_set.insert(k);
         }
-       
+
 
         /* // prepare the set with sequential items for lookup only testing
         for (size_t i = 0; i < items; ++i) {
@@ -313,7 +315,7 @@ private:
 
         int seed = static_cast<int>(std::time(nullptr));
         util::TraceZipfian zipf(seed, 0, max_key, 0.99);
-        
+
         local_thread_id = id;
 
         auto old_val = num_running.fetch_add(1, std::memory_order_relaxed);
@@ -721,7 +723,7 @@ struct TestType {
 #define FOR_EACH_SLOT_MAX(f) \
     f(4) f(8) f(16) f(32) f(64) f(128) f(256)
 
-typedef Test_Set_MixedOp<TestType<64>::set_type> set_type;
+typedef TestType<64>::set_type set_type;
 set_type *g_test_set;
 
 #include <tests/container/btree_fast_log.hpp>
@@ -834,6 +836,9 @@ void print_usage(const char *program_name) {
 
 //! Speed test them!
 int main(int argc, char *argv[]) {
+    // Register signal handler for SIGUSR1
+    std::signal(SIGUSR1, signal_handler);
+
     std::set<size_t> valid_max_slots = {4, 8, 16, 32, 64, 128, 256, 512};
     int opt;
     while ((opt = getopt(argc, argv, "hi:l:L:m:M:or:R:sS:t:T:")) != -1) {

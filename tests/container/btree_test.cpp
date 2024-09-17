@@ -1900,9 +1900,16 @@ set_type* g_test_set = &my_multi_thread_set;
 
 #include <tests/container/btree_fast_log.hpp>
 
-const size_t INITIAL_SIZE = 50;
-const int MAX_KEY = 100;
-const int NUM_OPERATIONS = 150;
+int MULTI_THREAD_PASSES = 10000;
+
+size_t g_initial_size = 50;
+int g_max_key = 100;
+int g_num_operations = 150;
+
+size_t g_big_initial_size = 1000;
+int g_big_max_key = 2000;
+int g_big_num_operations = 1000;
+
 const size_t NUM_THREADS = 4;
 size_t cur_numthreads = NUM_THREADS;
 
@@ -1911,7 +1918,7 @@ struct Entry {
     bool in_set = false;
 };
 
-std::vector<Entry> truth_source(MAX_KEY);
+std::vector<Entry> truth_source(g_big_max_key);
 bool in_multi_test = false;
 
 void print(const char* op, int val, int id) {
@@ -1922,36 +1929,18 @@ void print(const char* op, int val, int id) {
         << " value: " << val << std::endl;
 }
 
-bool verify_all() {
-    int failures = 0;
-    // compare all items in my_set and truth_source, if they don't match, print
-    std::lock_guard<std::mutex> l(printmtx);
-    std::cout << "Verifying set\n";
-    for (int i = 0; i < MAX_KEY; ++i) {
-        if (my_multi_thread_set.exists(i) != truth_source[i].in_set) {
-            std::cout << "ERROR: key " << i << " in set: "
-                << my_multi_thread_set.exists(i) << " in truth_source: "
-                << truth_source[i].in_set << std::endl;
-            ++failures;
-        }
-    }
-    if (failures > 0) {
-        std::cout << "Verification failed with " << failures << " errors\n" << std::flush;
-    }
-    return failures == 0;
-}
-
-void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
+void thread_func(int max_key, int num_operations, set_type& my_set,
+                 int insert_prob, int lookup_prob, int id) {
     // TODO std::mt19937 gen(seed + id);
     // std::mt19937 gen(std::random_device{}());
     std::mt19937 gen(seed + id);
     std::uniform_int_distribution<> dist(0, 99);
-    std::uniform_int_distribution<> key_dist(0, MAX_KEY - 1);
+    std::uniform_int_distribution<> key_dist(0, max_key - 1);
 
     initialize_thread_info(id);
     //usleep(10 * 1000 * 1000ull); // sleep for debugging
 
-    for (int i = 0; i < NUM_OPERATIONS; ++i) {
+    for (int i = 0; i < num_operations; ++i) {
         int key = key_dist(gen);
         int operation = dist(gen);
 
@@ -2013,13 +2002,14 @@ void thread_func(set_type& my_set, int insert_prob, int lookup_prob, int id) {
     cleanup_thread_info();
 }
 
-void test_multithread(size_t initial_size, int num_threads) {
+void test_multithread(int max_key, int num_operations,
+                      size_t initial_size, int num_threads) {
     in_multi_test = true;
     // Probability out of 100
     int insert_prob = 33;
     int lookup_prob = 33;
     std::mt19937 gen(seed);
-    std::uniform_int_distribution<> key(0, MAX_KEY - 1);
+    std::uniform_int_distribution<> key(0, max_key - 1);
 
     // Register signal handler for SIGUSR1
     std::signal(SIGUSR1, signal_handler);
@@ -2028,13 +2018,14 @@ void test_multithread(size_t initial_size, int num_threads) {
 
     // reset from previous runs
     my_multi_thread_set.clear();
-    for (auto& e : truth_source) {
-        e.in_set = false;
+    TLX_BTREE_ASSERT(max_key <= static_cast<int>(truth_source.size()));
+    for (int i = 0; i < max_key; ++i) {
+         truth_source[i].in_set = false;
     }
 
     // prepare the set to start with random items
     while (my_multi_thread_set.size() < initial_size) {
-        auto k = key(gen);
+        auto k = key(gen) % max_key;
         bool inserted = my_multi_thread_set.insert(k).second;
         die_unless(inserted != truth_source[k].in_set);
         truth_source[k].in_set = true;
@@ -2042,7 +2033,10 @@ void test_multithread(size_t initial_size, int num_threads) {
 
     std::vector<std::thread> threads;
     for (int i = 0; i < num_threads; ++i) {
-        threads.emplace_back(thread_func, std::ref(my_multi_thread_set), insert_prob, lookup_prob, i);
+        threads.emplace_back(
+            thread_func, max_key, num_operations,
+            std::ref(my_multi_thread_set),
+            insert_prob, lookup_prob, i);
     }
     for (auto& th : threads) {
         th.join();
@@ -2513,25 +2507,39 @@ int main() {
     test_mapl();
 
     if (multithread) {
-        int total_passes = 1000000;
+        int total_passes = MULTI_THREAD_PASSES;
         double ts_start = tlx::timestamp();
         bool one_line = false;
-        int prt_interval = one_line ? 40 : 500;
+        int prt_interval = 50;
         size_t initial_size;
         int num_threads;
+        int max_key;
+        int num_operations;
 
         // always test some single thread cases first as sanity test
         int single_thread_passes =
             std::min(1000, std::max(1, total_passes / 100));
 
         for (int i = 0; i < total_passes; i++) {
-            if (i % 2 == 0) {
-                initial_size = 0; // test empty tree
-            } else {
-                initial_size = INITIAL_SIZE; // test tall tree
+            switch (i % 3) {
+            case 0: // test empty tree
+                initial_size = 0;
+                max_key = g_max_key;
+                num_operations = g_num_operations;
+                break;
+            case 1: // test tall tree
+                initial_size = g_initial_size;
+                max_key = g_max_key;
+                num_operations = g_num_operations;
+                break;
+            case 2: // test very big tree
+                initial_size = g_big_initial_size;
+                max_key = g_big_max_key;
+                num_operations = g_big_num_operations;
+                break;
             }
             num_threads = (i < single_thread_passes) ? 1 : NUM_THREADS;
-            test_multithread(initial_size, num_threads);
+            test_multithread(max_key, num_operations, initial_size, num_threads);
             debug_log_info.resize(0);
             debug_log_info.resize(TOTAL_DEBUG_LOG_INFO);
 
