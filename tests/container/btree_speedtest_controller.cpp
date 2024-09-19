@@ -7,20 +7,21 @@
 
 const char* help_message = R"(
 Usage:
-  h help                         Show this help message
-  i iteration [num]              Number of iterations
-  m is-mapl                      For update/lookup, whether run maplized version
-  M slice-size-max [num]         Max Slice Size
-  s slot-max [num]               Maximum slot value
-  S slice-size [num]             Slice Size
-  p test [update|lookup|maplize|scan|btreemix] Test option, \
+  -d --dist [zipf|uniform]          Workload distribution
+  -h --help                         Show this help message
+  -i --iteration [num]              Number of iterations
+  -m --is-mapl                      For update/lookup, whether run maplized version
+  -M --slice-size-max [num]         Max Slice Size
+  -r --repeats  <num>               Set Repeats (default: 0)
+  -s --slot-max [num]               Maximum slot value
+  -S --slice-size [num]             Slice Size
+  -p --test [update|lookup|maplize|scan|btreemix] Test option, \
                                 update means insert and delete, \
                                 btreemix means btree concurrent mixed operations \
                                 insert\delete\lookup
-  v val-size [num]               Value size
-  t num-threads [num]            Number of threads
-  T maplize-threshhold [num]     Maplize Proportion
-  d dist [zipf|uniform]          Workload distribution
+  -v --val-size [num]               Value size
+  -t --num-threads [num]            Number of threads
+  -T --maplize-threshhold [num]     Maplize Proportion
 )";
 
 // Define an enum to represent test options
@@ -74,6 +75,7 @@ int main(int argc, char* argv[]) {
         {"num-threads", required_argument, nullptr, 't'},
         {"maplize-threshhold", required_argument, nullptr, 'T'},
         {"dist", required_argument, nullptr, 'd'},
+        {"repeats", required_argument, nullptr, 'r'},
         {"help", no_argument, nullptr, 'h'},
         {nullptr, 0, nullptr, 0} // End of options
     };
@@ -87,16 +89,16 @@ int main(int argc, char* argv[]) {
     int slice_size_max = 0;
     int is_mapl = 0;
     int num_threads = 0;
-
+    std::string test_option = "";
+    std::string dist_option = "";
 
     int option_index = 0;
-    std::string dist_option = "";
     int c;
 
     bool test_invoked = false;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:h:r:", long_options, &option_index)) != -1) {
         switch (c) {
         case 'd': { // dist
             TestOption option = stringToTestOption(optarg);
@@ -113,6 +115,7 @@ int main(int argc, char* argv[]) {
             TestOption option = stringToTestOption(optarg);
             if (option != INVALID) {
                 testOptions.insert(option);
+                test_option = optarg;
             } else {
                 std::cerr << "Invalid test option: " << optarg << "\n";
                 std::cerr << help_message;
@@ -132,6 +135,9 @@ int main(int argc, char* argv[]) {
             break;
         case 'M': //slotmax
             slice_size_max = std::atoi(optarg);
+            break;
+        case 'r': // iteration
+            start_repeat = std::atoi(optarg);
             break;
         case 's': // slotmax
             slot_max = std::atoi(optarg);
@@ -162,6 +168,19 @@ int main(int argc, char* argv[]) {
             break;
         }
     }
+
+    std::cout << "slot_max=" << slot_max << "\t"
+              << "val_size=" << val_size << "\t"
+              << "slice_size=" << slice_size << "\t"
+              << "slice_size_max=" << slice_size_max << "\t"
+              << "test_option=" << test_option << "\t"
+              << "dist_option=" << dist_option << "\t"
+              << "NUM_ITERATIONS=" << NUM_ITERATIONS << "\t"
+              << "is_mapl=" << is_mapl << "\t"
+              << "num_threads=" << num_threads << "\t"
+              << "start_repeat=" << start_repeat << "\t"
+              << "maplize_threshold=" << maplize_threshold << "\t"
+              << std::endl;
 
 #define RUN_MAPLIZE(slots, size, slice, slice_max)                      \
     if (testOptions.contains(MAPLIZE) &&                                \

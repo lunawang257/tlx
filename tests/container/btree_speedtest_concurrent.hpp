@@ -184,7 +184,6 @@ void btreemix_runner_loop(size_t iterations,
     double ts1, ts2, duration;
     size_t actual_items = 0;
     double min_run_time = 1.0;
-    size_t repeat_until = 100;
 
     do {
         // count timed tests
@@ -198,7 +197,7 @@ void btreemix_runner_loop(size_t iterations,
             ts1 = tlx::timestamp();
 
             // run timed test procedure
-            test.run(iterations, repeat_until);
+            test.run(iterations, start_repeat);
 
             ts2 = tlx::timestamp();
 
@@ -208,8 +207,8 @@ void btreemix_runner_loop(size_t iterations,
             }
         }
 
-        std::cout << "Insert=" << iterations << " repeat=" << repeat_until / iterations
-                  << " repeat_until=" << repeat_until << " time=" << (ts2 - ts1);
+        std::cout << "Insert=" << iterations << " repeat=" << start_repeat / iterations
+                  << " start_repeat=" << start_repeat << " time=" << (ts2 - ts1);
         if (duration != 0.0) {
             std::cout << " real time " << std::setprecision(9) << duration
                       << " real total iterations " << actual_items;
@@ -217,7 +216,7 @@ void btreemix_runner_loop(size_t iterations,
         std::cout << "\n";
 
         // discard and repeat if test took less than one second.
-        if ((ts2 - ts1) < min_run_time || duration < min_run_time) repeat_until *= 2;
+        if ((ts2 - ts1) < min_run_time || duration < min_run_time) start_repeat *= 2;
     }
     while ((ts2 - ts1) < min_run_time || duration < min_run_time);
 
