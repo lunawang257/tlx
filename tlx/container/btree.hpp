@@ -361,7 +361,7 @@ public:
 
     struct Slice {
         Mapl *mapl;
-        ReaderWriterLock lock;
+        ReaderWriterLock2 lock;
         idx_t index_array[slice_sizemax];
         int slotuse;
 
@@ -1257,7 +1257,6 @@ public:
         }
 
         bool should_maplize() {
-            return true;
             TLX_BTREE_ASSERT(!mapl);
             int percent = mutex_.con_tracker.percent_waited();
             return percent >= maplize_threshold && node::slotuse >= 2 * slice_size;
