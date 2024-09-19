@@ -10,18 +10,20 @@ Usage:
   -d --dist [zipf|uniform]          Workload distribution
   -h --help                         Show this help message
   -i --iteration [num]              Number of iterations
+  -I --insert-prop [num]            Insert Proportion
+  -L --lookup-prop [num]            Lookup Proportion
   -m --is-mapl                      For update/lookup, whether run maplized version
   -M --slice-size-max [num]         Max Slice Size
+  -p --test [update|lookup|maplize|scan|btreemix] Test option, \
+                                    update means insert and delete, \
+                                    btreemix means btree concurrent mixed operations \
+                                    insert\delete\lookup
   -r --repeats  <num>               Set Repeats (default: 0)
   -s --slot-max [num]               Maximum slot value
   -S --slice-size [num]             Slice Size
-  -p --test [update|lookup|maplize|scan|btreemix] Test option, \
-                                update means insert and delete, \
-                                btreemix means btree concurrent mixed operations \
-                                insert\delete\lookup
-  -v --val-size [num]               Value size
   -t --num-threads [num]            Number of threads
   -T --maplize-threshhold [num]     Maplize Proportion
+  -v --val-size [num]               Value size
 )";
 
 // Define an enum to represent test options
@@ -65,18 +67,20 @@ std::string testOptionToString(TestOption opt) {
 int main(int argc, char* argv[]) {
     // Define long options
     static struct option long_options[] = {
-        {"test", required_argument, nullptr, 'p'},
-        {"is-mapl", required_argument, nullptr, 'm'},
+        {"dist", required_argument, nullptr, 'd'},
+        {"help", no_argument, nullptr, 'h'},
         {"iteration", required_argument, nullptr, 'i'},
+        {"insert-prop", required_argument, nullptr, 'I'},
+        {"lookup-prop", required_argument, nullptr, 'L'},
+        {"is-mapl", required_argument, nullptr, 'm'},
+        {"slice-size-max", required_argument, nullptr, 'M'},
+        {"test", required_argument, nullptr, 'p'},
+        {"repeats", required_argument, nullptr, 'r'},
         {"slot-max", required_argument, nullptr, 's'},
         {"slice-size", required_argument, nullptr, 'S'},
-        {"val-size", required_argument, nullptr, 'v'},
-        {"slice-size-max", required_argument, nullptr, 'M'},
         {"num-threads", required_argument, nullptr, 't'},
         {"maplize-threshhold", required_argument, nullptr, 'T'},
-        {"dist", required_argument, nullptr, 'd'},
-        {"repeats", required_argument, nullptr, 'r'},
-        {"help", no_argument, nullptr, 'h'},
+        {"val-size", required_argument, nullptr, 'v'},
         {nullptr, 0, nullptr, 0} // End of options
     };
 
@@ -98,7 +102,7 @@ int main(int argc, char* argv[]) {
     bool test_invoked = false;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:h:r:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:", long_options, &option_index)) != -1) {
         switch (c) {
         case 'd': { // dist
             TestOption option = stringToTestOption(optarg);
@@ -125,6 +129,12 @@ int main(int argc, char* argv[]) {
         }
         case 'i': // iteration
             NUM_ITERATIONS = std::atoi(optarg);
+            break;
+        case 'I':
+            INSERT_PROP = atol(optarg);
+            break;
+        case 'L':
+            LOOKUP_PROP = atol(optarg);
             break;
         case 'm':
             is_mapl = atoi(optarg); // Convert argument to integer
@@ -180,6 +190,8 @@ int main(int argc, char* argv[]) {
               << "num_threads=" << num_threads << "\t"
               << "start_repeat=" << start_repeat << "\t"
               << "maplize_threshold=" << maplize_threshold << "\t"
+              << "INSERT_PROP=" << INSERT_PROP << "\t"
+              << "LOOKUP_PROP=" << LOOKUP_PROP << "\t"
               << std::endl;
 
 #define RUN_MAPLIZE(slots, size, slice, slice_max)                      \
