@@ -1,0 +1,259 @@
+#ifndef TLX_BTREE_SPEEDTEST_CONCURRENT_HEADER
+#define TLX_BTREE_SPEEDTEST_CONCURRENT_HEADER
+
+#include <string>
+#include <tlx/die.hpp>
+#include <tlx/timestamp.hpp>
+
+#include "btree_speedtest_controller.hpp"
+#include "trace.h"
+
+// *** Settings
+bool g_use_slbtree = false;
+size_t min_items = 125; //! starting number of items to insert
+size_t max_items = 1024000 * 64; //! maximum number of items to insert
+size_t start_repeat = 1;
+size_t g_slot_max = 64;
+ssize_t g_root_slot = 0;
+bool skip_std_set = false;
+unsigned short g_level = 0;
+unsigned short g_slotuse = 32;
+std::string g_lock_req_str = "all";
+size_t LOOKUP_PROP = 0;
+size_t INSERT_PROP = 50;
+
+const int seed = 34234235; //std::random_device{}();
+
+//! Test a generic set type with insert, find and delete sequences
+template <typename SpeedTestT>
+class Test_Set_MixedOp {
+private:
+    using MapType = SpeedTestT::test_map_type;
+    using ValType = SpeedTestT::test_value_type;
+
+public:
+    double duration = 0.0;
+    size_t actual_items = 0;
+
+private:
+    MapType my_map;
+
+    void insert_random_values(const size_t num_items) {
+        std::mt19937 gen(seed);
+
+        while (my_map.tree_.size() < num_items) {
+            ValType val = SpeedTestT::generate_random_value(gen, num_items * key_space_factor); //random value
+            my_map.insert(val);
+        }
+
+        //my_map.tree_.print(std::cout);
+    }
+
+public:
+    Test_Set_MixedOp(size_t iterations,
+                    size_t num_threads = 1,
+                    const std::string& d_option = "") {
+        insert_random_values(iterations);
+
+        cur_numthreads = num_threads;
+        dist_option = d_option;
+
+        reset();
+    }
+
+    static const char * op() { return "set_mixed_ops"; }
+
+private:
+    int insert_prob = INSERT_PROP;
+    int lookup_prob = LOOKUP_PROP;
+    int key_space_factor = 2;
+    std::atomic<int> num_running = 0;
+    std::atomic<int> num_stopped = 0;
+    double ts_start = 0.0, ts_stop = 0.0;
+    size_t cur_numthreads = 0;
+    std::string dist_option = "";
+
+    struct alignas(128) thread_state { // align to cache line
+        int count;
+        int rc;
+    };
+    std::vector<thread_state> thread_states;
+    bool stop = false;
+
+    void reset() {
+        ts_start = ts_stop = 0.0;
+        num_running = 0;
+        num_stopped = 0;
+        actual_items = 0;
+        stop = false;
+    }
+
+    void mixed_ops(int id, int iterations, int total_threads) {
+        // TODO std::mt19937 gen(seed + id);
+        std::mt19937 gen(std::random_device{}() + id);
+
+        std::uniform_int_distribution<> dist(0, 99); //which operation to us
+
+        key_type max_key = iterations * key_space_factor; //TODO: CHECK
+        typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
+
+        int zipseed = static_cast<int>(std::time(nullptr));
+        util::TraceZipfian zipf_dist(zipseed, 0, max_key, 0.99);
+
+        local_thread_id = id;
+
+        auto old_val = num_running.fetch_add(1, std::memory_order_relaxed);
+        if (old_val + 1 == total_threads) { // this is the last thread starts running
+            ts_start = tlx::timestamp();
+        } else { // wait for other thread to get to this point
+           while (num_running < total_threads) {
+              std::this_thread::yield();
+           }
+        }
+
+        key_type key;
+        for (int i = 0; !stop && i < iterations; ++i) {
+            if (dist_option == "zipf") {
+                key = zipf_dist.Next();
+            } else {
+                key = uniform_dist(gen);
+            }
+
+            int operation = dist(gen);
+
+            if (operation < insert_prob) {
+                ValType val = SpeedTestT::generate_random_value(gen, uniform_dist, key);
+                bool succeeded = my_map.insert(val).second;
+                ++thread_states[id].count;
+                thread_states[id].rc += succeeded;
+            }
+            else if (operation < insert_prob + lookup_prob) {
+                bool found = my_map.exists(key);
+                ++thread_states[id].count;
+                thread_states[id].rc += found;
+            } else {
+                bool erased = my_map.erase(key);
+                ++thread_states[id].count;
+                thread_states[id].rc += erased;
+            }
+        }
+
+        old_val = num_stopped.fetch_add(1, std::memory_order_relaxed);
+        if (old_val == 0) { // this is the first thread stops
+            ts_stop = tlx::timestamp();
+            if (ts_stop > ts_start && ts_start != 0.0) {
+                duration += ts_stop - ts_start;
+                stop = true; // stop all threads
+            }
+        }
+    }
+
+public:
+    void run(size_t iterations __attribute__((unused)), size_t repeats) {
+        std::vector<std::thread> threads;
+        size_t per_thread = repeats / cur_numthreads;
+
+        thread_states.resize(cur_numthreads);
+        reset();
+
+        for (size_t i = 0; i < cur_numthreads; ++i) {
+            threads.emplace_back(&Test_Set_MixedOp::mixed_ops,
+                                 this, i, per_thread, cur_numthreads);
+        }
+
+        for (auto& t : threads) t.join();
+
+        size_t n = 0;
+        for (auto st: thread_states) {
+            n += st.rc;
+            actual_items += st.count;
+       }
+        if (n == 1234567890ul) {
+            std::cout << "Print dummy line to avoid code being optimized out\n";
+        }
+    }
+};
+
+//! Repeat (short) tests until enough time elapsed and divide by the repeat.
+template <typename TestClass>
+void btreemix_runner_loop(size_t iterations,
+                          const std::string& container_name,
+                          const int num_threads = 1,
+                          const std::string& dist_option = "") {
+
+    double ts1, ts2, duration;
+    size_t actual_items = 0;
+    double min_run_time = 1.0;
+    size_t repeat_until = 100;
+
+    do {
+        // count timed tests
+        duration = 0.0;
+        actual_items = iterations;
+
+        {
+            // initialize test structures
+            TestClass test(iterations, num_threads, dist_option);
+
+            ts1 = tlx::timestamp();
+
+            // run timed test procedure
+            test.run(iterations, repeat_until);
+
+            ts2 = tlx::timestamp();
+
+            if (test.duration != 0.0) {
+                duration = test.duration;
+                actual_items = test.actual_items;
+            }
+        }
+
+        std::cout << "Insert=" << iterations << " repeat=" << repeat_until / iterations
+                  << " repeat_until=" << repeat_until << " time=" << (ts2 - ts1);
+        if (duration != 0.0) {
+            std::cout << " real time " << std::setprecision(9) << duration
+                      << " real total iterations " << actual_items;
+        }
+        std::cout << "\n";
+
+        // discard and repeat if test took less than one second.
+        if ((ts2 - ts1) < min_run_time || duration < min_run_time) repeat_until *= 2;
+    }
+    while ((ts2 - ts1) < min_run_time || duration < min_run_time);
+
+    if (duration != 0) {
+        ts1 = 0.0;
+        ts2 = duration;
+    }
+
+    float million_ops_per_sec = (actual_items / (ts2 - ts1)) / 1e6;
+    std::cout << "RESULT"
+              << " container=" << container_name
+              << " op=" << TestClass::op()
+              << " insert_prob=" << INSERT_PROP
+              << " lookup_prob=" << LOOKUP_PROP
+              << " dist=" << dist_option
+              << " time_total=" << std::setprecision(3) << (ts2 - ts1)
+              << " time(ns)="
+              << std::fixed << std::setprecision(3)
+              << ((ts2 - ts1) * 1e9 / actual_items)
+              << " iterations_per_sec(m)=" << std::setprecision(2)
+              << million_ops_per_sec
+              << std::endl;
+
+    std::cout << "TreeName\tSlotMax\tLevel\tRootSlt\tThreads\tLockReq\tMops/s\n"
+              << container_name << "\t"
+              << g_slot_max << "\t"
+              << g_level << "\t"
+              << g_slotuse << "\t"
+              << num_threads << "\t"
+              << g_lock_req_str << "\t"
+              << million_ops_per_sec << "\t"
+              << std::endl;
+
+    std::cout << "[Throughput] slot_max="<< g_slot_max << "; num_thread=" << num_threads << "; throughput="
+              << million_ops_per_sec << " Mops/s"
+              << std::endl;
+}
+
+#endif

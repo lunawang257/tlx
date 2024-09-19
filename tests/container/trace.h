@@ -131,7 +131,7 @@ struct GenInfo {
     std::string get_type ();
 };
 
-const uint64_t kRAND64_MAX = ((((uint64_t)RAND_MAX) << 31) + ((uint64_t)RAND_MAX));
+const uint64_t kRAND64_MAX = ((static_cast<uint64_t>(RAND_MAX) << 31) + static_cast<uint64_t>(RAND_MAX));
 const double kRAND64_MAX_D = (static_cast<double>(kRAND64_MAX));
 // const uint64_t kRANDOM_RANGE = UINT64_C (2000000000000);
 const uint64_t kRANDOM_RANGE = UINT64_C (281474976710655);  // 48 bits

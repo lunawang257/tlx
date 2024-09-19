@@ -9,6 +9,7 @@
  ******************************************************************************/
 #define TLX_BTREE_FAST_LOG
 #define TLX_BTREE_DEBUG
+#define TLX_IN_BTREE_TEST
 
 #include "cpu_compatibility.hpp"
 

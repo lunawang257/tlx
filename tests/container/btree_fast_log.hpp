@@ -204,7 +204,7 @@ struct LogInfo {
     void *addrs[NUM_STACK_TO_PRINT];
     int threadidx;
     void *node;
-    unsigned short min, max, split_key;
+    long min, max, split_key;
 
     union {
         struct { // LOG_LOCK
@@ -355,7 +355,8 @@ void log_split(void *node, int split_key) {
         log_info.lock_type_enum = lock_type_leaf_split;
         log_info.min = leafp->min_key();
         log_info.max = leafp->max_key();
-        log_info.split_key = leafp->slotdata[split_key];
+        log_info.split_key =
+            set_type::btree_impl::key_of_value::get(leafp->slotdata[split_key]);
     } else {
         set_type::btree_impl::InnerNode *innerp =
             static_cast<set_type::btree_impl::InnerNode *>(nodep);

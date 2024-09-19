@@ -135,7 +135,7 @@ std::vector<T> create_zipf_data(size_t n, double theta = 0.99) {
     for (size_t i = 0; i < n; ++i) {
         zipfian_key_list.push_back(zipf.Get());
     }
-    
+
     return zipfian_key_list;
 }
 
@@ -150,7 +150,7 @@ bool test_random_inserts(uint64_t max_size, std::seed_seq &seed, int trials, siz
     for (int cur_trial = 0; cur_trial <= trials; cur_trial++) {
         std::vector<T> data = create_random_data<T>(
             max_size, std::numeric_limits<T>::max(), seed);
-        printf("trials %d, inserts %lu; data.size=%lu; threads_num=%lu\n", cur_trial, max_size,
+        printf("trials %d, inserts %llu; data.size=%lu; threads_num=%lu\n", cur_trial, max_size,
                data.size(), threads_num);
         tlx::btree_map<
             T, T, std::less<T>,
@@ -159,7 +159,7 @@ bool test_random_inserts(uint64_t max_size, std::seed_seq &seed, int trials, siz
             concurrent_map;
         // TIME INSERTS
 
-        start_time = get_usecs();        
+        start_time = get_usecs();
         parallel_for(0, max_size, threads_num,[&](const uint32_t &i) {
             concurrent_map.insert({data[i], data[i]});
         });
@@ -167,14 +167,14 @@ bool test_random_inserts(uint64_t max_size, std::seed_seq &seed, int trials, siz
         if (cur_trial > 0) {
             insert_times.push_back(end_time - start_time);
         }
-        printf("\tDone inserting %lu elts in %lu. map size=%lu\n", max_size,
+        printf("\tDone inserting %llu elts in %llu. map size=%lu\n", max_size,
                end_time - start_time, concurrent_map.size());
 
         auto concurrent_sum = concurrent_map.psum();
-        printf("concurrent sum = %lu\n", concurrent_sum);
+        printf("concurrent sum = %llu\n", concurrent_sum);
     }
     std::sort(insert_times.begin(), insert_times.end());
-    printf("median insert time = %lu\n", insert_times[trials / 2]);
+    printf("median insert time = %llu\n", insert_times[trials / 2]);
     std::cout << "num_thread=" << threads_num << "; throughput="
               << (static_cast<double>(max_size) / insert_times[trials / 2]) << " Mops/s"
               << std::endl;
@@ -191,7 +191,7 @@ bool test_zipfian_inserts(uint64_t max_size, int trials, size_t threads_num, dou
 
     for (int cur_trial = 0; cur_trial <= trials; cur_trial++) {
         std::vector<T> data = create_zipf_data<T>(max_size, theta);
-        printf("trials %d, inserts %lu; data.size=%lu; threads_num=%lu, theta=%.3f\n", cur_trial,
+        printf("trials %d, inserts %llu; data.size=%lu; threads_num=%lu, theta=%.3f\n", cur_trial,
                max_size, data.size(), threads_num, theta);
         tlx::btree_map<
             T, T, std::less<T>,
@@ -208,11 +208,11 @@ bool test_zipfian_inserts(uint64_t max_size, int trials, size_t threads_num, dou
         if (cur_trial > 0) {
             insert_times.push_back(end_time - start_time);
         }
-        printf("\tDone inserting %lu elts in %lu. map size=%lu\n", max_size,
+        printf("\tDone inserting %llu elts in %llu. map size=%lu\n", max_size,
                end_time - start_time, concurrent_map.size());
 
         auto concurrent_sum = concurrent_map.psum();
-        printf("concurrent sum = %lu\n", concurrent_sum);
+        printf("concurrent sum = %llu\n", concurrent_sum);
         //size,leaves,inner_nodes,leaf_slots,inner_slots,avgfill_leaves
         std::cout << "[Tree states] size=" << concurrent_map.get_stats().size
         << ", inner_nodes=" << concurrent_map.get_stats().inner_nodes
@@ -224,7 +224,7 @@ bool test_zipfian_inserts(uint64_t max_size, int trials, size_t threads_num, dou
         <<std::endl;
     }
     std::sort(insert_times.begin(), insert_times.end());
-    printf("median insert time = %lu\n", insert_times[trials / 2]);
+    printf("median insert time = %llu\n", insert_times[trials / 2]);
     std::cout << "num_thread=" << threads_num << "; throughput="
               << (static_cast<double>(max_size) / insert_times[trials / 2]) << " Mops/s"
               << std::endl;
@@ -265,15 +265,15 @@ int main(int argc, char *argv[]) {
   uint32_t query_size = result["query_size"].as<int>();
   uint32_t write_csv = result["write_csv"].as<bool>();
 
-  std::cout << "Info: traials=" << trials << ", num_inserts=" << num_inserts << ", num_queries=" 
-  << num_queries << ", num_chunks=" << num_chunks << ", query_size=" << query_size << ", write_csv=" << 
+  std::cout << "Info: traials=" << trials << ", num_inserts=" << num_inserts << ", num_queries="
+  << num_queries << ", num_chunks=" << num_chunks << ", query_size=" << query_size << ", write_csv=" <<
   write_csv << ", threads_num=" << threads_num << ", theta=" << theta << std::endl;
 
   std::ofstream outfile;
-  outfile.open("insert_finds.csv", std::ios_base::app); 
+  outfile.open("insert_finds.csv", std::ios_base::app);
   outfile << "tree_type, internal bytes, leaf bytes, num_inserted, insert_time, num_finds, find_time, \n";
   outfile.close();
-  outfile.open("range_queries.csv", std::ios_base::app); 
+  outfile.open("range_queries.csv", std::ios_base::app);
   outfile << "tree_type, internal bytes, leaf bytes, num_inserted,num_range_queries, max_query_size,  unsorted_query_time, sorted_query_time, \n";
   outfile.close();
 

@@ -5655,7 +5655,7 @@ private:
 
     //! \}
 
-#ifdef TLX_BTREE_DEBUG
+#if 1
 
 public:
     //! \name Debug Printing
