@@ -28,7 +28,8 @@ struct SpeedTestType {
 
     using UniDistKeyT = std::uniform_int_distribution<key_type>;
 
-    using val_type = std::pair<key_type, long_val_type<ValSize>>;
+    using data_type = long_val_type<ValSize>;
+    using val_type = std::pair<key_type, data_type>;
     using key_compare = std::less<key_type>;  // Default comparison function
     using traits = tlx::btree_default_traits<key_type,
                         val_type,
@@ -40,7 +41,7 @@ struct SpeedTestType {
 
     // Define test_map_type using the btree_map with the specified types
     using test_map_type = tlx::btree_map<key_type,
-                                        long_val_type<ValSize>,
+                                        data_type,
                                         key_compare,
                                         traits,
                                         allocator_type, true>;
@@ -71,12 +72,12 @@ struct SpeedTestType {
                                                 UniDistKeyT& key_dist,
                                                 const key_type key) {
         // Generate random value for long_val_type
-        long_val_type<ValSize> data;
+        data_type data;
 
         // Fill the value array with random characters
-        std::generate(std::begin(data.value), std::end(data.value), [&]() {
-            return static_cast<char>(key_dist(rng));
-        });
+        for (int i = 0; i < ValSize; ++i) {
+            data.value[i] = static_cast<char>(key_dist(rng));
+        }
 
         return test_value_type(key, data);
     }

@@ -21,7 +21,7 @@ command_formats = [
 
 if fast_compile:
     slot_max_list = [32, 256]
-    value_size_list = [32, 256]
+    value_size_list = [0, 32, 256]
     # only leave the command you want to measure
     command_formats = [
         #'RUN_MAPLIZE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
@@ -39,7 +39,7 @@ with open('leaf-perf-run-all-options.hpp', 'w') as f:
                 max_slice_size_exp = int(math.log2(slot_max// 2))
                 slice_size_list = [2 ** i for i in range(3, max_slice_size_exp + 1)]
                 for slice_size in slice_size_list:
-                    for slice_size_max in [slice_size + 1, int(slice_size * 1.5), slice_size * 2, slice_size * 3]:
+                    for slice_size_max in [slice_size + 1, int(slice_size * 1.5), slice_size * 2]: #, slice_size * 3]:
                             if slice_size_max > slot_max: break
                             line = command_format.format(slot_max=slot_max,
                                                         value_size=value_size,

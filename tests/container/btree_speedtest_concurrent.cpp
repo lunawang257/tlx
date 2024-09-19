@@ -432,7 +432,7 @@ struct TestType {
         allocator_type, true /* concurrent */>;
 
 #if 0 // TODO: switch to map
-    using val_type = std::pair<key_type, long_val_type<ValSize>>;
+    using val_type = std::pair<key_type, data_type>;
     using allocator_type = std::allocator<val_type>;
 
     using set_type = tlx::btree_map<

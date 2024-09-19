@@ -33,9 +33,13 @@ enum TestOption {
     MAPLIZE,
     SCAN,
     BTREEMIX,
-    ZIPF,
-    UNIFORM,
     INVALID
+};
+
+enum {
+    UNIFORM,
+    ZIPF,
+    INVALID_DIST
 };
 
 // Function to map string to enum
@@ -45,11 +49,16 @@ TestOption stringToTestOption(const std::string& str) {
     else if (str == "maplize") return MAPLIZE;
     else if (str == "scan") return SCAN;
     else if (str == "btreemix") return BTREEMIX;
-    else if (str == "zipf") return ZIPF;
-    else if (str == "uniform") return UNIFORM;
     else return INVALID;
 }
 
+int stringToDist(const std::string& str) {
+    if (str == "zipf") return ZIPF;
+    else if (str == "uniform") return UNIFORM;
+    else return INVALID_DIST;
+}
+
+/*
 // Helper function to convert enum to string (for debugging)
 std::string testOptionToString(TestOption opt) {
     switch (opt) {
@@ -58,12 +67,18 @@ std::string testOptionToString(TestOption opt) {
         case MAPLIZE: return "maplize";
         case SCAN: return "scan";
         case BTREEMIX: return "btreemix";
-        case ZIPF: return "zipf";
-        case UNIFORM: return "uniform";
         default: return "invalid";
     }
 }
 
+std::string testOptionToString(int opt) {
+    switch (opt) {
+    case ZIPF: return "zipf";
+    case UNIFORM: return "uniform";
+    default: return "invalid-dist";
+    }
+}
+*/
 int main(int argc, char* argv[]) {
     // Define long options
     static struct option long_options[] = {
@@ -105,8 +120,8 @@ int main(int argc, char* argv[]) {
     while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:", long_options, &option_index)) != -1) {
         switch (c) {
         case 'd': { // dist
-            TestOption option = stringToTestOption(optarg);
-            if (option != INVALID) {
+            int option = stringToDist(optarg);
+            if (option != INVALID_DIST) {
                 dist_option = optarg;
             } else {
                 std::cerr << "Invalid test option: " << optarg << "\n";
@@ -194,6 +209,8 @@ int main(int argc, char* argv[]) {
               << "LOOKUP_PROP=" << LOOKUP_PROP << "\t"
               << std::endl;
 
+    std::cout << "pid: " << getpid() << std::endl;
+
 #define RUN_MAPLIZE(slots, size, slice, slice_max)                      \
     if (testOptions.contains(MAPLIZE) &&                                \
         slot_max == (slots) &&                                          \
@@ -261,15 +278,16 @@ int main(int argc, char* argv[]) {
         slice_size_max == (slice_max)) {                                \
             std::stringstream ss;                                       \
             ss << "btree_mix" << "\t"                                   \
-               << slots << "\t" \
-               << size << "\t" \
-               << slice << "\t" \
-               << slice_max << "\t" \
-               << num_threads << "\t" \
+               << slots << "\t"                                         \
+               << size << "\t"                                          \
+               << slice << "\t"                                         \
+               << slice_max << "\t"                                     \
+               << num_threads << "\t"                                   \
                << maplize_threshold;                                    \
-            btreemix_runner_loop<                                \
-            Test_Set_MixedOp<SpeedTestType<slots, size, slice, slice_max>>>( \
-                NUM_ITERATIONS,ss.str(), num_threads, dist_option);                            \
+            btreemix_runner_loop<                                       \
+                Test_Set_MixedOp<SpeedTestType<                         \
+                    slots, size, slice, slice_max>>>(                   \
+                NUM_ITERATIONS,ss.str(), num_threads, dist_option);     \
         test_invoked = true;                                            \
     }
 

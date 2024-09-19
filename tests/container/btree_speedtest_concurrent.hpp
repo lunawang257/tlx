@@ -29,7 +29,8 @@ template <typename SpeedTestT>
 class Test_Set_MixedOp {
 private:
     using MapType = SpeedTestT::test_map_type;
-    using ValType = SpeedTestT::test_value_type;
+    using ValType = SpeedTestT::test_value_type; // pair of key and data
+    using DataType = SpeedTestT::data_type; // data
 
 public:
     double duration = 0.0;
@@ -89,13 +90,13 @@ private:
     }
 
     void mixed_ops(int id, int iterations, int total_threads) {
-        // TODO std::mt19937 gen(seed + id);
-        std::mt19937 gen(std::random_device{}() + id);
+        std::mt19937 gen(seed + id);
 
         std::uniform_int_distribution<> dist(0, 99); //which operation to us
 
         key_type max_key = iterations * key_space_factor; //TODO: CHECK
-        typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
+        //typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
+        std::uniform_int_distribution<> uniform_dist(0, max_key);
 
         int zipseed = static_cast<int>(std::time(nullptr));
         util::TraceZipfian zipf_dist(zipseed, 0, max_key, 0.99);
@@ -122,7 +123,7 @@ private:
             int operation = dist(gen);
 
             if (operation < insert_prob) {
-                ValType val = SpeedTestT::generate_random_value(gen, uniform_dist, key);
+                ValType val = ValType(key, DataType());
                 bool succeeded = my_map.insert(val).second;
                 ++thread_states[id].count;
                 thread_states[id].rc += succeeded;
@@ -176,7 +177,7 @@ public:
 
 //! Repeat (short) tests until enough time elapsed and divide by the repeat.
 template <typename TestClass>
-void btreemix_runner_loop(size_t iterations,
+void btreemix_runner_loop(size_t items,
                           const std::string& container_name,
                           const int num_threads = 1,
                           const std::string& dist_option = "") {
@@ -184,20 +185,21 @@ void btreemix_runner_loop(size_t iterations,
     double ts1, ts2, duration;
     size_t actual_items = 0;
     double min_run_time = 1.0;
+    size_t repeat_until = items * start_repeat;
 
     do {
         // count timed tests
         duration = 0.0;
-        actual_items = iterations;
+        actual_items = items;
 
         {
             // initialize test structures
-            TestClass test(iterations, num_threads, dist_option);
+            TestClass test(items, num_threads, dist_option);
 
             ts1 = tlx::timestamp();
 
             // run timed test procedure
-            test.run(iterations, start_repeat);
+            test.run(items, repeat_until);
 
             ts2 = tlx::timestamp();
 
@@ -207,16 +209,16 @@ void btreemix_runner_loop(size_t iterations,
             }
         }
 
-        std::cout << "Insert=" << iterations << " repeat=" << start_repeat / iterations
-                  << " start_repeat=" << start_repeat << " time=" << (ts2 - ts1);
+        std::cout << "Insert=" << items << " repeat=" << repeat_until / items
+                  << " repeat_until=" << repeat_until << " time=" << (ts2 - ts1);
         if (duration != 0.0) {
             std::cout << " real time " << std::setprecision(9) << duration
-                      << " real total iterations " << actual_items;
+                      << " real total items " << actual_items;
         }
         std::cout << "\n";
 
         // discard and repeat if test took less than one second.
-        if ((ts2 - ts1) < min_run_time || duration < min_run_time) start_repeat *= 2;
+        if ((ts2 - ts1) < min_run_time || duration < min_run_time) repeat_until *= 2;
     }
     while ((ts2 - ts1) < min_run_time || duration < min_run_time);
 
@@ -236,22 +238,17 @@ void btreemix_runner_loop(size_t iterations,
               << " time(ns)="
               << std::fixed << std::setprecision(3)
               << ((ts2 - ts1) * 1e9 / actual_items)
-              << " iterations_per_sec(m)=" << std::setprecision(2)
+              << " items_per_sec(m)=" << std::setprecision(2)
               << million_ops_per_sec
-              << std::endl;
-
-    std::cout << "TreeName\tSlotMax\tLevel\tRootSlt\tThreads\tLockReq\tMops/s\n"
-              << container_name << "\t"
-              << g_slot_max << "\t"
-              << g_level << "\t"
-              << g_slotuse << "\t"
-              << num_threads << "\t"
-              << g_lock_req_str << "\t"
-              << million_ops_per_sec << "\t"
               << std::endl;
 
     std::cout << "[Throughput] slot_max="<< g_slot_max << "; num_thread=" << num_threads << "; throughput="
               << million_ops_per_sec << " Mops/s"
+              << std::endl;
+
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tMops/s\n"
+              << container_name << "\t"
+              << million_ops_per_sec << "\t"
               << std::endl;
 }
 
