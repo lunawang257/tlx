@@ -10,19 +10,20 @@ fi
 
 # smaller will reduce run time
 REPEAT=64
-MAX_THREAD=4
+MAX_THREAD=6
 N=102400
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_controller"
 
 rm -f /tmp/out
 
-for slotMax in 256 ; do
-   valSize=$slotMax
-   for maplize_threshold in 0 100 ; do
-      for ((thread=1;thread<=$MAX_THREAD;thread++)); do
-         printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
-         cmd="$prog \
+for slotMax in 128 256 512 ; do
+  for valSize in 0 128 256 512 ; do
+    for maplize_threshold in 0 100 ; do
+      for dist in zipf uniform ; do
+        for ((thread=1;thread<=$MAX_THREAD;thread++)); do
+          printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
+          cmd="$prog \
 --test btreemix \
 --slot-max $slotMax \
 --val-size $valSize \
@@ -31,18 +32,22 @@ for slotMax in 256 ; do
 --slice-size 32 \
 --slice-size-max 64 \
 --maplize-threshhold $maplize_threshold \
---dist zipf > /tmp/one-out"
-         echo "$cmd"
-         if [ "$dryrun" != "1" ] ; then
+-I 34 \
+-L 33 \
+--dist $dist > /tmp/one-out"
+          echo "$cmd"
+          if [ "$dryrun" != "1" ] ; then
             eval $cmd
             if [ ! -f "/tmp/out" ]; then
-               tail -2 /tmp/one-out
-               tail -2 /tmp/one-out > /tmp/out
+              tail -2 /tmp/one-out
+              tail -2 /tmp/one-out > /tmp/out
             else
-               tail -1 /tmp/one-out
-               tail -1 /tmp/one-out >> /tmp/out
+              tail -1 /tmp/one-out
+              tail -1 /tmp/one-out >> /tmp/out
             fi
-         fi
+          fi
+        done
       done
-   done
+    done
+  done
 done

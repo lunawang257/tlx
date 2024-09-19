@@ -748,9 +748,9 @@ public:
                 upgradewaiting++;
                 log_lock(nodep, lock_type_upgrade_wait, -1);
                 upgradecv.wait_for(lock, std::chrono::microseconds(1), [this]() {
-                    int64_t reader_count = numreader.get();
-                    TLX_BTREE_ASSERT(reader_count >= 0);
-                    return !this->haswriter && reader_count == 0;
+                    int64_t reader_cnt = numreader.get();
+                    TLX_BTREE_ASSERT(reader_cnt >= 0);
+                    return !this->haswriter && reader_cnt == 0;
                 });
                 upgradewaiting--;
             }
@@ -773,11 +773,11 @@ public:
                 if (!haswriter && upgradewaiting <= 0 && reader_count == 0) break;
                 writerswaiting++;
                 writecv.wait_for(lock, std::chrono::microseconds(1), [this](){
-                    int64_t reader_count = numreader.get();
-                    TLX_BTREE_ASSERT(reader_count >= 0);
+                    int64_t reader_cnt = numreader.get();
+                    TLX_BTREE_ASSERT(reader_cnt >= 0);
                     return !this->haswriter &&
                         this->upgradewaiting == 0 &&
-                        reader_count == 0;
+                        reader_cnt == 0;
                 });
                 writerswaiting--;
             }

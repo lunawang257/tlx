@@ -13,16 +13,16 @@
 
 #include "cpu_compatibility.hpp"
 
-#if defined(TLX_BTREE_FAST_LOG) && defined(TLX_BTREE_DEBUG) && !defined(NDEBUG)
-extern void before_assert(void);
-#else
-inline void before_assert(void) {}
-#endif
+//#if defined(TLX_BTREE_FAST_LOG) && defined(TLX_BTREE_DEBUG) && !defined(NDEBUG)
+//extern void before_assert(void);
+//#else
+//inline void before_assert(void) {}
+//#endif
 
-#include <tlx/container/slow_lock_btree_map.hpp>
+//#include <tlx/container/slow_lock_btree_map.hpp>
 #include <tlx/container/btree_multimap.hpp>
 #include <tlx/container/btree_multiset.hpp>
-#include <tlx/container/slow_lock_btree_set.hpp>
+//#include <tlx/container/slow_lock_btree_set.hpp>
 #include <tlx/container/btree_set.hpp>
 #include <tlx/container/btree_map.hpp>
 

@@ -394,7 +394,7 @@ public:
         }
 
         const key_type& key(size_t s) const {
-            TLX_BTREE_ASSERT(s >= 0 && s < static_cast<size_t>(slotuse) &&
+            TLX_BTREE_ASSERT(s < static_cast<size_t>(slotuse) &&
                              slotuse <= slice_sizemax);
             idx_t slot = index_array[s];
             TLX_BTREE_ASSERT(slot >= 0 && slot < mapl->free_slot_end);
@@ -1259,7 +1259,7 @@ public:
         bool should_maplize() {
             TLX_BTREE_ASSERT(!mapl);
             int percent = mutex_.con_tracker.percent_waited();
-            return percent >= maplize_threshold && node::slotuse >= 2 * slice_size;
+            return percent > maplize_threshold && node::slotuse >= 2 * slice_size;
         }
 
         void maplize() {
@@ -1424,10 +1424,9 @@ public:
             while (idx != mapl->free_slot_end) {
                 os << idx << " ";
                 if (idx < leaf_slotmax)
-                    idx = *reinterpret_cast<const idx_t*>(&slotdata[idx]);
+                    std::memcpy(&idx, &slotdata[idx], sizeof(idx_t));
                 else
-                    idx = *reinterpret_cast<const idx_t*>(
-                        &mapl->extra[idx - leaf_slotmax]);
+                    std::memcpy(&idx, &mapl->extra[idx - leaf_slotmax], sizeof(idx_t));
             }
             os << "\n";
         }
@@ -2427,7 +2426,7 @@ private:
             }
             std::allocator_traits<typename LeafNode::alloc_type>::destroy(a, ln);
 #ifndef NDEBUG
-            memset(ln, GARBAGE, sizeof(LeafNode));
+            memset(reinterpret_cast<char*>(ln), GARBAGE, sizeof(LeafNode));
 #endif
             std::allocator_traits<typename LeafNode::alloc_type>::deallocate(a, ln, 1);
             --stats_.leaves;
@@ -2444,7 +2443,7 @@ private:
 #endif
             std::allocator_traits<typename InnerNode::alloc_type>::destroy(a, in);
 #ifndef NDEBUG
-            memset(in, GARBAGE, sizeof(InnerNode));
+            memset(reinterpret_cast<char*>(in), GARBAGE, sizeof(InnerNode));
 #endif
             std::allocator_traits<typename InnerNode::alloc_type>::deallocate(a, in, 1);
             --stats_.inner_nodes;

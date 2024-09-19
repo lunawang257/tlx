@@ -685,7 +685,7 @@ int main(int argc, char *argv[]) {
             break;
         case 'T':
             maplize_threshold = atol(optarg);
-            if (maplize_threshold < 0 || maplize_threshold > 100) {
+            if (maplize_threshold > 100) {
                 std::cerr << "Invalid maplize threshold " << optarg << " must be 0-100\n";
             }
             break;

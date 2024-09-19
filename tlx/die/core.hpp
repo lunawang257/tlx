@@ -17,7 +17,7 @@
 #include <stdexcept>
 #include <string>
 
-#ifdef TLX_BTREE_FAST_LOG
+#if defined(TLX_BTREE_FAST_LOG) && defined(TLX_BTREE_DEBUG) && !defined(NDEBUG)
 extern void before_assert(void);
 #else
 inline void before_assert(void) {}

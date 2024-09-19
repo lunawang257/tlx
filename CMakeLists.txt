@@ -111,7 +111,7 @@ if(NOT MSVC)
   ### Linux/Unix-like Build Environment ########################################
 
   # enable warnings
-  set(CMAKE_CXX_FLAGS "-g -W -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
+  set(CMAKE_CXX_FLAGS "-g -W -Wall -Wextra -Wno-interference-size -fPIC ${CMAKE_CXX_FLAGS}")
 
   # test availability of -std=c++XX version
   include(CheckCXXCompilerFlag)
