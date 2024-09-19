@@ -25,7 +25,7 @@ private:
     static const int seed = 1;
 
 public:
-static void output_result(const std::string &result_stream, bool is_mapl = false) {
+static void output_result(const std::stringstream& result_stream, bool is_mapl = false) {
     std::cout << "MaxSlots=" << TestSlotMax << "\t"
               << " ValueSize=" << ValSize << "\t"
               << " SliceSize=" << SliceSize << "\t"
@@ -37,7 +37,7 @@ static void output_result(const std::string &result_stream, bool is_mapl = false
             std::cout
             << "MaplOverhead=" << "\t";
     }
-    std::cout << result_stream << "\t"
+    std::cout << result_stream.str() << "\t"
               << std::endl;
 }
 
@@ -373,8 +373,12 @@ static void test_maplize_perf() {
     double avg_maplize_time = (maplize_count > 0) ? total_maplize_time.count() / maplize_count : 0.0;
     double avg_unmaplize_time = (unmaplize_count > 0) ? total_unmaplize_time.count() / unmaplize_count : 0.0;
 
-    output_result(std::format("Average maplize time={:.6f}us", avg_maplize_time * 1e6), true);
-    output_result(std::format("Average unmaplize time={:.6f}us", avg_unmaplize_time * 1e6), false);
+    std::stringstream maple_ss, unmapl_ss;
+    maple_ss << "Average maplize time=" << avg_maplize_time * 1e6;
+    output_result(maple_ss, true);
+
+    unmapl_ss << "Average unmaplize time=" << avg_unmaplize_time * 1e6 << "\t";
+    output_result(unmapl_ss, false);
 }
 
 // Main performance test function for lookup
