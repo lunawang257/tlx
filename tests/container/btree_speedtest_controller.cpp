@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
     bool test_invoked = false;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "m:t:i:s:S:v:h:M:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:", long_options, &option_index)) != -1) {
         switch (c) {
         case 'd': { // dist
             TestOption option = stringToTestOption(optarg);
