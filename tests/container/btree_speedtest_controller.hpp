@@ -3,6 +3,18 @@
 
 #include <tlx/container/btree_map.hpp>
 
+// Define an enum to represent test options
+enum TestOption {
+    UPDATE,
+    LOOKUP,
+    MAPLIZE,
+    SCAN,
+    BTREEMIX,
+    ZIPF,
+    UNIFORM,
+    INVALID
+};
+
 const int MAX_KEY_RANGE = 100;
 const int LEAF_ARRAY_SIZE = 1000;
 int NUM_ITERATIONS = 100000;

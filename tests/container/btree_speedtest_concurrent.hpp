@@ -50,7 +50,7 @@ private:
 
         key_type key;
         while (my_map.tree_.size() < num_items) {
-            if (dist_option == "zipf") {
+            if (dist_option == ZIPF) {
                 key = zipf_dist.Next();
             } else {
                 key = uniform_dist(gen);
@@ -66,7 +66,7 @@ private:
 public:
     Test_Set_MixedOp(size_t iterations,
                     size_t num_threads = 1,
-                    const std::string& d_option = "") {
+                    const TestOption d_option = ZIPF) {
         insert_random_values(iterations);
 
         cur_numthreads = num_threads;
@@ -85,7 +85,7 @@ private:
     std::atomic<int> num_stopped = 0;
     double ts_start = 0.0, ts_stop = 0.0;
     size_t cur_numthreads = 0;
-    std::string dist_option = "";
+    TestOption dist_option = ZIPF;
 
     struct alignas(128) thread_state { // align to cache line
         int count;
@@ -127,7 +127,7 @@ private:
 
         key_type key;
         for (int i = 0; !stop && i < iterations; ++i) {
-            if (dist_option == "zipf") {
+            if (dist_option == ZIPF) {
                 key = zipf_dist.Next();
             } else {
                 key = uniform_dist(gen);
@@ -193,7 +193,7 @@ template <typename TestClass>
 void btreemix_runner_loop(size_t items,
                           const std::string& container_name,
                           const int num_threads = 1,
-                          const std::string& dist_option = "") {
+                          const TestOption dist_option = ZIPF) {
 
     double ts1, ts2, duration;
     size_t actual_items = 0;

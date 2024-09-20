@@ -7,7 +7,7 @@
 
 const char* help_message = R"(
 Usage:
-  -d --dist [zipf|uniform]          Workload distribution
+  -d --dist [num]                   Workload distribution, zipf|uniform
   -h --help                         Show this help message
   -i --iteration [num]              Number of iterations
   -I --insert-prop [num]            Insert Proportion
@@ -26,22 +26,6 @@ Usage:
   -v --val-size [num]               Value size
 )";
 
-// Define an enum to represent test options
-enum TestOption {
-    UPDATE,
-    LOOKUP,
-    MAPLIZE,
-    SCAN,
-    BTREEMIX,
-    INVALID
-};
-
-enum {
-    UNIFORM,
-    ZIPF,
-    INVALID_DIST
-};
-
 // Function to map string to enum
 TestOption stringToTestOption(const std::string& str) {
     if (str == "update") return UPDATE;
@@ -49,36 +33,11 @@ TestOption stringToTestOption(const std::string& str) {
     else if (str == "maplize") return MAPLIZE;
     else if (str == "scan") return SCAN;
     else if (str == "btreemix") return BTREEMIX;
+    else if (str == "zipf") return ZIPF;
+    else if (str == "uniform") return UNIFORM;
     else return INVALID;
 }
 
-int stringToDist(const std::string& str) {
-    if (str == "zipf") return ZIPF;
-    else if (str == "uniform") return UNIFORM;
-    else return INVALID_DIST;
-}
-
-/*
-// Helper function to convert enum to string (for debugging)
-std::string testOptionToString(TestOption opt) {
-    switch (opt) {
-        case UPDATE: return "update";
-        case LOOKUP: return "lookup";
-        case MAPLIZE: return "maplize";
-        case SCAN: return "scan";
-        case BTREEMIX: return "btreemix";
-        default: return "invalid";
-    }
-}
-
-std::string testOptionToString(int opt) {
-    switch (opt) {
-    case ZIPF: return "zipf";
-    case UNIFORM: return "uniform";
-    default: return "invalid-dist";
-    }
-}
-*/
 int main(int argc, char* argv[]) {
     // Define long options
     static struct option long_options[] = {
@@ -109,7 +68,7 @@ int main(int argc, char* argv[]) {
     int is_mapl = 0;
     int num_threads = 0;
     std::string test_option = "";
-    std::string dist_option = "";
+    TestOption dist_option = ZIPF;
 
     int option_index = 0;
     int c;
@@ -120,11 +79,10 @@ int main(int argc, char* argv[]) {
     while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:", long_options, &option_index)) != -1) {
         switch (c) {
         case 'd': { // dist
-            int option = stringToDist(optarg);
-            if (option != INVALID_DIST) {
-                dist_option = optarg;
-            } else {
-                std::cerr << "Invalid test option: " << optarg << "\n";
+            dist_option = stringToTestOption(optarg);
+            if (dist_option != ZIPF &&
+                dist_option != UNIFORM) {
+                std::cerr << "Invalid dist option: " << optarg << "\n";
                 std::cerr << help_message;
                 return 1;
             }
