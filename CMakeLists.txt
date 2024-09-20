@@ -18,6 +18,11 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/misc/cmake)
 # project
 project(tlx)
 
+# Set the C++ standard to C++20
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_CXX_EXTENSIONS OFF)  # Optional: Ensures standard compliance
+
 include_directories("${PROJECT_SOURCE_DIR}/tlx")
 include_directories("${PROJECT_SOURCE_DIR}/tlx/container")
 
@@ -111,7 +116,8 @@ if(NOT MSVC)
   ### Linux/Unix-like Build Environment ########################################
 
   # enable warnings
-  set(CMAKE_CXX_FLAGS "-g -W -Wall -Wextra -Wno-interference-size -fPIC ${CMAKE_CXX_FLAGS}")
+  #set(CMAKE_CXX_FLAGS "-g -W -Wall -Wextra -Wno-interference-size -fPIC ${CMAKE_CXX_FLAGS}")
+  set(CMAKE_CXX_FLAGS "-g -W -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
 
   # test availability of -std=c++XX version
   include(CheckCXXCompilerFlag)
@@ -206,6 +212,7 @@ if(NOT MSVC)
     #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wsign-promo")
     #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
     #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wsuggest-override")
+    add_compile_options(-Wno-interference-size)
   endif()
   # enable extra warnings on clang
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
