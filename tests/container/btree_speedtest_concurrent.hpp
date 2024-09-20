@@ -42,8 +42,21 @@ private:
     void insert_random_values(const size_t num_items) {
         std::mt19937 gen(seed);
 
+        key_type max_key = num_items * key_space_factor; //TODO: CHECK
+        typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
+
+        int zipseed = static_cast<int>(std::time(nullptr));
+        util::TraceZipfian zipf_dist(zipseed, 0, max_key, 0.99);
+
+        key_type key;
         while (my_map.tree_.size() < num_items) {
-            ValType val = SpeedTestT::generate_random_value(gen, num_items * key_space_factor); //random value
+            if (dist_option == "zipf") {
+                key = zipf_dist.Next();
+            } else {
+                key = uniform_dist(gen);
+            }
+
+            ValType val = SpeedTestT::generate_random_value(gen, uniform_dist, key); //random value
             my_map.insert(val);
         }
 
@@ -92,7 +105,7 @@ private:
     void mixed_ops(int id, int iterations, int total_threads) {
         std::mt19937 gen(seed + id);
 
-        std::uniform_int_distribution<> dist(0, 99); //which operation to us
+        std::uniform_int_distribution<> dist(0, 99); //which operation to use
 
         key_type max_key = iterations * key_space_factor; //TODO: CHECK
         //typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
@@ -246,8 +259,11 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tMops/s\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsert_P\tLookup_P\tMops/s\n"
               << container_name << "\t"
+              << dist_option << "\t"
+              << INSERT_PROP << "\t"
+              << LOOKUP_PROP << "\t"
               << million_ops_per_sec << "\t"
               << std::endl;
 }

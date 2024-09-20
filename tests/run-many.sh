@@ -10,15 +10,15 @@ fi
 
 # smaller will reduce run time
 REPEAT=64
-MAX_THREAD=6
+MAX_THREAD=4
 N=102400
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_controller"
 
 rm -f /tmp/out
 
-for slotMax in 128 256 512 ; do
-  for valSize in 0 128 256 512 ; do
+for slotMax in 256 ; do
+  for valSize in 0 256 ; do
     for maplize_threshold in 0 100 ; do
       for dist in zipf uniform ; do
         for ((thread=1;thread<=$MAX_THREAD;thread++)); do
