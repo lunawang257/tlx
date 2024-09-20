@@ -71,7 +71,7 @@ for slotMax in 512 ; do
                     fi
                     # generate perf profile on Linux
                     if [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
-                        gprof "$prog" gmon.out > "$out-gmon-$runName.txt"
+                        gprof "$prog" gmon.out | sed 's/(unsigned short)//g' | > "$out-gmon-$runName.txt"
                         rm gmon.out
                     fi
                 done
