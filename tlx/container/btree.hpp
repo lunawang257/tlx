@@ -401,7 +401,11 @@ public:
             if (slot < leaf_slotmax)
                 return key_of_value::get(mapl->slotdatap[slot]);
             else
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds="
+#pragma GCC diagnostic ignored "-Wzero-length-bounds"
                 return key_of_value::get(mapl->extra[slot - leaf_slotmax]);
+#pragma GCC diagnostic pop
         }
 
         int get_ind(idx_t i) const {
@@ -583,10 +587,14 @@ public:
             TLX_BTREE_ASSERT(new_slot_idx < free_slot_end);
             if (new_slot_idx < leaf_slotmax) {
                 new_slot = &slotdatap[new_slot_idx];
-                free_slot_head = *reinterpret_cast<idx_t*>(new_slot);
+                memcpy(&free_slot_head, new_slot, sizeof(idx_t));
             } else {
+#pragma GCC diagnostic push // TODO: remove extra
+#pragma GCC diagnostic ignored "-Warray-bounds="
+#pragma GCC diagnostic ignored "-Wzero-length-bounds"
                 new_slot = &extra[new_slot_idx - leaf_slotmax];
-                free_slot_head = *reinterpret_cast<idx_t*>(new_slot);
+#pragma GCC diagnostic pop
+                memcpy(&free_slot_head, new_slot, sizeof(idx_t));
             }
             (*slotusep)++; // must update with free_slot_mtx locked
             TLX_BTREE_ASSERT(*slotusep > 0 && *slotusep <= leaf_slotmax);
@@ -635,11 +643,17 @@ public:
 
             idx_t* idx_ar = slices[slicenum].index_array;
             idx_t end = idx_ar[pos];
+#pragma GCC diagnostic push // should use std::variant instead
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
             if (end < leaf_slotmax) {
-                *reinterpret_cast<idx_t*>(&slotdatap[end]) = free_slot_head;
+                std::memcpy(&slotdatap[end], &free_slot_head, sizeof(idx_t));
             } else {
-                *reinterpret_cast<idx_t*>(&extra[end - leaf_slotmax]) = free_slot_head;
+#pragma GCC diagnostic ignored "-Warray-bounds="
+#pragma GCC diagnostic ignored "-Wzero-length-bounds"
+                std::memcpy(&extra[end - leaf_slotmax], &free_slot_head,
+                            sizeof(idx_t));
             }
+#pragma GCC diagnostic pop
 
             free_slot_head = end;
 
@@ -1374,7 +1388,11 @@ public:
             if (idx < leaf_slotmax) {
                 return slotdata[idx];
             } else {
+#pragma GCC diagnostic push // TODO: remove extra
+#pragma GCC diagnostic ignored "-Warray-bounds="
+#pragma GCC diagnostic ignored "-Wzero-length-bounds"
                 return mapl->extra[idx - leaf_slotmax];
+#pragma GCC diagnostic pop
             }
         }
 
@@ -1403,9 +1421,13 @@ public:
                     if (idx < leaf_slotmax) {
                         os << idx << ":" << key_of_value::get(slotdata[idx]) << " ";
                     } else {
+#pragma GCC diagnostic push // TODO: remove extra
+#pragma GCC diagnostic ignored "-Warray-bounds="
+#pragma GCC diagnostic ignored "-Wzero-length-bounds"
                         os << idx << ":"
                            << key_of_value::get(
                                mapl->extra[idx - leaf_slotmax]) << " ";
+#pragma GCC diagnostic pop
                     }
                 }
                 os << "\n";
@@ -1426,7 +1448,11 @@ public:
                 if (idx < leaf_slotmax)
                     std::memcpy(&idx, &slotdata[idx], sizeof(idx_t));
                 else
+#pragma GCC diagnostic push // TODO: remove extra
+#pragma GCC diagnostic ignored "-Warray-bounds="
+#pragma GCC diagnostic ignored "-Wzero-length-bounds"
                     std::memcpy(&idx, &mapl->extra[idx - leaf_slotmax], sizeof(idx_t));
+#pragma GCC diagnostic pop // TODO: remove extra
             }
             os << "\n";
         }
@@ -4273,7 +4299,7 @@ private:
             bool left_leaf_locked __attribute__((unused)) = false;
             bool right_leaf_locked __attribute__((unused)) = false;
             LeafNode* leaf = static_cast<LeafNode*>(curr);
-            int slicenum;
+            int slicenum = -1;
 
             if constexpr (concurrent) {
                 if constexpr (optimism) {
@@ -4583,6 +4609,7 @@ private:
                 if (!leaf->mapl) leaf->mutex_.write_unlock();
                 else {
                     if constexpr (optimism) {
+                        TLX_BTREE_ASSERT(slicenum != -1);
                         leaf->mapl->slices[slicenum].lock.write_unlock();
                         leaf->mutex_.read_unlock(cpu_id);
                     } else {

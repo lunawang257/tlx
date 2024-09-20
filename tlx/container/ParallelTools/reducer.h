@@ -30,6 +30,12 @@ template <class F> class Reducer {
 
   struct aligned_f {
     alignas(hardware_destructive_interference_size) F f;
+
+    aligned_f() noexcept = default;
+    aligned_f(const aligned_f&) noexcept = default;
+    aligned_f(aligned_f&&) noexcept = default;
+    aligned_f& operator=(const aligned_f&) noexcept = default;
+    aligned_f& operator=(aligned_f&&) noexcept = default;
   };
   std::vector<aligned_f> data;
 

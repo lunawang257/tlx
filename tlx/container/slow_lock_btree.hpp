@@ -682,14 +682,14 @@ public:
 
             bool added_ref = false;
             addtoread();
-            if (!check_writer.test(std::memory_order_acq_rel)) { // no writers
+            if (!check_writer.test(std::memory_order_seq_cst)) { // no writers
                 // race: writer may come in now, must re-check check_writer later
                 numreader.add(1, local_thread_id);
                 added_ref = true;
             }
 
             // check again to avoid the race above
-            if (check_writer.test(std::memory_order_acq_rel)) {
+            if (check_writer.test(std::memory_order_seq_cst)) {
                 lock_type lock(mutex);
                 if (added_ref) {
                     numreader.add(-1, local_thread_id);

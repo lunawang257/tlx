@@ -11,6 +11,7 @@
 #include <set>
 #include <thread>
 #include <vector>
+#include <inttypes.h>
 
 #include "ParallelTools/reducer.h"
 #include "container/btree_map.hpp"
@@ -150,7 +151,7 @@ bool test_random_inserts(uint64_t max_size, std::seed_seq &seed, int trials, siz
     for (int cur_trial = 0; cur_trial <= trials; cur_trial++) {
         std::vector<T> data = create_random_data<T>(
             max_size, std::numeric_limits<T>::max(), seed);
-        printf("trials %d, inserts %llu; data.size=%lu; threads_num=%lu\n", cur_trial, max_size,
+        printf("trials %d, inserts %" PRIu64 "; data.size=%lu; threads_num=%lu\n", cur_trial, max_size,
                data.size(), threads_num);
         tlx::btree_map<
             T, T, std::less<T>,
@@ -167,14 +168,14 @@ bool test_random_inserts(uint64_t max_size, std::seed_seq &seed, int trials, siz
         if (cur_trial > 0) {
             insert_times.push_back(end_time - start_time);
         }
-        printf("\tDone inserting %llu elts in %llu. map size=%lu\n", max_size,
+        printf("\tDone inserting %" PRIu64 " elts in %" PRIu64 ". map size=%lu\n", max_size,
                end_time - start_time, concurrent_map.size());
 
         auto concurrent_sum = concurrent_map.psum();
-        printf("concurrent sum = %llu\n", concurrent_sum);
+        printf("concurrent sum = %" PRIu64 "\n", concurrent_sum);
     }
     std::sort(insert_times.begin(), insert_times.end());
-    printf("median insert time = %llu\n", insert_times[trials / 2]);
+    printf("median insert time = %" PRIu64 "\n", insert_times[trials / 2]);
     std::cout << "num_thread=" << threads_num << "; throughput="
               << (static_cast<double>(max_size) / insert_times[trials / 2]) << " Mops/s"
               << std::endl;
@@ -191,7 +192,7 @@ bool test_zipfian_inserts(uint64_t max_size, int trials, size_t threads_num, dou
 
     for (int cur_trial = 0; cur_trial <= trials; cur_trial++) {
         std::vector<T> data = create_zipf_data<T>(max_size, theta);
-        printf("trials %d, inserts %llu; data.size=%lu; threads_num=%lu, theta=%.3f\n", cur_trial,
+        printf("trials %d, inserts %" PRIu64 "; data.size=%lu; threads_num=%lu, theta=%.3f\n", cur_trial,
                max_size, data.size(), threads_num, theta);
         tlx::btree_map<
             T, T, std::less<T>,
@@ -208,11 +209,11 @@ bool test_zipfian_inserts(uint64_t max_size, int trials, size_t threads_num, dou
         if (cur_trial > 0) {
             insert_times.push_back(end_time - start_time);
         }
-        printf("\tDone inserting %llu elts in %llu. map size=%lu\n", max_size,
+        printf("\tDone inserting %" PRIu64 " elts in %" PRIu64 ". map size=%lu\n", max_size,
                end_time - start_time, concurrent_map.size());
 
         auto concurrent_sum = concurrent_map.psum();
-        printf("concurrent sum = %llu\n", concurrent_sum);
+        printf("concurrent sum = %" PRIu64 "\n", concurrent_sum);
         //size,leaves,inner_nodes,leaf_slots,inner_slots,avgfill_leaves
         std::cout << "[Tree states] size=" << concurrent_map.get_stats().size
         << ", inner_nodes=" << concurrent_map.get_stats().inner_nodes
@@ -224,7 +225,7 @@ bool test_zipfian_inserts(uint64_t max_size, int trials, size_t threads_num, dou
         <<std::endl;
     }
     std::sort(insert_times.begin(), insert_times.end());
-    printf("median insert time = %llu\n", insert_times[trials / 2]);
+    printf("median insert time = %" PRIu64 "\n", insert_times[trials / 2]);
     std::cout << "num_thread=" << threads_num << "; throughput="
               << (static_cast<double>(max_size) / insert_times[trials / 2]) << " Mops/s"
               << std::endl;

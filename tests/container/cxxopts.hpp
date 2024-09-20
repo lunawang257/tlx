@@ -729,7 +729,7 @@ private:
 
 class KeyValue {
 public:
-  KeyValue(std::string key_, std::string value_)
+  KeyValue(std::string key_, std::string value_) throw()
       : m_key(std::move(key_)), m_value(std::move(value_)) {}
 
   const std::string &key() const { return m_key; }
