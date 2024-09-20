@@ -7,7 +7,7 @@
 
 const char* help_message = R"(
 Usage:
-  -d --dist [num]                   Workload distribution, zipf|uniform
+  -d --dist [zipf|uniform]          Workload distribution
   -h --help                         Show this help message
   -i --iteration [num]              Number of iterations
   -I --insert-prop [num]            Insert Proportion

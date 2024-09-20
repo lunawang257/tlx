@@ -263,13 +263,20 @@ void btreemix_runner_loop(size_t items,
         ts2 = duration;
     }
 
+    std::string dist_option_string = "";
+    if (dist_option == ZIPF) {
+        dist_option_string = "Zipf";
+    } else if (dist_option == UNIFORM) {
+        dist_option_string = "Uniform";
+    }
+
     float million_ops_per_sec = (actual_items / (ts2 - ts1)) / 1e6;
     std::cout << "RESULT"
               << " container=" << container_name
               << " op=" << TestClass::op()
               << " insert_prob=" << INSERT_PROP
               << " lookup_prob=" << LOOKUP_PROP
-              << " dist=" << dist_option
+              << " dist=" << dist_option_string
               << " time_total=" << std::setprecision(3) << (ts2 - ts1)
               << " time(ns)="
               << std::fixed << std::setprecision(3)
@@ -284,7 +291,7 @@ void btreemix_runner_loop(size_t items,
 
     std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tMops/s\n"
               << container_name << "\t"
-              << dist_option << "\t"
+              << dist_option_string << "\t"
               << INSERT_PROP << "\t"
               << LOOKUP_PROP << "\t"
               << million_ops_per_sec << "\t"
