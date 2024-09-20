@@ -277,7 +277,7 @@ int main(int argc, char* argv[]) {
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
             std::stringstream ss;                                       \
-            ss << "btree_mix" << "\t"                                   \
+            ss << "btreemix" << "\t"                                    \
                << slots << "\t"                                         \
                << size << "\t"                                          \
                << slice << "\t"                                         \
@@ -287,7 +287,7 @@ int main(int argc, char* argv[]) {
             btreemix_runner_loop<                                       \
                 Test_Set_MixedOp<SpeedTestType<                         \
                     slots, size, slice, slice_max>>>(                   \
-                NUM_ITERATIONS,ss.str(), num_threads, dist_option);     \
+                    NUM_ITERATIONS, ss.str(), num_threads, dist_option);\
         test_invoked = true;                                            \
     }
 
