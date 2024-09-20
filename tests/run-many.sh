@@ -26,12 +26,12 @@ prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_controlle
 rm -f $out
 
 for slotMax in 512 ; do
-  for valSize in 512 ; do
-    for maplize_threshold in 0 100 ; do
-      for dist in zipf uniform ; do
-        for ((thread=1;thread<=$MAX_THREAD;thread++)); do
-          printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
-          cmd="$prog \
+    for valSize in 512 ; do
+        for maplize_threshold in 0 100 ; do
+            for dist in zipf uniform ; do
+                for ((thread=1;thread<=$MAX_THREAD;thread++)); do
+                    printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
+                    cmd="$prog \
 --test btreemix \
 --slot-max $slotMax \
 --val-size $valSize \
@@ -45,19 +45,19 @@ for slotMax in 512 ; do
 --dist $dist \
 --repeats $REPEAT
 > /tmp/one-out"
-          echo "$cmd"
-          if [ "$dryrun" != "1" ] ; then
-            eval $cmd
-            if [ ! -f "$out" ]; then
-              tail -2 /tmp/one-out
-              tail -2 /tmp/one-out > $out
-            else
-              tail -1 /tmp/one-out
-              tail -1 /tmp/one-out >> $out
-            fi
-          fi
+                    echo "$cmd"
+                    if [ "$dryrun" != "1" ] ; then
+                        eval $cmd
+                        if [ ! -f "$out" ]; then
+                            tail -2 /tmp/one-out
+                            tail -2 /tmp/one-out > $out
+                        else
+                            tail -1 /tmp/one-out
+                            tail -1 /tmp/one-out >> $out
+                        fi
+                    fi
+                done
+            done
         done
-      done
     done
-  done
 done

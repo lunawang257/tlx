@@ -235,7 +235,7 @@ int main(int argc, char* argv[]) {
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
             std::stringstream ss;                                       \
-            ss << "btreemix" << "\t"                                    \
+            ss << "treemix" << "\t"                                    \
                << slots << "\t"                                         \
                << size << "\t"                                          \
                << slice << "\t"                                         \
