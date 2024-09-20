@@ -38,25 +38,17 @@ public:
 
 private:
     MapType my_map;
+    key_type max_key;
 
     void insert_random_values(const size_t num_items) {
         std::mt19937 gen(seed);
 
-        key_type max_key = num_items * key_space_factor; //TODO: CHECK
         typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
 
-        int zipseed = static_cast<int>(std::time(nullptr));
-        util::TraceZipfian zipf_dist(zipseed, 0, max_key, 0.99);
-
-        key_type key;
         while (my_map.tree_.size() < num_items) {
-            if (dist_option == ZIPF) {
-                key = zipf_dist.Next();
-            } else {
-                key = uniform_dist(gen);
-            }
+            key_type key = uniform_dist(gen);
+            ValType val = ValType(key, DataType());
 
-            ValType val = SpeedTestT::generate_random_value(gen, uniform_dist, key); //random value
             my_map.insert(val);
         }
 
@@ -64,10 +56,12 @@ private:
     }
 
 public:
-    Test_Set_MixedOp(size_t iterations,
+    Test_Set_MixedOp(size_t items,
                     size_t num_threads = 1,
                     const TestOption d_option = ZIPF) {
-        insert_random_values(iterations);
+
+        max_key = items * key_space_factor;
+        insert_random_values(items);
 
         cur_numthreads = num_threads;
         dist_option = d_option;
@@ -87,6 +81,12 @@ private:
     size_t cur_numthreads = 0;
     TestOption dist_option = ZIPF;
 
+    enum Operation {
+        OP_INSERT,
+        OP_DELETE,
+        OP_LOOKUP
+    };
+
     struct alignas(128) thread_state { // align to cache line
         int count;
         int rc;
@@ -102,17 +102,43 @@ private:
         stop = false;
     }
 
-    void mixed_ops(int id, int iterations, int total_threads) {
+    void preload_ops(int id, int iterations,
+                    std::vector<std::pair<Operation, key_type>>& operations) {
         std::mt19937 gen(seed + id);
 
-        std::uniform_int_distribution<> dist(0, 99); //which operation to use
+        std::uniform_int_distribution<> op_dist(0, 99); //which operation to use
 
-        key_type max_key = iterations * key_space_factor; //TODO: CHECK
-        //typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
-        std::uniform_int_distribution<> uniform_dist(0, max_key);
+        typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
 
         int zipseed = static_cast<int>(std::time(nullptr));
         util::TraceZipfian zipf_dist(zipseed, 0, max_key, 0.99);
+
+        for (int i = 0; i < iterations; i++) {
+            std::pair<Operation, key_type> op;
+
+            if (dist_option == ZIPF) {
+                op.second = zipf_dist.Next();
+            } else {
+                op.second = uniform_dist(gen);
+            }
+
+            int op_prob = op_dist(gen);
+            if (op_prob < insert_prob) {
+                op.first = OP_INSERT;
+            } else if (op_prob < insert_prob + lookup_prob) {
+                op.first = OP_LOOKUP;
+            } else {
+                op.first = OP_DELETE;
+            }
+
+            operations.push_back(op);
+        }
+    }
+
+    void mixed_ops(int id, int iterations, int total_threads) {
+        std::vector<std::pair<Operation, key_type>> operations;
+        //preload the operations(id, iterations)
+        preload_ops(id, iterations, operations);
 
         local_thread_id = id;
 
@@ -125,30 +151,27 @@ private:
            }
         }
 
-        key_type key;
-        for (int i = 0; !stop && i < iterations; ++i) {
-            if (dist_option == ZIPF) {
-                key = zipf_dist.Next();
-            } else {
-                key = uniform_dist(gen);
-            }
-
-            int operation = dist(gen);
-
-            if (operation < insert_prob) {
-                ValType val = ValType(key, DataType());
+        for (const auto& op : operations) {
+            switch (op.first) {
+            case OP_INSERT: {
+                ValType val = ValType(op.second, DataType());
                 bool succeeded = my_map.insert(val).second;
                 ++thread_states[id].count;
                 thread_states[id].rc += succeeded;
+                break;
             }
-            else if (operation < insert_prob + lookup_prob) {
-                bool found = my_map.exists(key);
+            case OP_LOOKUP: {
+                bool found = my_map.exists(op.second);
                 ++thread_states[id].count;
                 thread_states[id].rc += found;
-            } else {
-                bool erased = my_map.erase(key);
+                break;
+            }
+            case OP_DELETE: {
+                bool erased = my_map.erase(op.second);
                 ++thread_states[id].count;
                 thread_states[id].rc += erased;
+                break;
+            }
             }
         }
 

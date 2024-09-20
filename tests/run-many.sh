@@ -18,7 +18,7 @@ prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_controlle
 rm -f /tmp/out
 
 for slotMax in 256 ; do
-  for valSize in 0 256 ; do
+  for valSize in 256 ; do
     for maplize_threshold in 0 100 ; do
       for dist in zipf uniform ; do
         for ((thread=1;thread<=$MAX_THREAD;thread++)); do
