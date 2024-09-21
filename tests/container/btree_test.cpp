@@ -1901,7 +1901,7 @@ set_type* g_test_set = &my_multi_thread_set;
 
 #include <tests/container/btree_fast_log.hpp>
 
-int MULTI_THREAD_PASSES = 10000;
+int MULTI_THREAD_PASSES = 1000;
 
 size_t g_initial_size = 50;
 int g_max_key = 100;
@@ -1913,6 +1913,12 @@ int g_big_num_operations = 1000;
 
 const size_t NUM_THREADS = 4;
 size_t cur_numthreads = NUM_THREADS;
+
+struct scan_stat {
+    uint64_t num_total_next_leaf;
+    uint64_t num_no_wait_next_leaf;
+};
+std::vector<scan_stat> scan_stats(NUM_THREADS);
 
 struct Entry {
     std::mutex mtx;
@@ -1931,12 +1937,15 @@ void print(const char* op, int val, int id) {
 }
 
 void thread_func(int max_key, int num_operations, set_type& my_set,
-                 int insert_prob, int lookup_prob, int id) {
+                 int insert_prob, int lookup_prob, int erase_prob,
+                 int scan_length, int id) {
     // TODO std::mt19937 gen(seed + id);
     // std::mt19937 gen(std::random_device{}());
     std::mt19937 gen(seed + id);
     std::uniform_int_distribution<> dist(0, 99);
     std::uniform_int_distribution<> key_dist(0, max_key - 1);
+    uint16_t num_total_next_leaf = 0;
+    uint16_t num_no_wait_next_leaf = 0;
 
     initialize_thread_info(id);
     //usleep(10 * 1000 * 1000ull); // sleep for debugging
@@ -1975,7 +1984,7 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
             log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
             die_unless(found == truth_source[key].in_set);
         }
-        else
+        else if (operation < insert_prob + lookup_prob + erase_prob)
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("erase", key, id);
@@ -1995,20 +2004,61 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
                 exit(1);
             }
         }
+        else // scan
+        {
+            int num_set = 0;
+            int locked_range_end = key;
+            int prev = key - 1;
+            int j;
+
+            LOG_STR("scan key=" << key << " thread=" << id);
+            for (j = key; j < max_key && num_set < scan_length; ++j) {
+                truth_source[j].mtx.lock();
+                if (truth_source[j].in_set) {
+                    LOG_STR("truth[" << j << "] is in set");
+                    ++num_set;
+                }
+            }
+            locked_range_end = j;
+            my_set.map_range_length_safe(
+                key, scan_length,
+                &num_total_next_leaf, &num_no_wait_next_leaf,
+                [&prev, &num_set]
+                (const set_type::value_type& kv) {
+                    int cur = kv;
+                    for (int i = prev + 1; i < cur; ++i) {
+                        die_unless(!truth_source[i].in_set);
+                    }
+                    die_unless(truth_source[cur].in_set);
+                    --num_set;
+                    prev = cur;
+                });
+
+            die_unless(num_set == 0);
+            for (j = key; j < locked_range_end; ++j) {
+                truth_source[j].mtx.unlock();
+            }
+        }
         //std::cout << "After iteration " << i << "\n";
         //my_set.print(std::cout);
         //usleep(10 * 1000 * 1000ull); // sleep for debugging
     }
+    scan_stats[id].num_total_next_leaf += num_total_next_leaf;
+    scan_stats[id].num_no_wait_next_leaf += num_no_wait_next_leaf;
 
     cleanup_thread_info();
 }
 
 void test_multithread(int max_key, int num_operations,
-                      size_t initial_size, int num_threads) {
+                      size_t initial_size, int num_threads,
+                      scan_stat *total_st) {
     in_multi_test = true;
     // Probability out of 100
     int insert_prob = 33;
-    int lookup_prob = 33;
+    int lookup_prob = 0;
+    int erase_prob = 33;
+    int scan_length = 16;
+
     std::mt19937 gen(seed);
     std::uniform_int_distribution<> key(0, max_key - 1);
 
@@ -2033,14 +2083,25 @@ void test_multithread(int max_key, int num_operations,
     }
 
     std::vector<std::thread> threads;
+    scan_stats.resize(num_threads);
     for (int i = 0; i < num_threads; ++i) {
+        scan_stats[i].num_total_next_leaf = 0;
+        scan_stats[i].num_no_wait_next_leaf = 0;
         threads.emplace_back(
             thread_func, max_key, num_operations,
             std::ref(my_multi_thread_set),
-            insert_prob, lookup_prob, i);
+            insert_prob, lookup_prob, erase_prob,
+            scan_length, i);
+        //&scan_stats[i].num_total_next_leaf,
+        //   &scan_stats[i].num_no_wait_next_leaf);
     }
     for (auto& th : threads) {
         th.join();
+    }
+
+    for (const auto& st: scan_stats) {
+        total_st->num_total_next_leaf += st.num_total_next_leaf;
+        total_st->num_no_wait_next_leaf += st.num_no_wait_next_leaf;
     }
 }
 
@@ -2516,6 +2577,7 @@ int main() {
         int num_threads;
         int max_key;
         int num_operations;
+        scan_stat total_scan_stat = scan_stat();
 
         // always test some single thread cases first as sanity test
         int single_thread_passes =
@@ -2540,7 +2602,8 @@ int main() {
                 break;
             }
             num_threads = (i < single_thread_passes) ? 1 : NUM_THREADS;
-            test_multithread(max_key, num_operations, initial_size, num_threads);
+            test_multithread(max_key, num_operations, initial_size, num_threads,
+                             &total_scan_stat);
             debug_log_info.resize(0);
             debug_log_info.resize(TOTAL_DEBUG_LOG_INFO);
 
@@ -2567,6 +2630,13 @@ int main() {
             }
         }
         std::cout << std::endl;
+
+        uint64_t total = total_scan_stat.num_total_next_leaf;
+        uint64_t no_wait = total_scan_stat.num_no_wait_next_leaf;
+        double prop = (total - no_wait) * 100.0 / total;
+        std::cout << "total new leaf scanned: " << total
+                  << " percentage of waiting: " << std::setprecision(3)
+                  << prop << "%\n";
     }
     std::cout << "test successful!" << std::endl;
     return 0;

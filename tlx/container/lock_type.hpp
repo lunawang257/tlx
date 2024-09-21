@@ -4,6 +4,7 @@
 
 enum lock_type_enum {
     lock_type_read = 1,
+    lock_type_try_read,
     lock_type_read_notify_upgrader,
     lock_type_read_notify_writer,
     lock_type_read_wait,
@@ -35,6 +36,8 @@ inline std::string lock_type_to_string(int lt) {
     switch (lt) {
         case lock_type_read:
             return "read_lock";
+        case lock_type_try_read:
+            return "try_read_lock";
         case lock_type_read_notify_upgrader:
             return "read_lock_t_upgrader";
         case lock_type_read_notify_writer:

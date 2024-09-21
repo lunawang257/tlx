@@ -522,6 +522,17 @@ public:
         return tree_.map_range_length(start, length, f);
     }
 
+    template <class F>
+    void map_range_length_safe(
+        key_type start,
+        uint64_t length,
+        uint16_t* num_total_next_leaf, // for perf debugging
+        uint16_t* num_no_wait_next_leaf, // for perf debugging
+        F f) const {
+        return tree_.map_range_length_safe(
+            start, length, num_total_next_leaf, num_no_wait_next_leaf, f);
+    }
+
     //! \}
 
 public:

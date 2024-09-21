@@ -152,6 +152,20 @@ public:
   ReaderWriterLock() : writer(0) {}
 
   /**
+   * Try to acquire a read lock and return failure if needs to wait
+   */
+  bool try_read_lock(int cpuid = -1) {
+
+    readers.add(1, cpuid);
+
+    if (writer.test(std::memory_order_relaxed)) {
+      readers.add(-1, cpuid);
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Try to acquire a lock and spin until the lock is available.
    */
   void read_lock(int cpuid = -1) {
@@ -216,6 +230,21 @@ class ReaderWriterLock2 {
 public:
   ReaderWriterLock2() : writer(0), readers(0) {}
   ContentionTracker con_tracker;
+
+  /**
+   * Try to acquire a read lock and return failure if needs to wait
+   */
+bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
+    readers++;
+
+    if (writer.test(std::memory_order_relaxed)) {
+      readers--;
+      return false;
+    }
+
+    con_tracker.track_no_wait();
+    return true;
+  }
 
   /**
    * Try to acquire a lock and spin until the lock is available.

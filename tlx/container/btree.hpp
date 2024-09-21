@@ -408,6 +408,22 @@ public:
 #pragma GCC diagnostic pop
         }
 
+        // return the pair of key and data
+        const value_type& value(size_t s) const {
+            TLX_BTREE_ASSERT(s < static_cast<size_t>(slotuse) &&
+                             slotuse <= slice_sizemax);
+            idx_t slot = index_array[s];
+            TLX_BTREE_ASSERT(slot >= 0 && slot < mapl->free_slot_end);
+            if (slot < leaf_slotmax)
+                return mapl->slotdatap[slot];
+            else
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds="
+#pragma GCC diagnostic ignored "-Wzero-length-bounds"
+                return mapl->extra[slot - leaf_slotmax];
+#pragma GCC diagnostic pop
+        }
+
         int get_ind(idx_t i) const {
             TLX_BTREE_ASSERT(i < slotuse && i >= 0 &&
                              slotuse <= slice_sizemax);
@@ -851,6 +867,30 @@ public:
             case lock_none: return false;
             default: tlx_die_unless(false); return true;
             }
+        }
+
+        bool try_read_lock(int cpuid __attribute__((unused)) = -1,
+                           bool verify __attribute__((unused)) = false) {
+            TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
+            if constexpr (!concurrent) TLX_BTREE_ASSERT(false);
+            if (!take_lock()) {
+                numreader++;
+                return true;
+            }
+            log_lock(nodep, lock_type_try_read, sliceid);
+            lock_type lock(mutex);
+            if (haswriter || writerswaiting > 0
+                    || upgradewaiting > 0) {
+                return false;
+            } else {
+                con_tracker.track_no_wait();
+            }
+            addtoread();
+            numreader++;
+            VERIFY_NODE(verify, treep, nodep);
+            log_lock(nodep, lock_type_read_got, sliceid);
+            DBGPRT();
+            return true;
         }
 
         void read_lock(int cpuid __attribute__((unused)) = -1,
@@ -2833,6 +2873,182 @@ public:
                     old_leaf->mutex_.read_unlock(cpuid);
                 }
             } else {
+                break;
+            }
+        }
+
+        if constexpr (concurrent) {
+            leaf->mutex_.read_unlock(cpuid);
+        }
+
+        return;
+    }
+
+    //! Non-STL function that applies read-only function to "length" number
+    //  of elements in range [start, end) by key order. This function
+    //  will not cause deadlock like map_range_length since it never
+    //  go through the neighbor leaf page while waiting for locks
+    template <class F>
+    void map_range_length_safe(
+        key_type start,
+        uint64_t length,
+        uint16_t* num_total_next_leaf, // for perf reporting
+        uint16_t* num_no_wait_next_leaf, // for perf reporting
+        F f) const {
+        key_type new_start = start;
+        uint64_t new_length = length;
+        bool stop = false;
+        while (!stop) {
+            key_type last_key;
+            map_range_length_nowait(new_start, new_length,
+                                    &last_key, &new_length, &stop,
+                                    num_total_next_leaf,
+                                    num_no_wait_next_leaf, f);
+            new_start = last_key;
+            ++new_start;
+        }
+    }
+
+    //! Non-STL function that applies read-only function to "length" number of
+    //  elements in range [start, end) by key order. It returns when it needs
+    //  to block on getting to the next leaf page, so the caller can
+    //  continue. This avoids potential deadlock
+    template <class F>
+    void map_range_length_nowait(key_type start,
+                                 uint64_t length,
+                                 key_type* last_key_in_leaf,
+                                 uint64_t* length_left,
+                                 bool* stop,
+                                 // for perf reporting
+                                 uint16_t* num_total_next_leaf,
+                                 uint16_t* num_no_wait_next_leaf,
+                                 F f) const {
+        if (length == 0) {
+            *length_left = length;
+            *stop = true;
+            return;
+        }
+        int cpuid = 0;
+        ReaderWriterLock *parent_lock = nullptr;
+        if constexpr(concurrent) {
+            cpuid = sched_getcpu();
+            mutex.read_lock(cpuid);
+            parent_lock = &mutex;
+        }
+        const node* n = root_;
+        if (!n) {
+            if constexpr(concurrent) {
+                mutex.read_unlock(cpuid);
+            }
+            *length_left = length;
+            *stop = true;
+            return;
+        }
+
+        while (!n->is_leafnode())
+        {
+            const InnerNode* inner = static_cast<const InnerNode*>(n);
+            if constexpr(concurrent) {
+                inner->mutex_.read_lock(cpuid);
+                parent_lock->read_unlock(cpuid);
+                parent_lock = &(inner->mutex_);
+            }
+            unsigned short slot = find_lower(inner, start);
+
+            n = inner->childid[slot];
+        }
+        const LeafNode* leaf = static_cast<const LeafNode*>(n);
+        const LeafNode* old_leaf;
+
+        if constexpr(concurrent) {
+            leaf->mutex_.read_lock(cpuid);
+            parent_lock->read_unlock(cpuid);
+        }
+
+        unsigned short start_slot;
+
+        uint64_t count = 0;
+        bool is_first_leaf = true;
+        bool is_first_slice = true;
+        bool reach_leaf_end = false;
+
+        while (true) {
+            if (leaf->mapl) {
+                int slicenum;
+                bool reach_slice_end = false;
+
+                if (is_first_leaf) {
+                    slicenum = leaf->mapl->get_slicenum(start);
+                    is_first_leaf = false;
+                } else {
+                    slicenum = 0;
+                }
+                for (; slicenum < leaf->mapl->numslices; slicenum++) {
+                    Slice& slice = leaf->mapl->slices[slicenum];
+                    if constexpr (concurrent) {
+                        slice.lock.read_lock();
+                    }
+
+                    idx_t ind;
+                    if (is_first_slice) {
+                        ind = find_lower(&slice, start);
+                        is_first_slice = false;
+                    } else {
+                        ind = 0;
+                    }
+                    for (; ind < slice.slotuse; ind++) {
+                        if (count >= length) {
+                            *length_left = 0;
+                            *stop = true;
+                            break;
+                        }
+                        std::apply(f, std::forward_as_tuple(slice.value(ind)));
+                        count++;
+                    }
+                    reach_slice_end = (ind == slice.slotuse);
+
+                    if constexpr(concurrent) {
+                        slice.lock.read_unlock(cpuid);
+                    }
+                }
+                reach_leaf_end = (slicenum == leaf->mapl->numslices) &&
+                    reach_slice_end;
+            } else {
+                // get first key greater or equal to start
+                start_slot = find_lower(leaf, start);
+                int i = start_slot;
+                for (; i < leaf->slotuse; i++) {
+                    if (count >= length) {
+                        *length_left = 0;
+                        *stop = true;
+                        break;
+                    }
+                    std::apply(f, std::forward_as_tuple(leaf->slotdata[i]));
+                    count++;
+                }
+                reach_leaf_end = (i >= leaf->slotuse);
+            }
+            TLX_BTREE_ASSERT(length >= count);
+            *length_left = length - count;
+
+            if (count < length && reach_leaf_end && leaf->next_leaf != nullptr) {
+                old_leaf = leaf;
+                leaf = static_cast<const LeafNode*>(leaf->next_leaf);
+                if constexpr (concurrent) {
+                    ++(*num_total_next_leaf);
+                    if (leaf->mutex_.try_read_lock(cpuid)) {
+                        ++(*num_no_wait_next_leaf);
+                        old_leaf->mutex_.read_unlock(cpuid);
+                    } else {
+                        *last_key_in_leaf = old_leaf->max_key();
+                        *stop = (*length_left <= 0);
+                        old_leaf->mutex_.read_unlock(cpuid);
+                        return;
+                    }
+                }
+            } else {
+                // reach the end of the tree
+                *stop = true;
                 break;
             }
         }
