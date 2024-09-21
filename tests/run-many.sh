@@ -1,9 +1,7 @@
 #!/bin/bash
-# Usage: run-many.sh [-n] [out-name]
+# Usage: run-many.sh [-n] [output-dir-name]
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
-out=/tmp/out
 
 if [ "$1" == "-n" ]; then
     dryrun=1
@@ -12,13 +10,22 @@ else
     dryrun=0
 fi
 
+
 if [ "$1" != "" ]; then
-    out=$1
+    outPath=$1
+else
+    outPath=$HOME/tlx-perf
+    mkdir -p "$outPath"
 fi
+mkdir -p "$outPath/all-res"
+
+ts=$(date +"%Y-%m-%d-%H-%M")
+
+out="$outPath/results-$ts.txt"
 
 # smaller will reduce run time
 REPEAT=16
-MAX_THREAD=6
+MAX_THREAD=2
 N=1024000
 sliceSize=32
 sliceSizeMax=64
@@ -30,9 +37,16 @@ prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_controlle
 rm -f "$out"
 
 # shellcheck disable=SC2043
-for slotMax in 512 ; do
+for slotMax in 32 128 256 512 ; do
     # shellcheck disable=SC2043
-    for valSize in 512 ; do
+    for valSize in 0 32 128 256 512 ; do
+        sqrt_slot_max=$(echo "scale=0; sqrt($slotMax)" | bc -l)
+        if ((sqrt_slot_max * sqrt_slot_max < slotMax)); then
+            sliceSize=$((sqrt_slot_max+1))
+        else
+            sliceSize=$sqrt_slot_max
+        fi
+        sliceSizeMax=$((sliceSize*2))
         # shellcheck disable=SC2043
         for maplize_threshold in 0 100 ; do
             # shellcheck disable=SC2043
@@ -43,7 +57,7 @@ for slotMax in 512 ; do
                     runName="${runName}-SlcSzMx-$sliceSizeMax-Thread-$thread"
                     runName="${runName}-MplThrh-$maplize_threshold-Dist-$dist"
                     runName="${runName}-InsertP-$insertProp-LookupP-$lookupProp"
-                    echo $runName
+                    oneResult="$outPath/all-res/$runName.txt"
                     cmd="$prog \
 --test btreemix \
 --slot-max $slotMax \
@@ -56,26 +70,28 @@ for slotMax in 512 ; do
 -I $insertProp \
 -L $lookupProp \
 --dist $dist \
---repeats $REPEAT
-> /tmp/one-out"
+--repeats $REPEAT"
                     echo "$cmd"
                     if [ "$dryrun" != "1" ] ; then
-                        eval "$cmd"
+                        eval $cmd > "$oneResult"
                         if [ ! -f "$out" ]; then
-                            tail -2 /tmp/one-out
-                            tail -2 /tmp/one-out > "$out"
+                            tail -2 "$oneResult"
+                            tail -2 "$oneResult" > "$out"
                         else
-                            tail -1 /tmp/one-out
-                            tail -1 /tmp/one-out >> "$out"
+                            tail -1 "$oneResult"
+                            tail -1 "$oneResult" >> "$out"
+                        fi
+                        # generate perf profile on Linux
+                        if [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+                            gprof "$prog" gmon.out > "$outPath/gmon-${ts}-$runName.txt"
                         fi
                     fi
-                    # generate perf profile on Linux
-                    if [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
-                        gprof "$prog" gmon.out | sed 's/(unsigned short)//g' | > "$out-gmon-$runName.txt"
-                        rm gmon.out
-                    fi
-                done
-            done
-        done
-    done
-done
+                done # for threads
+                exit 0
+            done # for dist
+        done # for maplize_threshold
+    done # for valSize
+done # for slotMax
+if [ -f "gmon.out" ]; then
+    rm gmon.out
+fi
