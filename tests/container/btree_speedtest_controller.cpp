@@ -18,7 +18,7 @@ Usage:
                                     update means insert and delete, \
                                     btreemix means btree concurrent mixed operations \
                                     insert\delete\lookup
-  -r --repeats  <num>               Set Repeats (default: 0)
+  -r --repeats  <num>               Set Repeats (default: 1)
   -s --slot-max [num]               Maximum slot value
   -S --slice-size [num]             Slice Size
   -t --num-threads [num]            Number of threads
