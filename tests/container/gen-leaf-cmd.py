@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
 import math
+import os
+import sys
+
+script_dir = os.path.dirname(__file__)
 
 # set to run to and re-run to reduce compile time
 # please set to False before checkin
@@ -32,7 +36,7 @@ if fast_compile:
         'RUN_REBALANCE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
     ]
 
-with open('leaf-perf-run-all-options.hpp', 'w') as f:
+with open(f'{script_dir}/leaf-perf-run-all-options.hpp', 'w') as f:
     f.write('// DO NOT EDIT! please change gen-leaf-cmd.py to edit\n')
     for command_format in command_formats:
         for slot_max in slot_max_list:
