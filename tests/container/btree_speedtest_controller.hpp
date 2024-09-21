@@ -10,6 +10,7 @@ enum TestOption {
     MAPLIZE,
     SCAN,
     BTREEMIX,
+    REBALANCE,
     ZIPF,
     UNIFORM,
     INVALID
@@ -62,6 +63,7 @@ struct SpeedTestType {
     using test_btree_type = typename test_map_type::btree_impl;
     using test_leaf_type = typename test_btree_type::LeafNode;
     using test_mapl_type = typename test_btree_type::Mapl;
+    using test_slice_type = typename test_btree_type::Slice;
 
     struct ValueComparator {
         bool operator()(const test_value_type &a, const test_value_type &b) const {

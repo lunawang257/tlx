@@ -20,15 +20,16 @@ command_formats = [
 ]
 
 if fast_compile:
-    slot_max_list = [32, 256]
-    value_size_list = [0, 32, 256]
+    slot_max_list = [32, 512]
+    value_size_list = [32, 512]
     # only leave the command you want to measure
     command_formats = [
         #'RUN_MAPLIZE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
         #'RUN_UPDATE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
         #'RUN_LOOKUP({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
         #'RUN_SCAN({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-        'RUN_BTREEMIX({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n'
+        #'RUN_BTREEMIX({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n'
+        'RUN_REBALANCE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
     ]
 
 with open('leaf-perf-run-all-options.hpp', 'w') as f:

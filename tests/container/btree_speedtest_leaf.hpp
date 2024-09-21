@@ -10,6 +10,7 @@
 #include <map>
 #include <tlx/container/btree.hpp>
 #include "btree_speedtest_controller.hpp"
+#include "ParallelTools/Lock.hpp"
 
 template<int TestSlotMax, int ValSize, unsigned short SliceSize, unsigned short SliceSizeMax>
 class TestLeafPerf {
@@ -23,21 +24,39 @@ private:
     using DurationT = std::chrono::duration<double>;
 
     static const int seed = 1;
+    static const size_t LeafSize = sizeof(typename SpeedTestT::test_leaf_type) - sizeof(void*);
+    static const size_t MaplSize = sizeof(typename SpeedTestT::test_mapl_type) + sizeof(void*);
+    static const size_t SizeOfSlice = sizeof(typename SpeedTestT::test_slice_type);
+    static const size_t LockSize = sizeof(ReaderWriterLock2);
+    static constexpr double MaplOverhead = MaplSize * 1.0 / LeafSize;
 
 public:
-static void output_result(const std::stringstream& result_stream, bool is_mapl = false) {
-    std::cout << "MaxSlots=" << TestSlotMax << "\t"
-              << " ValueSize=" << ValSize << "\t"
-              << " SliceSize=" << SliceSize << "\t"
-              << "LeafOverhead=" << sizeof(typename SpeedTestT::test_leaf_type) - sizeof(void*) << "\t";
-    if (is_mapl) {
-             std::cout
-             << "MaplOverhead=" << sizeof(typename SpeedTestT::test_mapl_type) + sizeof(void*) << "\t";
-    } else {
-            std::cout
-            << "MaplOverhead=" << "\t";
-    }
-    std::cout << result_stream.str() << "\t"
+static void output_result(const std::string& operation,
+                          const double avgTime = 0.0) {
+    std::cout << "Op=" << operation << "\t"
+              << "MaxSlots=" << TestSlotMax << "\t"
+              << "ValueSize=" << ValSize << "\t"
+              << "SliceSize=" << SliceSize << "\t"
+              << "SliceSizeMax=" << SliceSizeMax << "\t"
+              << "LeafSize=" << LeafSize << "\t"
+              << "MaplSize=" << MaplSize << "\t"
+              << "SizeOfSlice=" << SizeOfSlice << "\t"
+              << "LockSize=" << LockSize << "\t"
+              << "MaplOverhead=" << std::fixed << std::setprecision(2)
+                                 << MaplOverhead * 100 << "%" << "\t"
+              << "avgTime=" << std::fixed << std::setprecision(2) << avgTime*1e6 << "us" << "\t"
+              << std::endl;
+
+    std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tLfSz\tMplOvrhd\tTime\n"
+              << operation << "\t"
+              << TestSlotMax << "\t"
+              << ValSize << "\t"
+              << SliceSize << "\t"
+              << SliceSizeMax << "\t"
+              << LeafSize << "\t"
+              << std::fixed << std::setprecision(2)
+                            << MaplOverhead * 100 << "%" << "\t"
+              << std::fixed << std::setprecision(2) << avgTime*1e6 << "us" << "\t"
               << std::endl;
 }
 
@@ -373,12 +392,8 @@ static void test_maplize_perf() {
     double avg_maplize_time = (maplize_count > 0) ? total_maplize_time.count() / maplize_count : 0.0;
     double avg_unmaplize_time = (unmaplize_count > 0) ? total_unmaplize_time.count() / unmaplize_count : 0.0;
 
-    std::stringstream maple_ss, unmapl_ss;
-    maple_ss << "Average maplize time=" << avg_maplize_time * 1e6;
-    output_result(maple_ss, true);
-
-    unmapl_ss << "Average unmaplize time=" << avg_unmaplize_time * 1e6 << "\t";
-    output_result(unmapl_ss, false);
+    output_result("maplize", avg_maplize_time);
+    output_result("unmaplize", avg_unmaplize_time);
 }
 
 // Main performance test function for lookup
@@ -642,6 +657,47 @@ static void test_scan_perf() {
               << " Value Size: " << ValSize
               << " SliceSize: " << SliceSize
               << " Average scan time: " << avg_scan_time * 1e6 << " us" << std::endl;
+}
+
+static void test_rebalance_perf() {
+    constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
+    size_t num_iterations = NUM_ITERATIONS; // Number of iterations
+
+    // Create a leaf array with the specified size
+    LeafVector leaf_array(array_size);
+    // Initialize the leaf array with sorted values
+    initialize_leaf_array(leaf_array, false); // Pass true for sorted
+
+    // Random number generator setup
+    std::mt19937 rng(seed);
+    UniDistLeafT leaf_dist(0, array_size - 1);
+
+    // Time measurement variables
+    DurationT total_rebalance_time(0);
+
+    // Perform lookup using the find_lower function
+    typename SpeedTestT::test_map_type ts;
+
+    // Perform the operations for the specified number of iterations
+    for (size_t i = 0; i < num_iterations; ++i) {
+        // Select a random leaf
+        auto& leaf = leaf_array[leaf_dist(rng)];
+        leaf.maplize();
+
+        // Start time measurement
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        leaf.mapl->rebalance();
+        // End time measurement
+        auto end_time = std::chrono::high_resolution_clock::now();
+
+        total_rebalance_time += end_time - start_time;
+    }
+
+    // Calculate and print the average lookup time
+    double avg_rebalance_time = total_rebalance_time.count() / num_iterations;
+
+    output_result("rebalance", avg_rebalance_time);
 }
 
 

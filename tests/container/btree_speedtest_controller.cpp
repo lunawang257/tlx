@@ -14,10 +14,11 @@ Usage:
   -L --lookup-prop [num]            Lookup Proportion
   -m --is-mapl                      For update/lookup, whether run maplized version
   -M --slice-size-max [num]         Max Slice Size
-  -p --test [update|lookup|maplize|scan|btreemix] Test option, \
+  -p --test [update|lookup|maplize|scan|btreemix|rebalance] \
+                                    Test option, \
                                     update means insert and delete, \
                                     btreemix means btree concurrent mixed operations \
-                                    insert\delete\lookup
+                                    insert\delete\lookup\scan\rebalance \
   -r --repeats  <num>               Set Repeats (default: 1)
   -s --slot-max [num]               Maximum slot value
   -S --slice-size [num]             Slice Size
@@ -33,6 +34,7 @@ TestOption stringToTestOption(const std::string& str) {
     else if (str == "maplize") return MAPLIZE;
     else if (str == "scan") return SCAN;
     else if (str == "btreemix") return BTREEMIX;
+    else if (str == "rebalance") return REBALANCE;
     else if (str == "zipf") return ZIPF;
     else if (str == "uniform") return UNIFORM;
     else return INVALID;
@@ -249,6 +251,17 @@ int main(int argc, char* argv[]) {
                     ss.str(),                                           \
                     num_threads,                                        \
                     dist_option);                                       \
+        test_invoked = true;                                            \
+    }
+
+    #define RUN_REBALANCE(slots, size, slice, slice_max)                \
+    if (testOptions.contains(REBALANCE) &&                              \
+        slot_max == (slots) &&                                          \
+        val_size == (size) &&                                           \
+        slice_size == (slice) &&                                        \
+        slice_size_max == (slice_max)) {                                \
+        TestLeafPerf<slots, size, slice, slice_max>::                   \
+            test_rebalance_perf();                                      \
         test_invoked = true;                                            \
     }
 
