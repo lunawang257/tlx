@@ -40,6 +40,21 @@ TestOption stringToTestOption(const std::string& str) {
     else return INVALID;
 }
 
+// Variables to store the parsed options
+std::unordered_set<TestOption> testOptions;
+
+int slot_max = 0;
+int val_size = 0;
+int slice_size = 0;
+int slice_size_max = 0;
+int is_mapl = 0;
+int num_threads = 0;
+std::string test_option = "";
+TestOption dist_option = ZIPF;
+bool test_invoked = false;
+
+extern void run_all_args(void);
+
 int main(int argc, char* argv[]) {
     // Define long options
     static struct option long_options[] = {
@@ -60,22 +75,8 @@ int main(int argc, char* argv[]) {
         {nullptr, 0, nullptr, 0} // End of options
     };
 
-    // Variables to store the parsed options
-    std::unordered_set<TestOption> testOptions;
-
-    int slot_max = 0;
-    int val_size = 0;
-    int slice_size = 0;
-    int slice_size_max = 0;
-    int is_mapl = 0;
-    int num_threads = 0;
-    std::string test_option = "";
-    TestOption dist_option = ZIPF;
-
     int option_index = 0;
     int c;
-
-    bool test_invoked = false;
 
     // Parse command line arguments
     while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:", long_options, &option_index)) != -1) {
@@ -237,7 +238,7 @@ int main(int argc, char* argv[]) {
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
             std::stringstream ss;                                       \
-            ss << "treemix" << "\t"                                    \
+            ss << "treemix" << "\t"                                     \
                << slots << "\t"                                         \
                << size << "\t"                                          \
                << slice << "\t"                                         \
@@ -254,7 +255,7 @@ int main(int argc, char* argv[]) {
         test_invoked = true;                                            \
     }
 
-    #define RUN_REBALANCE(slots, size, slice, slice_max)                \
+#define RUN_REBALANCE(slots, size, slice, slice_max)                    \
     if (testOptions.contains(REBALANCE) &&                              \
         slot_max == (slots) &&                                          \
         val_size == (size) &&                                           \
@@ -265,8 +266,7 @@ int main(int argc, char* argv[]) {
         test_invoked = true;                                            \
     }
 
-    // use python3 genleafcmd.py to generate
-    #include <tests/container/leaf-perf-run-all-options.hpp>
+    run_all_args();
 
     if (!test_invoked) {
         std::cout << "No tests were invoked. Maybe didn't specify the right slots or value size?\n";

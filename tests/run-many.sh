@@ -32,21 +32,34 @@ sliceSizeMax=64
 insertProp=34
 lookupProp=33
 
-prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_controller"
+prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 
 rm -f "$out"
 
 # shellcheck disable=SC2043
 for slotMax in 32 128 256 512 ; do
+    case $slotMax in
+        32)
+            sliceSize=8
+            ;;
+        64)
+            sliceSize=8
+            ;;
+        128)
+            sliceSize=32
+            ;;
+        256)
+            sliceSize=32
+            ;;
+        512)
+            sliceSize=64
+            ;;
+        *)
+            sliceSize=32
+    esac
+    sliceSizeMax=$((sliceSize*2))
     # shellcheck disable=SC2043
-    for valSize in 0 32 128 256 512 ; do
-        sqrt_slot_max=$(echo "scale=0; sqrt($slotMax)" | bc -l)
-        if ((sqrt_slot_max * sqrt_slot_max < slotMax)); then
-            sliceSize=$((sqrt_slot_max+1))
-        else
-            sliceSize=$sqrt_slot_max
-        fi
-        sliceSizeMax=$((sliceSize*2))
+    for valSize in 128 256 512 ; do
         # shellcheck disable=SC2043
         for maplize_threshold in 0 100 ; do
             # shellcheck disable=SC2043
@@ -62,10 +75,10 @@ for slotMax in 32 128 256 512 ; do
 --test btreemix \
 --slot-max $slotMax \
 --val-size $valSize \
---iteration $N \
---num-threads $thread \
 --slice-size $sliceSize \
 --slice-size-max $sliceSizeMax \
+--iteration $N \
+--num-threads $thread \
 --maplize-threshhold $maplize_threshold \
 -I $insertProp \
 -L $lookupProp \
@@ -82,7 +95,7 @@ for slotMax in 32 128 256 512 ; do
                             tail -1 "$oneResult" >> "$out"
                         fi
                         # generate perf profile on Linux
-                        if [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+                        if [ "$(uname -s)" == "Linux" ]; then
                             gprof "$prog" gmon.out > "$outPath/gmon-${ts}-$runName.txt"
                         fi
                     fi

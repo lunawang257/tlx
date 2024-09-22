@@ -18,6 +18,9 @@ function RunBuild()
     return 0
 }
 
+echo "Generate microbenchmark speed test sources"
+"${ScriptDir}/container/gen-all-options.py"
+
 echo "Output in file $OutFile"
 prev_length=0
 for BuildType in Debug Release
