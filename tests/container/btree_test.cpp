@@ -1937,7 +1937,7 @@ void print(const char* op, int val, int id) {
 }
 
 void thread_func(int max_key, int num_operations, set_type& my_set,
-                 int insert_prob, int lookup_prob, int erase_prob,
+                 int insert_prop, int lookup_prop, int erase_prob,
                  int scan_length, int id) {
     // TODO std::mt19937 gen(seed + id);
     // std::mt19937 gen(std::random_device{}());
@@ -1954,7 +1954,7 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
         int key = key_dist(gen);
         int operation = dist(gen);
 
-        if (operation < insert_prob)
+        if (operation < insert_prop)
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("insert", key, id);
@@ -1974,7 +1974,7 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
                 exit(1);
             }
         }
-        else if (operation < insert_prob + lookup_prob)
+        else if (operation < insert_prop + lookup_prop)
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("find", key, id);
@@ -1984,7 +1984,7 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
             log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
             die_unless(found == truth_source[key].in_set);
         }
-        else if (operation < insert_prob + lookup_prob + erase_prob)
+        else if (operation < insert_prop + lookup_prop + erase_prob)
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("erase", key, id);
@@ -2054,8 +2054,8 @@ void test_multithread(int max_key, int num_operations,
                       scan_stat *total_st) {
     in_multi_test = true;
     // Probability out of 100
-    int insert_prob = 33;
-    int lookup_prob = 0;
+    int insert_prop = 33;
+    int lookup_prop = 0;
     int erase_prob = 33;
     int scan_length = 16;
 
@@ -2090,7 +2090,7 @@ void test_multithread(int max_key, int num_operations,
         threads.emplace_back(
             thread_func, max_key, num_operations,
             std::ref(my_multi_thread_set),
-            insert_prob, lookup_prob, erase_prob,
+            insert_prop, lookup_prop, erase_prob,
             scan_length, i);
         //&scan_stats[i].num_total_next_leaf,
         //   &scan_stats[i].num_no_wait_next_leaf);

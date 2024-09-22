@@ -21,6 +21,8 @@ unsigned short g_slotuse = 32;
 std::string g_lock_req_str = "all";
 size_t LOOKUP_PROP = 0;
 size_t INSERT_PROP = 50;
+size_t SCAN_PROP = 50;
+size_t scan_len = 32;
 
 const int seed = 34234235; //std::random_device{}();
 
@@ -35,6 +37,16 @@ private:
 public:
     double duration = 0.0;
     size_t actual_items = 0;
+
+    struct alignas(128) thread_state { // align to cache line
+        int count;
+        int rc;
+        int scan_count;
+        uint64_t num_total_next_leaf;
+        uint64_t num_no_wait_next_leaf;
+    };
+
+    std::vector<thread_state> thread_states;
 
 private:
     MapType my_map;
@@ -72,8 +84,6 @@ public:
     static const char * op() { return "set_mixed_ops"; }
 
 private:
-    int insert_prob = INSERT_PROP;
-    int lookup_prob = LOOKUP_PROP;
     int key_space_factor = 2;
     std::atomic<int> num_running = 0;
     std::atomic<int> num_stopped = 0;
@@ -84,14 +94,10 @@ private:
     enum Operation {
         OP_INSERT,
         OP_DELETE,
-        OP_LOOKUP
+        OP_LOOKUP,
+        OP_SCAN
     };
 
-    struct alignas(128) thread_state { // align to cache line
-        int count;
-        int rc;
-    };
-    std::vector<thread_state> thread_states;
     bool stop = false;
 
     void reset() {
@@ -106,7 +112,7 @@ private:
                     std::vector<std::pair<Operation, key_type>>& operations) {
         std::mt19937 gen(seed + id);
 
-        std::uniform_int_distribution<> op_dist(0, 99); //which operation to use
+        std::uniform_int_distribution<size_t> op_dist(0, 99); //which operation to use
 
         typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
 
@@ -122,11 +128,13 @@ private:
                 op.second = uniform_dist(gen);
             }
 
-            int op_prob = op_dist(gen);
-            if (op_prob < insert_prob) {
+            size_t op_prob = op_dist(gen);
+            if (op_prob < INSERT_PROP) {
                 op.first = OP_INSERT;
-            } else if (op_prob < insert_prob + lookup_prob) {
+            } else if (op_prob < INSERT_PROP + LOOKUP_PROP) {
                 op.first = OP_LOOKUP;
+            } else if (op_prob < INSERT_PROP + LOOKUP_PROP + SCAN_PROP) {
+                op.first = OP_SCAN;
             } else {
                 op.first = OP_DELETE;
             }
@@ -151,7 +159,8 @@ private:
            }
         }
 
-        for (const auto& op : operations) {
+        for (size_t i = 0; i < operations.size() && !stop; ++i) {
+            auto& op = operations[i];
             switch (op.first) {
             case OP_INSERT: {
                 ValType val = ValType(op.second, DataType());
@@ -164,6 +173,24 @@ private:
                 bool found = my_map.exists(op.second);
                 ++thread_states[id].count;
                 thread_states[id].rc += found;
+                break;
+            }
+            case OP_SCAN: {
+                uint16_t num_total_next_leaf = 0;
+                uint16_t num_no_wait_next_leaf = 0;
+                my_map.map_range_length_safe(op.second, //key
+                                             scan_len,
+                                             &num_total_next_leaf,
+                                             &num_no_wait_next_leaf,
+                    [id, this]
+                    (const ValType&) {
+                        ++this->thread_states[id].scan_count;
+                    }
+                );
+
+                thread_states[id].num_total_next_leaf += num_total_next_leaf;
+                thread_states[id].num_no_wait_next_leaf += num_no_wait_next_leaf;
+                ++thread_states[id].count;
                 break;
             }
             case OP_DELETE: {
@@ -218,10 +245,11 @@ void btreemix_runner_loop(size_t items,
                           const int num_threads = 1,
                           const TestOption dist_option = ZIPF) {
 
-    double ts1, ts2, duration;
+    double duration;
     size_t actual_items = 0;
     double min_run_time = 1.0;
     size_t repeat_until = items * start_repeat;
+    uint64_t total_next_leaf = 0, total_no_wait_next_leaf = 0;
 
     do {
         // count timed tests
@@ -232,36 +260,28 @@ void btreemix_runner_loop(size_t items,
             // initialize test structures
             TestClass test(items, num_threads, dist_option);
 
-            ts1 = tlx::timestamp();
-
             // run timed test procedure
             test.run(items, repeat_until);
 
-            ts2 = tlx::timestamp();
+            duration = test.duration;
+            actual_items = test.actual_items;
 
-            if (test.duration != 0.0) {
-                duration = test.duration;
-                actual_items = test.actual_items;
+            for (const auto& ts : test.thread_states) {
+                total_next_leaf += ts.num_total_next_leaf;
+                total_no_wait_next_leaf += ts.num_no_wait_next_leaf;
             }
         }
 
         std::cout << "Insert=" << items << " repeat=" << repeat_until / items
-                  << " repeat_until=" << repeat_until << " time=" << (ts2 - ts1);
-        if (duration != 0.0) {
-            std::cout << " real time " << std::setprecision(9) << duration
-                      << " real total items " << actual_items;
-        }
-        std::cout << "\n";
+                  << " repeat_until=" << repeat_until
+                  << " real time " << std::setprecision(9) << duration
+                  << " real total items " << actual_items
+                  << std::endl;
 
         // discard and repeat if test took less than one second.
-        if ((ts2 - ts1) < min_run_time || duration < min_run_time) repeat_until *= 2;
+        if (duration < min_run_time) repeat_until *= 2;
     }
-    while ((ts2 - ts1) < min_run_time || duration < min_run_time);
-
-    if (duration != 0) {
-        ts1 = 0.0;
-        ts2 = duration;
-    }
+    while (duration < min_run_time);
 
     std::string dist_option_string = "";
     if (dist_option == ZIPF) {
@@ -270,17 +290,23 @@ void btreemix_runner_loop(size_t items,
         dist_option_string = "Uniform";
     }
 
-    float million_ops_per_sec = (actual_items / (ts2 - ts1)) / 1e6;
+    double wait_percent = (total_next_leaf - total_no_wait_next_leaf) * 100.0 / total_next_leaf;
+
+    float million_ops_per_sec = (actual_items / duration) / 1e6;
     std::cout << "RESULT"
               << " container=" << container_name
               << " op=" << TestClass::op()
-              << " insert_prob=" << INSERT_PROP
-              << " lookup_prob=" << LOOKUP_PROP
+              << " INSERT_PROP=" << INSERT_PROP
+              << " LOOKUP_PROP=" << LOOKUP_PROP
+              << " SCAN_PROP=" << SCAN_PROP
               << " dist=" << dist_option_string
-              << " time_total=" << std::setprecision(3) << (ts2 - ts1)
-              << " time(ns)="
+              << " total_next_leaf=" << total_next_leaf
+              << " total_no_wait_next_leaf=" << total_no_wait_next_leaf
+              << " wait_pct(%)=" << std::setprecision(2) << wait_percent << "%"
+              << " time_total=" << std::setprecision(3) << duration
+              << " time(ns)/item="
               << std::fixed << std::setprecision(3)
-              << ((ts2 - ts1) * 1e9 / actual_items)
+              << (duration * 1e9 / actual_items)
               << " items_per_sec(m)=" << std::setprecision(2)
               << million_ops_per_sec
               << std::endl;
@@ -289,12 +315,15 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tMops/s\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMops/s\n"
               << container_name << "\t"
               << dist_option_string << "\t"
               << INSERT_PROP << "\t"
               << LOOKUP_PROP << "\t"
-              << million_ops_per_sec << "\t"
+              << SCAN_PROP << "\t"
+              << scan_len << "\t"
+              << std::setprecision(2) << wait_percent << "%" <<"\t"
+              << std::setprecision(2) << million_ops_per_sec << "\t"
               << std::endl;
 }
 

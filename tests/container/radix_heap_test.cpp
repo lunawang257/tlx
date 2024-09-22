@@ -396,7 +396,7 @@ enum class PullMode {
 //! the STL priority queue
 template <typename KeyType, unsigned Radix>
 void random_inout(std::mt19937& prng, const KeyType min, const KeyType max,
-                  const KeyType iters, const double insert_prob,
+                  const KeyType iters, const double insert_prop,
                   const size_t prefill_n, const PullMode pm) {
     constexpr bool debug = false;
 
@@ -405,7 +405,7 @@ void random_inout(std::mt19937& prng, const KeyType min, const KeyType max,
         "min=" << min << ", "
         "max=" << max << ", "
         "iters=" << iters << ", "
-        "insert_prob=" << insert_prob << ", "
+        "insert_prop=" << insert_prop << ", "
         "prefill_n=" << prefill_n << ", "
         "pm=" << static_cast<int>(pm) << ")\n";
 
@@ -442,7 +442,7 @@ void random_inout(std::mt19937& prng, const KeyType min, const KeyType max,
     std::vector<payload_type> ref_data, heap_data;
 
     for (std::int64_t i = 0; i < static_cast<std::int64_t>(iters) || !pq.empty(); i++) {
-        while (i < static_cast<std::int64_t>(iters) && rdist(prng) < insert_prob)
+        while (i < static_cast<std::int64_t>(iters) && rdist(prng) < insert_prop)
             insert(running_min, max - std::max<std::int64_t>(0, iters - i));
 
         die_unequal(pq.empty(), heap.empty());
@@ -503,7 +503,7 @@ void random_inout(std::mt19937& prng, const KeyType min, const KeyType max,
 template <typename KeyType, unsigned Radix>
 void random_inout_pair(std::mt19937& prng,
                        const KeyType min, const KeyType max,
-                       const KeyType iters, const double insert_prob,
+                       const KeyType iters, const double insert_prop,
                        const size_t prefill_n, const PullMode pm) {
     constexpr bool debug = false;
 
@@ -512,7 +512,7 @@ void random_inout_pair(std::mt19937& prng,
         "min=" << min << ", "
         "max=" << max << ", "
         "iters=" << iters << ", "
-        "insert_prob=" << insert_prob << ", "
+        "insert_prop=" << insert_prop << ", "
         "prefill_n=" << prefill_n << ", "
         "pm=" << static_cast<int>(pm) << ")\n";
 
@@ -545,7 +545,7 @@ void random_inout_pair(std::mt19937& prng,
     std::vector<payload_type> ref_data, heap_data;
 
     for (std::int64_t i = 0; i < static_cast<std::int64_t>(iters) || !pq.empty(); i++) {
-        while (i < static_cast<std::int64_t>(iters) && rdist(prng) < insert_prob) {
+        while (i < static_cast<std::int64_t>(iters) && rdist(prng) < insert_prop) {
             insert(running_min,
                    static_cast<KeyType>(max - std::max<std::int64_t>(0, iters - i)));
         }
@@ -605,17 +605,17 @@ void random_inout_pair(std::mt19937& prng,
 
 void random_inout_all(std::mt19937& prng,
                       const std::int64_t min, const std::int64_t max,
-                      const size_t iters, const double insert_prob,
+                      const size_t iters, const double insert_prop,
                       const size_t prefill_n, const PullMode pm) {
 #define RADIXHEAP_TESTSET(T)                                                 \
     random_inout<T, 2>(prng, static_cast<T>(min), static_cast<T>(max),       \
-                       iters, insert_prob, prefill_n, pm);                   \
+                       iters, insert_prop, prefill_n, pm);                   \
     random_inout<T, 64>(prng, static_cast<T>(min), static_cast<T>(max),      \
-                        iters, insert_prob, prefill_n, pm);                  \
+                        iters, insert_prop, prefill_n, pm);                  \
     random_inout_pair<T, 2>(prng, static_cast<T>(min), static_cast<T>(max),  \
-                            iters, insert_prob, prefill_n, pm);              \
+                            iters, insert_prop, prefill_n, pm);              \
     random_inout_pair<T, 64>(prng, static_cast<T>(min), static_cast<T>(max), \
-                             iters, insert_prob, prefill_n, pm);
+                             iters, insert_prop, prefill_n, pm);
 
     die_unless(min < max);
 

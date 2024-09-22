@@ -25,19 +25,20 @@ out="$outPath/results-$ts.txt"
 
 # smaller will reduce run time
 REPEAT=16
-MAX_THREAD=2
+MAX_THREAD=4
 N=1024000
 sliceSize=32
 sliceSizeMax=64
 insertProp=34
 lookupProp=33
+scanProp=0
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 
 rm -f "$out"
 
 # shellcheck disable=SC2043
-for slotMax in 32 128 256 512 ; do
+for slotMax in 256; do
     case $slotMax in
         32)
             sliceSize=8
@@ -82,6 +83,7 @@ for slotMax in 32 128 256 512 ; do
 --maplize-threshhold $maplize_threshold \
 -I $insertProp \
 -L $lookupProp \
+-c $scanProp \
 --dist $dist \
 --repeats $REPEAT"
                     echo "$cmd"
@@ -100,7 +102,6 @@ for slotMax in 32 128 256 512 ; do
                         fi
                     fi
                 done # for threads
-                exit 0
             done # for dist
         done # for maplize_threshold
     done # for valSize

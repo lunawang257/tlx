@@ -7,10 +7,12 @@
 
 const char* help_message = R"(
 Usage:
+  -c --scan-prop [num]              Scan Proportion
   -d --dist [zipf|uniform]          Workload distribution
   -h --help                         Show this help message
   -i --iteration [num]              Number of iterations
   -I --insert-prop [num]            Insert Proportion
+  -l --scan-len [num]               Scan Length
   -L --lookup-prop [num]            Lookup Proportion
   -m --is-mapl                      For update/lookup, whether run maplized version
   -M --slice-size-max [num]         Max Slice Size
@@ -58,10 +60,12 @@ extern void run_all_args(void);
 int main(int argc, char* argv[]) {
     // Define long options
     static struct option long_options[] = {
+        {"scan-prop", required_argument, nullptr, 'c'},
         {"dist", required_argument, nullptr, 'd'},
         {"help", no_argument, nullptr, 'h'},
         {"iteration", required_argument, nullptr, 'i'},
         {"insert-prop", required_argument, nullptr, 'I'},
+        {"scan-len", required_argument, nullptr, 'l'},
         {"lookup-prop", required_argument, nullptr, 'L'},
         {"is-mapl", required_argument, nullptr, 'm'},
         {"slice-size-max", required_argument, nullptr, 'M'},
@@ -79,8 +83,11 @@ int main(int argc, char* argv[]) {
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "c:d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:l:", long_options, &option_index)) != -1) {
         switch (c) {
+        case 'c':
+            SCAN_PROP = atol(optarg);
+            break;
         case 'd': { // dist
             dist_option = stringToTestOption(optarg);
             if (dist_option != ZIPF &&
@@ -103,11 +110,14 @@ int main(int argc, char* argv[]) {
             }
             break;
         }
-        case 'i': // iteration
+        case 'i':
             NUM_ITERATIONS = std::atoi(optarg);
             break;
         case 'I':
             INSERT_PROP = atol(optarg);
+            break;
+        case 'l':
+            scan_len = std::atoi(optarg);
             break;
         case 'L':
             LOOKUP_PROP = atol(optarg);
@@ -119,19 +129,19 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             break;
-        case 'M': //slotmax
+        case 'M':
             slice_size_max = std::atoi(optarg);
             break;
-        case 'r': // iteration
+        case 'r':
             start_repeat = std::atoi(optarg);
             break;
-        case 's': // slotmax
+        case 's':
             slot_max = std::atoi(optarg);
             break;
-        case 'S': // slotsize
+        case 'S':
             slice_size = std::atoi(optarg);
             break;
-        case 't': // iteration
+        case 't':
             num_threads = std::atoi(optarg);
             break;
         case 'T':
@@ -140,10 +150,10 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Invalid maplize threshold " << optarg << " must be 0-100\n";
             }
             break;
-        case 'v': // valsize
+        case 'v':
             val_size = std::atoi(optarg);
             break;
-        case 'h': // help
+        case 'h':
             std::cout << help_message;
             return 0;
         case '?':
@@ -168,6 +178,8 @@ int main(int argc, char* argv[]) {
               << "maplize_threshold=" << maplize_threshold << "\t"
               << "INSERT_PROP=" << INSERT_PROP << "\t"
               << "LOOKUP_PROP=" << LOOKUP_PROP << "\t"
+              << "SCAN_PROP=" << SCAN_PROP << "\t"
+              << "Scan_len=" << scan_len << "\t"
               << std::endl;
 
     std::cout << "pid: " << getpid() << std::endl;

@@ -1483,16 +1483,24 @@ public:
             indent(os, depth);
             os << "Free list: ";
             idx_t idx = mapl->free_slot_head;
+            size_t num_slot_on_free = 0;
             while (idx != mapl->free_slot_end) {
                 os << idx << " ";
+                TLX_BTREE_ASSERT(idx <= leaf_slotmax + mapl_size);
+                LOG_STR("mapl " << mapl << " free idx " << idx);
                 if (idx < leaf_slotmax)
                     std::memcpy(&idx, &slotdata[idx], sizeof(idx_t));
                 else
 #pragma GCC diagnostic push // TODO: remove extra
 #pragma GCC diagnostic ignored "-Warray-bounds="
 #pragma GCC diagnostic ignored "-Wzero-length-bounds"
+                    TLX_BTREE_ASSERT(false);
                     std::memcpy(&idx, &mapl->extra[idx - leaf_slotmax], sizeof(idx_t));
 #pragma GCC diagnostic pop // TODO: remove extra
+                num_slot_on_free++;
+                if (num_slot_on_free > (leaf_slotmax + mapl_size + 1)) {
+                    TLX_BTREE_ASSERT(false);
+                }
             }
             os << "\n";
         }
@@ -4652,7 +4660,7 @@ private:
                     }
                 }
 
-#ifndef NDEBUG
+#if 0 //ndef NDEBUG
                 {
                     std::stringstream ss;
                     leaf->print_mapl(ss);
@@ -4661,7 +4669,7 @@ private:
                 }
 #endif
                 leaf->mapl->template slice_erase<optimism>(slicenum, ind);
-#ifndef NDEBUG
+#if 0 //ndef NDEBUG
                 {
                     std::stringstream ss;
                     leaf->print_mapl(ss);
