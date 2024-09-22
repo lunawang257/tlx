@@ -47,6 +47,10 @@ def update_file_if_different(old_file, new_file):
     :param old_file: Path to the old file.
     :param new_file: Path to the new file.
     """
+
+    old_file_basename = os.path.basename(old_file)
+    new_file_basename = os.path.basename(new_file)
+
     # Check if new_file exists
     if not os.path.isfile(new_file):
         raise FileNotFoundError(f"New file '{new_file}' does not exist.")
@@ -54,7 +58,7 @@ def update_file_if_different(old_file, new_file):
     # If old_file does not exist, copy new_file to old_file
     if not os.path.isfile(old_file):
         shutil.copy2(new_file, old_file)
-        print(f"Old file '{old_file}' did not exist. Copied '{new_file}' to '{old_file}'.")
+        print(f"Old file '{old_file_basename}' did not exist. Copied '{new_file_basename}' to '{old_file_basename}'.")
         return
 
     # Compare file sizes first for a quick check
@@ -62,7 +66,7 @@ def update_file_if_different(old_file, new_file):
     new_size = os.path.getsize(new_file)
     if old_size != new_size:
         shutil.copy2(new_file, old_file)
-        print(f"File sizes differ (old: {old_size} bytes, new: {new_size} bytes). Updated '{old_file}'.")
+        print(f"File sizes differ (old: {old_size_} bytes, new: {new_size} bytes). Updated '{old_file_basename}'.")
         return
 
     # If sizes are the same, compare hashes
@@ -71,9 +75,9 @@ def update_file_if_different(old_file, new_file):
 
     if old_hash != new_hash:
         shutil.copy2(new_file, old_file)
-        print(f"File contents differ. Updated '{old_file}'.")
+        print(f"File contents differ. Updated '{old_file_basename}'.")
     else:
-        print(f"No changes detected. '{old_file}' is up to date.")
+        print(f"No changes detected. '{old_file_basename}' is up to date.")
 
 def compute_md5(file_path, chunk_size=8192):
     """
