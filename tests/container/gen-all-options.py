@@ -66,7 +66,7 @@ def update_file_if_different(old_file, new_file):
     new_size = os.path.getsize(new_file)
     if old_size != new_size:
         shutil.copy2(new_file, old_file)
-        print(f"File sizes differ (old: {old_size_} bytes, new: {new_size} bytes). Updated '{old_file_basename}'.")
+        print(f"File sizes differ (old: {old_size} bytes, new: {new_size} bytes). Updated '{old_file_basename}'.")
         return
 
     # If sizes are the same, compare hashes
