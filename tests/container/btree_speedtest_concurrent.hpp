@@ -5,7 +5,7 @@
 #include <tlx/die.hpp>
 #include <tlx/timestamp.hpp>
 
-#include "btree_speedtest_controller.hpp"
+#include <tests/container/btree_speedtest_controller.hpp>
 #include "trace.h"
 
 // *** Settings

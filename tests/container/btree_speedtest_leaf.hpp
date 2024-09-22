@@ -8,8 +8,9 @@
 #include <string>
 #include <unordered_set>
 #include <map>
+
 #include <tlx/container/btree.hpp>
-#include "btree_speedtest_controller.hpp"
+#include <tests/container/btree_speedtest_controller.hpp>
 #include "ParallelTools/Lock.hpp"
 
 template<int TestSlotMax, int ValSize, unsigned short SliceSize, unsigned short SliceSizeMax>
