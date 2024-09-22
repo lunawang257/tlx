@@ -320,7 +320,7 @@ public:
     }
 
     //! Return a const reference to the current statistics.
-    const tree_stats& get_stats() const {
+    const tree_stats* get_stats() const {
         return tree_.get_stats();
     }
 

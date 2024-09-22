@@ -23,6 +23,8 @@ private:
     using UniDistLeafT = std::uniform_int_distribution<size_t>;
     using UniDistActionT = std::uniform_real_distribution<double>;
     using DurationT = std::chrono::duration<double>;
+    using MapT = typename SpeedTestT::test_map_type;
+    using BTreeT = typename SpeedTestT::test_btree_type;
 
     static const int seed = 1;
     static const size_t LeafSize = sizeof(typename SpeedTestT::test_leaf_type) - sizeof(void*);
@@ -190,6 +192,7 @@ static void perform_mapl_delete_operation(typename SpeedTestT::test_leaf_type& l
 static void test_maplize_insert_delete_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
+    BTreeT bt;
 
     // Create a leaf array with the specified size
     LeafVector leaf_array(array_size);
@@ -199,7 +202,7 @@ static void test_maplize_insert_delete_perf() {
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
-        leaf.maplize();
+        leaf.maplize(DBG(&bt));
     }
 
     // Random number generator setup
@@ -357,6 +360,7 @@ static void test_maplize_perf() {
     const size_t array_size = LEAF_ARRAY_SIZE;  // Size of the leaf array
     size_t num_selections = NUM_ITERATIONS;  // Number of selections
 
+    BTreeT bt;
     // Initialize the leaf array
     LeafVector leaf_array(array_size);
     initialize_leaf_array(leaf_array);
@@ -376,13 +380,13 @@ static void test_maplize_perf() {
 
         if (leaf.mapl) {
             auto start_time = std::chrono::high_resolution_clock::now();
-            leaf.unmaplize();
+            leaf.unmaplize(DBG(&bt));
             auto end_time = std::chrono::high_resolution_clock::now();
             total_unmaplize_time += end_time - start_time;
             ++unmaplize_count;
         } else {
             auto start_time = std::chrono::high_resolution_clock::now();
-            leaf.maplize();
+            leaf.maplize(DBG(&bt));
             auto end_time = std::chrono::high_resolution_clock::now();
             total_maplize_time += end_time - start_time;
             ++maplize_count;
@@ -461,6 +465,7 @@ static void test_maplize_lookup_perf() {
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
     constexpr int key_range = MAX_KEY_RANGE;
 
+    BTreeT bt;
     // Create a leaf array with the specified size
     LeafVector leaf_array(array_size);
 
@@ -469,7 +474,7 @@ static void test_maplize_lookup_perf() {
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
-        leaf.maplize();
+        leaf.maplize(DBG(&bt));
     }
 
     // Random number generator setup
@@ -547,13 +552,14 @@ static void test_maplize_scan_perf() {
 
     // Create a leaf array with the specified size
     LeafVector leaf_array(array_size);
+    BTreeT bt;
 
     // Initialize the leaf array with sorted values
     initialize_leaf_array(leaf_array, false); // Pass true for sorted
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
-        leaf.maplize();
+        leaf.maplize(DBG(&bt));
     }
 
     randomize_mapl_leaf_array(leaf_array);
@@ -664,6 +670,7 @@ static void test_rebalance_perf() {
     constexpr size_t array_size = LEAF_ARRAY_SIZE; // Size of the leaf array
     size_t num_iterations = NUM_ITERATIONS; // Number of iterations
 
+    BTreeT bt;
     // Create a leaf array with the specified size
     LeafVector leaf_array(array_size);
     // Initialize the leaf array with sorted values
@@ -683,7 +690,7 @@ static void test_rebalance_perf() {
     for (size_t i = 0; i < num_iterations; ++i) {
         // Select a random leaf
         auto& leaf = leaf_array[leaf_dist(rng)];
-        leaf.maplize();
+        leaf.maplize(DBG(&bt));
 
         // Start time measurement
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -706,6 +713,7 @@ static void test_maplize_structure()
 {
     constexpr size_t array_size = 1; // Size of the leaf array
 
+    BTreeT bt;
     // Create a leaf array with the specified size
     LeafVector leaf_array(array_size);
 
@@ -714,7 +722,7 @@ static void test_maplize_structure()
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
-        leaf.maplize();
+        leaf.maplize(DBG(&bt));
 
         std::cout << "Slices Information:" << std::endl;
 

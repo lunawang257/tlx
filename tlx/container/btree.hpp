@@ -241,6 +241,10 @@ public:
 
     using data_type = typename get_data_type<value_type>::type;
 
+    DBG(struct LockHelper;)
+    DBG(using ReaderWriterLock = LockHelper;)
+    DBG(using ReaderWriterLock2 = LockHelper;)
+
 public:
     //! \name Constructed Types
     //! \{
@@ -295,12 +299,51 @@ public:
     static const bool debug = traits::debug;
 
     //! \}
+
+    struct LeafNode;
+    struct tree_stats;
+
 #ifdef NDEBUG
 private:
 #else
 public:
 #endif
+
     struct node;
+    struct InnerNode;
+
+private:
+    //! \name Tree Object Data Members
+    //! \{
+
+    //! Pointer to the B+ tree's root node, either leaf or inner node.
+    node* root_;
+
+    mutable ReaderWriterLock mutex;
+
+    //! Pointer to first leaf in the double linked leaf chain.
+    LeafNode* head_leaf_;
+
+    //! Pointer to last leaf in the double linked leaf chain.
+    LeafNode* tail_leaf_;
+
+    //! Other small statistics about the B+ tree.
+    mutable tree_stats stats_; // TODO make atomic?
+
+    //! Key comparison object. More comparison functions are generated from
+    //! this < relation.
+    key_compare key_less_;
+
+    //! Memory allocator.
+    allocator_type allocator_;
+
+    //! \}
+
+#ifdef NDEBUG
+private:
+#else
+public:
+#endif
 
 private:
 #ifdef TLX_BTREE_DEBUG
@@ -350,14 +393,9 @@ private:
 
 public:
     struct Mapl;
-    struct LockHelper;
 
 //xxxx To be fixed
 public:
-    struct LeafNode;
-
-    DBG(using ReaderWriterLock = LockHelper;)
-    DBG(using ReaderWriterLock2 = LockHelper;)
 
     struct Slice {
         Mapl *mapl;
@@ -1316,14 +1354,17 @@ public:
             return percent > maplize_threshold && node::slotuse >= 2 * slice_size;
         }
 
-        void maplize() {
+        void maplize(DBG(BTree* treep)) {
             LOG_STR("before maplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(!mapl);
             mapl = new Mapl(slotdata, &(node::slotuse), this);
+
+
+            DBG(++treep->stats_.mapl_leaves;);
             LOG_STR("after maplize " << this << " min=" << min_key() << " max=" << max_key());
         }
 
-        void unmaplize() {
+        void unmaplize(DBG(BTree* treep)) {
             LOG_STR("before unmaplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(mapl);
             TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax); // technically gotta lock before this
@@ -1343,6 +1384,8 @@ public:
             }
             delete mapl;
             mapl = nullptr;
+
+            DBG(--treep->stats_.mapl_leaves;);
             LOG_STR("after unmaplize " << this << " min=" << min_key() << " max=" << max_key());
         }
 
@@ -2245,6 +2288,13 @@ public:
       //! Number of leaves in the B+ tree
       size_type2 leaves;
 
+      size_type2 mapl_leaves;
+
+      partitioned_counter<48> write_mapl;
+      partitioned_counter<48> read_mapl;
+      partitioned_counter<48> write_leaf;
+      partitioned_counter<48> read_leaf;
+
       //! Number of inner nodes in the B+ tree
       size_type2 inner_nodes;
 
@@ -2256,9 +2306,8 @@ public:
 
         //! Zero initialized
         tree_stats()
-            : size(0),
-              leaves(0), inner_nodes(0)
-        { }
+            : size(0), leaves(0),
+            mapl_leaves(0), inner_nodes(0) { }
 
         //! Return the total number of nodes
         size_type nodes() const {
@@ -2270,33 +2319,6 @@ public:
             return static_cast<double>(size) / (leaves * leaf_slots);
         }
     };
-
-    //! \}
-
-private:
-    //! \name Tree Object Data Members
-    //! \{
-
-    //! Pointer to the B+ tree's root node, either leaf or inner node.
-    node* root_;
-
-    mutable ReaderWriterLock mutex;
-
-    //! Pointer to first leaf in the double linked leaf chain.
-    LeafNode* head_leaf_;
-
-    //! Pointer to last leaf in the double linked leaf chain.
-    LeafNode* tail_leaf_;
-
-    //! Other small statistics about the B+ tree.
-    tree_stats stats_;
-
-    //! Key comparison object. More comparison functions are generated from
-    //! this < relation.
-    key_compare key_less_;
-
-    //! Memory allocator.
-    allocator_type allocator_;
 
     //! \}
 
@@ -2540,11 +2562,9 @@ public:
 
             root_ = nullptr;
             head_leaf_ = tail_leaf_ = nullptr;
-
-            stats_ = tree_stats();
         }
 
-        TLX_BTREE_ASSERT(size() == 0);
+        //TLX_BTREE_ASSERT(size() == 0);
     }
 
 private:
@@ -2748,8 +2768,8 @@ public:
     }
 
     //! Return a const reference to the current statistics.
-    const struct tree_stats& get_stats() const {
-        return stats_;
+    const struct tree_stats* get_stats() const {
+        return &stats_;
     }
 
     //! \}
@@ -2796,6 +2816,7 @@ public:
         }
 
         if (!leaf->mapl) {
+            stats_.read_leaf.add(1, cpuid);
             unsigned short slot = find_lower(leaf, key);
             auto res = (slot < leaf->slotuse && key_equal(key, leaf->key(slot)));
             if constexpr(concurrent) {
@@ -2803,6 +2824,7 @@ public:
             }
             return res;
         } else {
+            stats_.read_mapl.add(1, cpuid);
             int slicenum = leaf->mapl->get_slicenum(key);
             if constexpr (concurrent)
                 leaf->mapl->slices[slicenum].lock.read_lock();
@@ -3838,7 +3860,7 @@ private:
                             // root is not allowed to be mapl
                             if (leaf != root_ && !leaf->is_full() &&
                                 leaf->should_maplize()) {
-                                leaf->maplize();
+                                leaf->maplize(DBG(this));
                                 leaf->mutex_.write_unlock();
                                 goto retry;
                             }
@@ -3859,12 +3881,13 @@ private:
                 } else { // not concurrent, or has write lock due to pessimistic mode
                     if (leaf != root_ && !leaf->is_full() &&
                         leaf->should_maplize()) {
-                        leaf->maplize();
+                        leaf->maplize(DBG(this));
                         leaf->mutex_.write_unlock();
                         goto retry;
                     }
                 }
 
+                stats_.write_leaf.add(1, cpu_id);
                 slot = find_lower(leaf, key);
 
                 // for non-root leaf, if it is no the last leaf of parent,
@@ -3929,6 +3952,8 @@ private:
                 int slice_num = leaf->mapl->get_slicenum(key);
                 Slice* slice = leaf->mapl->slices + slice_num;
 
+                stats_.write_mapl.add(1, cpu_id);
+
                 // no need to lock slice in pessimistic mode because leaf
                 // was already write locked
                 if constexpr (concurrent && optimism) {
@@ -3945,7 +3970,7 @@ private:
 
                         // now leaf is write locked, can safely check leaf->is_full()
                         if (leaf->is_full()) {
-                            leaf->unmaplize();
+                            leaf->unmaplize(DBG(this));
                             leaf->mutex_.write_unlock();
                             goto retry; // let non-mapl code handle split
                         }
@@ -3972,7 +3997,7 @@ private:
                     DBG(TLX_BTREE_ASSERT(!concurrent ||
                                          leaf->mutex_.self_write_locked()));
                     if (leaf->is_full()) {
-                        leaf->unmaplize();
+                        leaf->unmaplize(DBG(this));
                         if constexpr (concurrent) {
                             leaf->mutex_.write_unlock();
                         }
@@ -4010,7 +4035,7 @@ private:
                     if constexpr (concurrent && optimism) {
                         slice->lock.write_unlock();
                         if (leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
-                            leaf->unmaplize();
+                            leaf->unmaplize(DBG(this));
                             leaf->mutex_.write_unlock();
                         }
                         LOG_STR("leaf " << leaf << " full k=" << key <<
@@ -4535,7 +4560,7 @@ private:
                             leaf->mutex_.write_lock();
                         }
                         if (leaf != root_ && !leaf->mapl && leaf->should_maplize()) {
-                            leaf->maplize();
+                            leaf->maplize(DBG(this));
                         }
                         if (leaf->mapl) {
                             leaf->mutex_.write_unlock();
@@ -4557,6 +4582,7 @@ private:
 
             if (!leaf->mapl)
             {
+                stats_.write_leaf.add(1, cpu_id);
                 unsigned short slot = find_lower(leaf, key);
                 if (slot >= leaf->slotuse || !key_equal(key, leaf->key(slot))) {
                     TLX_BTREE_PRINT("Could not find key " << key << " to erase.");
@@ -4623,6 +4649,7 @@ private:
 
                 fix_underflow = leaf->is_underflow() && !(leaf == root_ && leaf->slotuse >= 1);
             } else {
+                stats_.write_mapl.add(1, cpu_id);
                 slicenum = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slicenum];
                 if constexpr (concurrent && optimism) {
@@ -4749,9 +4776,9 @@ private:
                         << " right:" << right_leaf
                         << "(mapl:" << (right_leaf ? right_leaf->mapl != nullptr : 0) << ")");
 
-                if (leaf->mapl) leaf->unmaplize();
-                if (left_leaf && left_leaf->mapl) left_leaf->unmaplize();
-                if (right_leaf && right_leaf->mapl) right_leaf->unmaplize();
+                if (leaf->mapl) leaf->unmaplize(DBG(this));
+                if (left_leaf && left_leaf->mapl) left_leaf->unmaplize(DBG(this));
+                if (right_leaf && right_leaf->mapl) right_leaf->unmaplize(DBG(this));
                 // determine what to do about the underflow
 
                 // case : if this empty leaf is the root, then delete all nodes
@@ -5022,7 +5049,7 @@ private:
                         auto leaf = static_cast<LeafNode*>(root_);
                         // root node is never mapl to simplify
                         if (leaf->mapl) {
-                            leaf->unmaplize();
+                            leaf->unmaplize(DBG(this));
                         }
                     }
 
@@ -5597,8 +5624,8 @@ private:
                         " with common parent " << parent << ".");
         (void)parent;
 
-        if (left->mapl) left->unmaplize();
-        if (right->mapl) right->unmaplize();
+        if (left->mapl) left->unmaplize(DBG(this));
+        if (right->mapl) right->unmaplize(DBG(this));
 
         TLX_BTREE_ASSERT(left->is_leafnode() && right->is_leafnode());
         TLX_BTREE_ASSERT(parent->level == 1);

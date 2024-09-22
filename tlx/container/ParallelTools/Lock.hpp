@@ -85,7 +85,7 @@ public:
     return;
   }
 
-  int64_t get() {
+  int64_t get() const {
     int64_t total = 0;
     for (uint32_t i = 0; i < num_counters; i++) {
       int64_t c = local_counters[i].counter.load();

@@ -34,9 +34,9 @@
 
 #include <tlx/container/ParallelTools/parallel.h>
 #include <tlx/container/ParallelTools/reducer.h>
-#include <tlx/container/ParallelTools/Lock.hpp>
 
 #include <tlx/container/btree.hpp>
+#include <tlx/container/ParallelTools/Lock.hpp>
 #include <lock_type.hpp>
 
 //#define STD_LOCK

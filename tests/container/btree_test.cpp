@@ -43,12 +43,23 @@
 #include <string>
 #include <utility>
 #include <map>
+#include <iostream>
+#include <vector>
+#include <random>
+#include <chrono>
+#include <memory>
 
 #if TLX_MORE_TESTS
 static const bool tlx_more_tests = true;
 #else
 static const bool tlx_more_tests = false;
 #endif
+
+
+#include <tlx/container/btree_set.hpp>
+#include "btree_test.hpp"
+
+const int test_slot_max = 8;
 
 static const bool test_multi = false;
 static const bool multithread = true;
@@ -1885,6 +1896,7 @@ void test_bulkload() {
 
 /******************************************************************************/
 // Test Multithreading
+#if 0
 const int Slots = 8;
 typedef tlx::btree_set<
     unsigned int,
@@ -1895,9 +1907,11 @@ typedef tlx::btree_set<
         Slots * sizeof(size_t)>,
     std::allocator<size_t> /* Allocator */,
     true /* concurrent */ > set_type;
+#endif
 
-set_type my_multi_thread_set;
-set_type* g_test_set = &my_multi_thread_set;
+typedef TestType<test_slot_max>::test_set_type set_type;
+
+set_type* g_test_set = nullptr;
 
 #include <tests/container/btree_fast_log.hpp>
 
@@ -1936,7 +1950,7 @@ void print(const char* op, int val, int id) {
         << " value: " << val << std::endl;
 }
 
-void thread_func(int max_key, int num_operations, set_type& my_set,
+void thread_func(int max_key, int num_operations, set_type* my_set,
                  int insert_prop, int lookup_prop, int erase_prob,
                  int scan_length, int id) {
     // TODO std::mt19937 gen(seed + id);
@@ -1958,19 +1972,19 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("insert", key, id);
-            log_op(OP_INSERT, key, false, my_set.size(), id + thread_start_idx);
-            bool succeeded = my_set.insert(key).second;
-            log_op(OP_INSERT_DONE, key, succeeded, my_set.size(), id + thread_start_idx);
+            log_op(OP_INSERT, key, false, my_set->size(), id + thread_start_idx);
+            bool succeeded = my_set->insert(key).second;
+            log_op(OP_INSERT_DONE, key, succeeded, my_set->size(), id + thread_start_idx);
             die_unless(succeeded != truth_source[key].in_set);
             truth_source[key].in_set = true;
 
-            log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
-            bool found = my_set.exists(key);
-            log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
+            log_op(OP_FIND, key, false, my_set->size(), id + thread_start_idx);
+            bool found = my_set->exists(key);
+            log_op(OP_FIND_DONE, key, found, my_set->size(), id + thread_start_idx);
             if (found != truth_source[key].in_set) {
                 before_assert();
                 std::cout << "Cannot find just inserted key " << key << "\n" << std::flush;
-                my_set.print(std::cout);
+                my_set->print(std::cout);
                 exit(1);
             }
         }
@@ -1979,28 +1993,28 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("find", key, id);
             // using exists because this currently doesn't support iterators
-            log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
-            bool found = my_set.exists(key);
-            log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
+            log_op(OP_FIND, key, false, my_set->size(), id + thread_start_idx);
+            bool found = my_set->exists(key);
+            log_op(OP_FIND_DONE, key, found, my_set->size(), id + thread_start_idx);
             die_unless(found == truth_source[key].in_set);
         }
         else if (operation < insert_prop + lookup_prop + erase_prob)
         {
             std::lock_guard<std::mutex> lock(truth_source[key].mtx);
             print("erase", key, id);
-            log_op(OP_ERASE, key, false, my_set.size(), id + thread_start_idx);
-            bool erased = my_set.erase(key);
-            log_op(OP_ERASE_DONE, key, erased, my_set.size(), id + thread_start_idx);
+            log_op(OP_ERASE, key, false, my_set->size(), id + thread_start_idx);
+            bool erased = my_set->erase(key);
+            log_op(OP_ERASE_DONE, key, erased, my_set->size(), id + thread_start_idx);
             die_unless(erased == truth_source[key].in_set);
             truth_source[key].in_set = false;
 
-            log_op(OP_FIND, key, false, my_set.size(), id + thread_start_idx);
-            bool found = my_set.exists(key);
-            log_op(OP_FIND_DONE, key, found, my_set.size(), id + thread_start_idx);
+            log_op(OP_FIND, key, false, my_set->size(), id + thread_start_idx);
+            bool found = my_set->exists(key);
+            log_op(OP_FIND_DONE, key, found, my_set->size(), id + thread_start_idx);
             if (found != truth_source[key].in_set) {
                 before_assert();
                 std::cout << "Found just deleted key " << key << "\n" << std::flush;
-                my_set.print(std::cout);
+                my_set->print(std::cout);
                 exit(1);
             }
         }
@@ -2020,7 +2034,7 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
                 }
             }
             locked_range_end = j;
-            my_set.map_range_length_safe(
+            my_set->map_range_length_safe(
                 key, scan_length,
                 &num_total_next_leaf, &num_no_wait_next_leaf,
                 [&prev, &num_set]
@@ -2040,7 +2054,7 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
             }
         }
         //std::cout << "After iteration " << i << "\n";
-        //my_set.print(std::cout);
+        //my_set->print(std::cout);
         //usleep(10 * 1000 * 1000ull); // sleep for debugging
     }
     scan_stats[id].num_total_next_leaf += num_total_next_leaf;
@@ -2049,7 +2063,8 @@ void thread_func(int max_key, int num_operations, set_type& my_set,
     cleanup_thread_info();
 }
 
-void test_multithread(int max_key, int num_operations,
+void test_multithread(set_type* my_multi_thread_set,
+                      int max_key, int num_operations,
                       size_t initial_size, int num_threads,
                       scan_stat *total_st) {
     in_multi_test = true;
@@ -2068,16 +2083,16 @@ void test_multithread(int max_key, int num_operations,
     cur_numthreads = num_threads; // for debug printing TODO
 
     // reset from previous runs
-    my_multi_thread_set.clear();
+    my_multi_thread_set->clear();
     TLX_BTREE_ASSERT(max_key <= static_cast<int>(truth_source.size()));
     for (int i = 0; i < max_key; ++i) {
          truth_source[i].in_set = false;
     }
 
     // prepare the set to start with random items
-    while (my_multi_thread_set.size() < initial_size) {
+    while (my_multi_thread_set->size() < initial_size) {
         auto k = key(gen) % max_key;
-        bool inserted = my_multi_thread_set.insert(k).second;
+        bool inserted = my_multi_thread_set->insert(k).second;
         die_unless(inserted != truth_source[k].in_set);
         truth_source[k].in_set = true;
     }
@@ -2089,7 +2104,7 @@ void test_multithread(int max_key, int num_operations,
         scan_stats[i].num_no_wait_next_leaf = 0;
         threads.emplace_back(
             thread_func, max_key, num_operations,
-            std::ref(my_multi_thread_set),
+            my_multi_thread_set,
             insert_prop, lookup_prop, erase_prob,
             scan_length, i);
         //&scan_stats[i].num_total_next_leaf,
@@ -2110,18 +2125,6 @@ void test_multithread(int max_key, int num_operations,
 void test_mapl() {}
 
 #else
-
-#include <tlx/container/btree_set.hpp>
-#include "btree_test.hpp"
-
-
-#include <iostream>
-#include <vector>
-#include <random>
-#include <chrono>
-#include <memory>
-
-const int test_slot_max = 8;
 
 // Function to trim leading/trailing spaces and empty lines from a string
 std::string trim(const std::string& input) {
@@ -2225,7 +2228,8 @@ template<int TestSlotMax>
 bool mapl_has_extra() {
     typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
     set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-    leaf.maplize();
+    DBG(typename TestType<TestSlotMax>::test_set_type my_set;);
+    leaf.maplize(DBG(&my_set.tree_));
     verify_mapl<TestSlotMax>("maplize", leaf, R"(
     #slices=3
     slice[0]: 0:10 1:20
@@ -2240,10 +2244,13 @@ bool mapl_has_extra() {
 
 template<int TestSlotMax>
 void test_mapl_with_extra() {
+
+    DBG(typename TestType<TestSlotMax>::test_set_type my_set;);
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-        leaf.maplize();
+
+        leaf.maplize(DBG(&my_set.tree_));
 
         verify_mapl<TestSlotMax>("aligned", leaf, R"(
 #slices=2
@@ -2296,7 +2303,7 @@ Free list: 10 11
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
-        leaf.maplize();
+        leaf.maplize(DBG(&my_set.tree_));
 
         verify_mapl<TestSlotMax>("unaligned", leaf, R"(
 #slices=2
@@ -2317,7 +2324,7 @@ Free list: 5 6 7 8 9 10 11
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-        leaf.maplize();
+        leaf.maplize(DBG(&my_set.tree_));
 
         // bc i messed up writing the tests
         slice_insert<TestSlotMax>(&leaf, 15);
@@ -2366,10 +2373,12 @@ Free list: 4 5 6 3 7 8 9 10 11
 
 template<int TestSlotMax>
 void test_mapl_without_extra() { // array 'extra' is empty
+
+    DBG(typename TestType<TestSlotMax>::test_set_type my_set;);
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-        leaf.maplize();
+        leaf.maplize(DBG(&my_set.tree_));
 
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
 #slices=3
@@ -2407,7 +2416,7 @@ Free list:
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
-        leaf.maplize();
+        leaf.maplize(DBG(&my_set.tree_));
 
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
 #slices=3
@@ -2429,7 +2438,7 @@ Free list: 5 6 7
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-        leaf.maplize();
+        leaf.maplize(DBG(&my_set.tree_));
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
 #slices=3
 slice[0]: 0:10 1:20
@@ -2496,7 +2505,7 @@ Free list: 4 5 6 3 7
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
-        leaf.maplize();
+        leaf.maplize(DBG(&my_set.tree_));
         leaf.mutex_.write_lock();
         leaf.mapl->rebalance();
 
@@ -2584,6 +2593,9 @@ int main() {
             std::min(1000, std::max(1, total_passes / 100));
 
         for (int i = 0; i < total_passes; i++) {
+            set_type* my_multi_thread_set = new set_type;
+            g_test_set = my_multi_thread_set;
+
             switch (i % 3) {
             case 0: // test empty tree
                 initial_size = 0;
@@ -2602,7 +2614,8 @@ int main() {
                 break;
             }
             num_threads = (i < single_thread_passes) ? 1 : NUM_THREADS;
-            test_multithread(max_key, num_operations, initial_size, num_threads,
+            test_multithread(my_multi_thread_set, max_key, num_operations,
+                             initial_size, num_threads,
                              &total_scan_stat);
             debug_log_info.resize(0);
             debug_log_info.resize(TOTAL_DEBUG_LOG_INFO);
@@ -2615,19 +2628,27 @@ int main() {
                 if (one_line) {
                    std::cout << "\r";
                 }
+                auto stats = my_multi_thread_set->get_stats();
                 std::cout << std::setfill('0') << std::setw(2) << sec / 60 << ':'
                           << std::setfill('0') << std::setw(2) << sec % 60
                           <<" " << i << "/" << total_passes
                           << "  " << int(prop + 0.5)
                           << "%  time left: "
                           << std::setfill('0') << std::setw(2) << sec_left / 60 << ':'
-                          << std::setfill('0') << std::setw(2) << sec_left % 60;
+                          << std::setfill('0') << std::setw(2) << sec_left % 60
+                          << " mapl-leaf: " << stats->mapl_leaves << "-" << stats->leaves
+                          << " write mapl-write leaf: " << stats->write_mapl.get() << "-"
+                          << stats->write_leaf.get()
+                          << " read mapl-read leaf: " << stats->read_mapl.get() << "-"
+                          << stats->read_leaf.get();
+
                 if (one_line) {
                    std::cout << std::flush;
                 } else {
                    std::cout << std::endl;
                 }
             }
+            delete my_multi_thread_set;
         }
         std::cout << std::endl;
 

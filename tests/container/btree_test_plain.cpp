@@ -215,12 +215,12 @@ bool test_zipfian_inserts(uint64_t max_size, int trials, size_t threads_num, dou
         auto concurrent_sum = concurrent_map.psum();
         printf("concurrent sum = %" PRIu64 "\n", concurrent_sum);
         //size,leaves,inner_nodes,leaf_slots,inner_slots,avgfill_leaves
-        std::cout << "[Tree states] size=" << concurrent_map.get_stats().size
-        << ", inner_nodes=" << concurrent_map.get_stats().inner_nodes
-        << ", leaves=" << concurrent_map.get_stats().leaves
-        <<", inner_slots=" << concurrent_map.get_stats().inner_slots
-        <<", leaf_slots=" << concurrent_map.get_stats().leaf_slots
-        <<", avgfill_leaves=" << concurrent_map.get_stats().avgfill_leaves()
+        std::cout << "[Tree states] size=" << concurrent_map.get_stats()->size
+        << ", inner_nodes=" << concurrent_map.get_stats()->inner_nodes
+        << ", leaves=" << concurrent_map.get_stats()->leaves
+        <<", inner_slots=" << concurrent_map.get_stats()->inner_slots
+        <<", leaf_slots=" << concurrent_map.get_stats()->leaf_slots
+        <<", avgfill_leaves=" << concurrent_map.get_stats()->avgfill_leaves()
         <<", threads_num=" << threads_num << ", insert_num=" << max_size
         <<std::endl;
     }
