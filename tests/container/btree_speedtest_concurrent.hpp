@@ -294,12 +294,15 @@ void btreemix_runner_loop(size_t items,
             }
 
             auto stat = test.my_map.get_stats();
+
             leaves_count = stat->leaves;
             mapl_leaves_count = stat->mapl_leaves;
-            read_count = stat->read_mapl.get() + stat->read_leaf.get();
+
             mapl_read_count = stat->read_mapl.get();
-            write_count = stat->write_mapl.get() + stat->write_leaf.get();
+            read_count = mapl_read_count + stat->read_leaf.get();
+
             mapl_write_count = stat->write_mapl.get();
+            write_count = mapl_write_count + stat->write_leaf.get();
         }
 
         mapl_pct = 100.0 * mapl_leaves_count / leaves_count;

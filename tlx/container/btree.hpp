@@ -3019,6 +3019,7 @@ public:
                 int slicenum;
                 bool reach_slice_end = false;
 
+                stats_.read_mapl.add(1, cpuid);
                 if (is_first_leaf) {
                     slicenum = leaf->mapl->get_slicenum(start);
                     is_first_leaf = false;
@@ -3056,6 +3057,8 @@ public:
                 reach_leaf_end = (slicenum == leaf->mapl->numslices) &&
                     reach_slice_end;
             } else {
+                stats_.read_leaf.add(1, cpuid);
+
                 // get first key greater or equal to start
                 start_slot = find_lower(leaf, start);
                 int i = start_slot;

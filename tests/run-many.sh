@@ -38,7 +38,7 @@ prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 rm -f "$out"
 
 # shellcheck disable=SC2043
-for slotMax in 256; do
+for slotMax in 32; do
     case $slotMax in
         32)
             sliceSize=8
@@ -60,7 +60,7 @@ for slotMax in 256; do
     esac
     sliceSizeMax=$((sliceSize*2))
     # shellcheck disable=SC2043
-    for valSize in 128 256 512 ; do
+    for valSize in 64 ; do
         # shellcheck disable=SC2043
         for maplize_threshold in 0 100 ; do
             # shellcheck disable=SC2043
