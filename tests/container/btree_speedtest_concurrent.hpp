@@ -44,6 +44,12 @@ public:
         int scan_count;
         uint64_t num_total_next_leaf;
         uint64_t num_no_wait_next_leaf;
+
+        uint64_t total_read_lock_ns;
+        uint64_t total_write_lock_ns;
+
+        uint64_t total_read_lock_ct;
+        uint64_t total_write_lock_ct;
     };
 
     std::vector<thread_state> thread_states;
@@ -211,6 +217,11 @@ private:
                 stop = true; // stop all threads
             }
         }
+
+        thread_states[id].total_read_lock_ns = localLockStat.total_read_lock_ns.count();
+        thread_states[id].total_write_lock_ns = localLockStat.total_write_lock_ns.count();
+        thread_states[id].total_read_lock_ct = localLockStat.total_read_lock_ct;
+        thread_states[id].total_write_lock_ct = localLockStat.total_write_lock_ct;
     }
 
 public:
@@ -255,6 +266,8 @@ void btreemix_runner_loop(size_t items,
     size_t read_count, mapl_read_count;
     size_t write_count, mapl_write_count;
     double mapl_pct, mapl_read_pct, mapl_write_pct;
+    uint64_t total_read_lock_ns = 0, total_write_lock_ns = 0;
+    uint64_t total_read_lock_ct = 0, total_write_lock_ct = 0;
 
     do {
         // count timed tests
@@ -274,6 +287,10 @@ void btreemix_runner_loop(size_t items,
             for (const auto& ts : test.thread_states) {
                 total_next_leaf += ts.num_total_next_leaf;
                 total_no_wait_next_leaf += ts.num_no_wait_next_leaf;
+                total_read_lock_ns += ts.total_read_lock_ns;
+                total_write_lock_ns += ts.total_write_lock_ns;
+                total_read_lock_ct += ts.total_read_lock_ct;
+                total_write_lock_ct += ts.total_write_lock_ct;
             }
 
             auto stat = test.my_map.get_stats();
@@ -316,6 +333,9 @@ void btreemix_runner_loop(size_t items,
         total_next_leaf :
         0;
 
+    double avg_read_lock_time = total_read_lock_ns * 1.0 / total_read_lock_ct;
+    double avg_write_lock_time = total_write_lock_ns * 1.0 / total_write_lock_ct;
+
     float million_ops_per_sec = (actual_items / duration) / 1e6;
     std::cout << "RESULT"
               << " container=" << container_name
@@ -324,12 +344,14 @@ void btreemix_runner_loop(size_t items,
               << " LOOKUP_PROP=" << LOOKUP_PROP
               << " SCAN_PROP=" << SCAN_PROP
               << " dist=" << dist_option_string
-              << " total_next_leaf=" << total_next_leaf
-              << " total_no_wait_next_leaf=" << total_no_wait_next_leaf
+              //<< " total_next_leaf=" << total_next_leaf
+              //<< " total_no_wait_next_leaf=" << total_no_wait_next_leaf
               << " wait_pct(%)=" << std::setprecision(2) << wait_percent << "%"
-              << " time_total=" << std::setprecision(3) << duration
+              << " time_total=" << std::setprecision(2) << duration
+              << " read_lock_time=" << std::fixed << std::setprecision(1) << avg_read_lock_time << "ns"
+              << " write_lock_time=" << std::fixed << std::setprecision(1) << avg_write_lock_time << "ns"
               << " time(ns)/item="
-              << std::fixed << std::setprecision(3)
+              << std::fixed << std::setprecision(2)
               << (duration * 1e9 / actual_items)
               << " items_per_sec(m)=" << std::setprecision(2)
               << million_ops_per_sec
@@ -339,17 +361,19 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tMops/s\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tRdLk\tWtLk\tMops/s\n"
               << container_name << "\t"
               << dist_option_string << "\t"
               << INSERT_PROP << "\t"
               << LOOKUP_PROP << "\t"
               << SCAN_PROP << "\t"
               << scan_len << "\t"
-              << std::setprecision(3) << wait_percent << "%" <<"\t"
-              << std::setprecision(3) << mapl_pct << "%" <<"\t"
-              << std::setprecision(3) << mapl_read_pct << "%" <<"\t"
-              << std::setprecision(3) << mapl_write_pct << "%" <<"\t"
+              << std::setprecision(2) << wait_percent << "%" <<"\t"
+              << std::setprecision(2) << mapl_pct << "%" <<"\t"
+              << std::setprecision(2) << mapl_read_pct << "%" <<"\t"
+              << std::setprecision(2) << mapl_write_pct << "%" <<"\t"
+              << std::fixed << std::setprecision(1) << avg_read_lock_time << "ns" << "\t"
+              << std::fixed << std::setprecision(1) << avg_write_lock_time << "ns" << "\t"
               << std::setprecision(2) << million_ops_per_sec << "\t"
               << std::endl;
 }

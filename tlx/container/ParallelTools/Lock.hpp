@@ -226,6 +226,15 @@ private:
   partitioned_counter<48> readers{};
 };
 
+struct ThreadLocalLockStat {
+    std::chrono::duration<uint64_t, std::nano> total_read_lock_ns;
+    std::chrono::duration<uint64_t, std::nano> total_write_lock_ns;
+
+    uint64_t total_read_lock_ct = 0;
+    uint64_t total_write_lock_ct = 0;
+};
+thread_local ThreadLocalLockStat localLockStat;
+
 class ReaderWriterLock2 {
 public:
   ReaderWriterLock2() : writer(0), readers(0) {}
@@ -251,6 +260,10 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
    */
   void read_lock(int cpuid __attribute__((unused)) = -1) {
 
+    localLockStat.total_read_lock_ct++;
+
+    auto start = std::chrono::high_resolution_clock::now();
+
     readers++;
 
     bool waited = false;
@@ -263,6 +276,8 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
 
     if (waited) con_tracker.track_wait();
     else con_tracker.track_no_wait();
+
+    localLockStat.total_read_lock_ns += std::chrono::high_resolution_clock::now() - start;
   }
 
   void read_unlock(int cpuid __attribute__((unused)) = -1) {
@@ -281,6 +296,10 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
   void write_lock() {
     bool waited = false;
 
+    localLockStat.total_write_lock_ct++;
+    
+    auto start = std::chrono::high_resolution_clock::now();
+
     // acquire write lock.
     while (writer.test_and_set(std::memory_order_acq_rel)) {
       waited = true;
@@ -294,6 +313,8 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
 
     if (waited) con_tracker.track_wait();
     else con_tracker.track_no_wait();
+
+    localLockStat.total_write_lock_ns += std::chrono::high_resolution_clock::now() - start;
   }
 
   bool write_locked() {

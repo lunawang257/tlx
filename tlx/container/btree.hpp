@@ -933,6 +933,10 @@ public:
 
         void read_lock(int cpuid __attribute__((unused)) = -1,
                        bool verify __attribute__((unused)) = false) {
+            localLockStat.total_read_lock_ct++;
+
+            auto start = std::chrono::high_resolution_clock::now();
+
             TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
             if constexpr (!concurrent) TLX_BTREE_ASSERT(false);
             if (!take_lock()) {
@@ -960,6 +964,8 @@ public:
             VERIFY_NODE(verify, treep, nodep);
             log_lock(nodep, lock_type_read_got, sliceid);
             DBGPRT();
+
+            localLockStat.total_read_lock_ns += std::chrono::high_resolution_clock::now() - start;
         }
 
         bool try_upgrade_release_on_fail(int cpuid __attribute__((unused))) {
@@ -1009,6 +1015,10 @@ public:
         }
 
         void write_lock(bool verify __attribute__((unused)) = false) {
+            localLockStat.total_write_lock_ct++;
+
+            auto start = std::chrono::high_resolution_clock::now();
+
             TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
             if constexpr (!concurrent) TLX_BTREE_ASSERT(false);
             log_lock(nodep, lock_type_write, sliceid);
@@ -1030,6 +1040,8 @@ public:
             VERIFY_NODE(verify, treep, nodep);
             log_lock(nodep, lock_type_write_got, sliceid);
             DBGPRT();
+
+            localLockStat.total_write_lock_ns += std::chrono::high_resolution_clock::now() - start;
         }
 
         void read_unlock(int cpuid __attribute__((unused)) = -1,
