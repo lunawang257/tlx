@@ -202,7 +202,7 @@ static void test_maplize_insert_delete_perf() {
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
-        leaf.maplize(DBG(&bt));
+        leaf.maplize(&bt);
     }
 
     // Random number generator setup
@@ -380,13 +380,13 @@ static void test_maplize_perf() {
 
         if (leaf.mapl) {
             auto start_time = std::chrono::high_resolution_clock::now();
-            leaf.unmaplize(DBG(&bt));
+            leaf.unmaplize(&bt);
             auto end_time = std::chrono::high_resolution_clock::now();
             total_unmaplize_time += end_time - start_time;
             ++unmaplize_count;
         } else {
             auto start_time = std::chrono::high_resolution_clock::now();
-            leaf.maplize(DBG(&bt));
+            leaf.maplize(&bt);
             auto end_time = std::chrono::high_resolution_clock::now();
             total_maplize_time += end_time - start_time;
             ++maplize_count;
@@ -474,7 +474,7 @@ static void test_maplize_lookup_perf() {
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
-        leaf.maplize(DBG(&bt));
+        leaf.maplize(&bt);
     }
 
     // Random number generator setup
@@ -559,7 +559,7 @@ static void test_maplize_scan_perf() {
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
-        leaf.maplize(DBG(&bt));
+        leaf.maplize(&bt);
     }
 
     randomize_mapl_leaf_array(leaf_array);
@@ -690,7 +690,7 @@ static void test_rebalance_perf() {
     for (size_t i = 0; i < num_iterations; ++i) {
         // Select a random leaf
         auto& leaf = leaf_array[leaf_dist(rng)];
-        leaf.maplize(DBG(&bt));
+        leaf.maplize(&bt);
 
         // Start time measurement
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -722,7 +722,7 @@ static void test_maplize_structure()
 
     // Maplize each leaf
     for (auto& leaf : leaf_array) {
-        leaf.maplize(DBG(&bt));
+        leaf.maplize(&bt);
 
         std::cout << "Slices Information:" << std::endl;
 

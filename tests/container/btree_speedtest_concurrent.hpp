@@ -48,8 +48,9 @@ public:
 
     std::vector<thread_state> thread_states;
 
-private:
     MapType my_map;
+
+private:
     key_type max_key;
 
     void insert_random_values(const size_t num_items) {
@@ -199,8 +200,8 @@ private:
                 thread_states[id].rc += erased;
                 break;
             }
-            }
-        }
+            } // switch operation
+        } // for each operation
 
         old_val = num_stopped.fetch_add(1, std::memory_order_relaxed);
         if (old_val == 0) { // this is the first thread stops
@@ -250,6 +251,10 @@ void btreemix_runner_loop(size_t items,
     double min_run_time = 1.0;
     size_t repeat_until = items * start_repeat;
     uint64_t total_next_leaf = 0, total_no_wait_next_leaf = 0;
+    size_t leaves_count, mapl_leaves_count;
+    size_t read_count, mapl_read_count;
+    size_t write_count, mapl_write_count;
+    double mapl_pct, mapl_read_pct, mapl_write_pct;
 
     do {
         // count timed tests
@@ -270,12 +275,28 @@ void btreemix_runner_loop(size_t items,
                 total_next_leaf += ts.num_total_next_leaf;
                 total_no_wait_next_leaf += ts.num_no_wait_next_leaf;
             }
+
+            auto stat = test.my_map.get_stats();
+            leaves_count = stat->leaves;
+            mapl_leaves_count = stat->mapl_leaves;
+            read_count = stat->read_mapl.get() + stat->read_leaf.get();
+            mapl_read_count = stat->read_mapl.get();
+            write_count = stat->write_mapl.get() + stat->write_leaf.get();
+            mapl_write_count = stat->write_mapl.get();
         }
 
+        mapl_pct = 100.0 * mapl_leaves_count / leaves_count;
+        mapl_read_pct = 100.0 * mapl_read_count / read_count;
+        mapl_write_pct = 100.0 * mapl_write_count / write_count;
         std::cout << "Insert=" << items << " repeat=" << repeat_until / items
                   << " repeat_until=" << repeat_until
                   << " real time " << std::setprecision(9) << duration
                   << " real total items " << actual_items
+                  << " mapl leaves:" << std::setprecision(4) << mapl_pct << "%"
+                  << " mapl reads:" << std::setprecision(4)
+                  << mapl_read_pct << "%"
+                  << " mapl writes:" << std::setprecision(4)
+                  << mapl_write_pct << "%"
                   << std::endl;
 
         // discard and repeat if test took less than one second.
@@ -290,7 +311,10 @@ void btreemix_runner_loop(size_t items,
         dist_option_string = "Uniform";
     }
 
-    double wait_percent = (total_next_leaf - total_no_wait_next_leaf) * 100.0 / total_next_leaf;
+    double wait_percent = total_next_leaf ?
+        (total_next_leaf - total_no_wait_next_leaf) * 100.0 /
+        total_next_leaf :
+        0;
 
     float million_ops_per_sec = (actual_items / duration) / 1e6;
     std::cout << "RESULT"
@@ -315,14 +339,17 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMops/s\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tMops/s\n"
               << container_name << "\t"
               << dist_option_string << "\t"
               << INSERT_PROP << "\t"
               << LOOKUP_PROP << "\t"
               << SCAN_PROP << "\t"
               << scan_len << "\t"
-              << std::setprecision(2) << wait_percent << "%" <<"\t"
+              << std::setprecision(3) << wait_percent << "%" <<"\t"
+              << std::setprecision(3) << mapl_pct << "%" <<"\t"
+              << std::setprecision(3) << mapl_read_pct << "%" <<"\t"
+              << std::setprecision(3) << mapl_write_pct << "%" <<"\t"
               << std::setprecision(2) << million_ops_per_sec << "\t"
               << std::endl;
 }

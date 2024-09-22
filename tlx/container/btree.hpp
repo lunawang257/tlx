@@ -1354,17 +1354,17 @@ public:
             return percent > maplize_threshold && node::slotuse >= 2 * slice_size;
         }
 
-        void maplize(DBG(BTree* treep)) {
+        void maplize(BTree* treep) {
             LOG_STR("before maplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(!mapl);
             mapl = new Mapl(slotdata, &(node::slotuse), this);
 
 
-            DBG(++treep->stats_.mapl_leaves;);
+            ++treep->stats_.mapl_leaves;
             LOG_STR("after maplize " << this << " min=" << min_key() << " max=" << max_key());
         }
 
-        void unmaplize(DBG(BTree* treep)) {
+        void unmaplize(BTree* treep) {
             LOG_STR("before unmaplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(mapl);
             TLX_BTREE_ASSERT(node::slotuse <= leaf_slotmax); // technically gotta lock before this
@@ -1385,7 +1385,7 @@ public:
             delete mapl;
             mapl = nullptr;
 
-            DBG(--treep->stats_.mapl_leaves;);
+            --treep->stats_.mapl_leaves;
             LOG_STR("after unmaplize " << this << " min=" << min_key() << " max=" << max_key());
         }
 
@@ -3860,7 +3860,7 @@ private:
                             // root is not allowed to be mapl
                             if (leaf != root_ && !leaf->is_full() &&
                                 leaf->should_maplize()) {
-                                leaf->maplize(DBG(this));
+                                leaf->maplize(this);
                                 leaf->mutex_.write_unlock();
                                 goto retry;
                             }
@@ -3881,7 +3881,7 @@ private:
                 } else { // not concurrent, or has write lock due to pessimistic mode
                     if (leaf != root_ && !leaf->is_full() &&
                         leaf->should_maplize()) {
-                        leaf->maplize(DBG(this));
+                        leaf->maplize(this);
                         leaf->mutex_.write_unlock();
                         goto retry;
                     }
@@ -3970,7 +3970,7 @@ private:
 
                         // now leaf is write locked, can safely check leaf->is_full()
                         if (leaf->is_full()) {
-                            leaf->unmaplize(DBG(this));
+                            leaf->unmaplize(this);
                             leaf->mutex_.write_unlock();
                             goto retry; // let non-mapl code handle split
                         }
@@ -3997,7 +3997,7 @@ private:
                     DBG(TLX_BTREE_ASSERT(!concurrent ||
                                          leaf->mutex_.self_write_locked()));
                     if (leaf->is_full()) {
-                        leaf->unmaplize(DBG(this));
+                        leaf->unmaplize(this);
                         if constexpr (concurrent) {
                             leaf->mutex_.write_unlock();
                         }
@@ -4035,7 +4035,7 @@ private:
                     if constexpr (concurrent && optimism) {
                         slice->lock.write_unlock();
                         if (leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
-                            leaf->unmaplize(DBG(this));
+                            leaf->unmaplize(this);
                             leaf->mutex_.write_unlock();
                         }
                         LOG_STR("leaf " << leaf << " full k=" << key <<
@@ -4560,7 +4560,7 @@ private:
                             leaf->mutex_.write_lock();
                         }
                         if (leaf != root_ && !leaf->mapl && leaf->should_maplize()) {
-                            leaf->maplize(DBG(this));
+                            leaf->maplize(this);
                         }
                         if (leaf->mapl) {
                             leaf->mutex_.write_unlock();
@@ -4776,9 +4776,9 @@ private:
                         << " right:" << right_leaf
                         << "(mapl:" << (right_leaf ? right_leaf->mapl != nullptr : 0) << ")");
 
-                if (leaf->mapl) leaf->unmaplize(DBG(this));
-                if (left_leaf && left_leaf->mapl) left_leaf->unmaplize(DBG(this));
-                if (right_leaf && right_leaf->mapl) right_leaf->unmaplize(DBG(this));
+                if (leaf->mapl) leaf->unmaplize(this);
+                if (left_leaf && left_leaf->mapl) left_leaf->unmaplize(this);
+                if (right_leaf && right_leaf->mapl) right_leaf->unmaplize(this);
                 // determine what to do about the underflow
 
                 // case : if this empty leaf is the root, then delete all nodes
@@ -5049,7 +5049,7 @@ private:
                         auto leaf = static_cast<LeafNode*>(root_);
                         // root node is never mapl to simplify
                         if (leaf->mapl) {
-                            leaf->unmaplize(DBG(this));
+                            leaf->unmaplize(this);
                         }
                     }
 
@@ -5624,8 +5624,8 @@ private:
                         " with common parent " << parent << ".");
         (void)parent;
 
-        if (left->mapl) left->unmaplize(DBG(this));
-        if (right->mapl) right->unmaplize(DBG(this));
+        if (left->mapl) left->unmaplize(this);
+        if (right->mapl) right->unmaplize(this);
 
         TLX_BTREE_ASSERT(left->is_leafnode() && right->is_leafnode());
         TLX_BTREE_ASSERT(parent->level == 1);
