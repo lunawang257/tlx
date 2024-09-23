@@ -30,16 +30,13 @@ N=1024000
 sliceSize=32
 sliceSizeMax=64
 insertProp=33
-lookupProp=17
-scanProp=17
+lookupProp=34
+scanProp=0
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 
-if [ "$(uname -s)" == "Linux" ]; then
-    prog="numactl -N -0 -m 0 $prog"
-fi
-
 rm -f "$out"
+echo "Output file: $out"
 
 # shellcheck disable=SC2043
 for slotMax in 256 32; do
@@ -92,6 +89,9 @@ for slotMax in 256 32; do
 --scan-len $scanLen \
 --dist $dist \
 --repeats $REPEAT"
+                    if [ "$(uname -s)" == "Linux" ]; then
+                        cmd="numactl -N -0 -m 0 $cmd"
+                    fi
                     echo "$cmd"
                     if [ "$dryrun" != "1" ] ; then
                         eval $cmd > "$oneResult"
