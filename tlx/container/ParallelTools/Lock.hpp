@@ -147,11 +147,17 @@ public:
 };
 
 struct ThreadLocalLockStat {
-    std::chrono::duration<uint64_t, std::nano> total_read_lock_ns;
-    std::chrono::duration<uint64_t, std::nano> total_write_lock_ns;
+    std::chrono::duration<uint64_t, std::nano> total_leaf_read_lock_ns;
+    std::chrono::duration<uint64_t, std::nano> total_leaf_write_lock_ns;
 
-    uint64_t total_read_lock_ct = 0;
-    uint64_t total_write_lock_ct = 0;
+    uint64_t total_leaf_read_lock_ct = 0;
+    uint64_t total_leaf_write_lock_ct = 0;
+
+    std::chrono::duration<uint64_t, std::nano> total_inner_read_lock_ns;
+    std::chrono::duration<uint64_t, std::nano> total_inner_write_lock_ns;
+
+    uint64_t total_inner_read_lock_ct = 0;
+    uint64_t total_inner_write_lock_ct = 0;
 };
 thread_local ThreadLocalLockStat localLockStat;
 
@@ -179,7 +185,7 @@ public:
    */
   void read_lock(int cpuid = -1) {
 
-    localLockStat.total_read_lock_ct++;
+    localLockStat.total_inner_read_lock_ct++;
     auto start = std::chrono::high_resolution_clock::now();
 
     readers.add(1, cpuid);
@@ -190,7 +196,7 @@ public:
       readers.add(1, cpuid);
     }
 
-    localLockStat.total_read_lock_ns += std::chrono::high_resolution_clock::now() - start;
+    localLockStat.total_inner_read_lock_ns += std::chrono::high_resolution_clock::now() - start;
   }
 
   void read_unlock(int cpuid) {
@@ -203,7 +209,7 @@ public:
    * Then wait till reader count is 0.
    */
   void write_lock() {
-    localLockStat.total_write_lock_ct++;
+    localLockStat.total_inner_write_lock_ct++;
     auto start = std::chrono::high_resolution_clock::now();
 
     // acquire write lock.
@@ -214,7 +220,7 @@ public:
     while (readers.get()) {
     }
 
-    localLockStat.total_write_lock_ns += std::chrono::high_resolution_clock::now() - start;
+    localLockStat.total_inner_write_lock_ns += std::chrono::high_resolution_clock::now() - start;
   }
 
   bool try_upgrade_release_on_fail(int cpuid) {
@@ -270,7 +276,7 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
    */
   void read_lock(int cpuid __attribute__((unused)) = -1) {
 
-    localLockStat.total_read_lock_ct++;
+    localLockStat.total_leaf_read_lock_ct++;
 
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -287,7 +293,7 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
     if (waited) con_tracker.track_wait();
     else con_tracker.track_no_wait();
 
-    localLockStat.total_read_lock_ns += std::chrono::high_resolution_clock::now() - start;
+    localLockStat.total_leaf_read_lock_ns += std::chrono::high_resolution_clock::now() - start;
   }
 
   void read_unlock(int cpuid __attribute__((unused)) = -1) {
@@ -306,7 +312,7 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
   void write_lock() {
     bool waited = false;
 
-    localLockStat.total_write_lock_ct++;
+    localLockStat.total_leaf_write_lock_ct++;
 
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -324,7 +330,7 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
     if (waited) con_tracker.track_wait();
     else con_tracker.track_no_wait();
 
-    localLockStat.total_write_lock_ns += std::chrono::high_resolution_clock::now() - start;
+    localLockStat.total_leaf_write_lock_ns += std::chrono::high_resolution_clock::now() - start;
   }
 
   bool write_locked() {

@@ -19,9 +19,9 @@ bool skip_std_set = false;
 unsigned short g_level = 0;
 unsigned short g_slotuse = 32;
 std::string g_lock_req_str = "all";
-size_t LOOKUP_PROP = 0;
-size_t INSERT_PROP = 50;
-size_t SCAN_PROP = 50;
+size_t LOOKUP_PROP = 17;
+size_t INSERT_PROP = 33;
+size_t SCAN_PROP = 17;
 size_t scan_len = 32;
 
 const int seed = 34234235; //std::random_device{}();
@@ -45,11 +45,15 @@ public:
         uint64_t num_total_next_leaf;
         uint64_t num_no_wait_next_leaf;
 
-        uint64_t total_read_lock_ns;
-        uint64_t total_write_lock_ns;
+        uint64_t total_leaf_read_lock_ns;
+        uint64_t total_leaf_write_lock_ns;
+        uint64_t total_leaf_read_lock_ct;
+        uint64_t total_leaf_write_lock_ct;
 
-        uint64_t total_read_lock_ct;
-        uint64_t total_write_lock_ct;
+        uint64_t total_inner_read_lock_ns;
+        uint64_t total_inner_write_lock_ns;
+        uint64_t total_inner_read_lock_ct;
+        uint64_t total_inner_write_lock_ct;
     };
 
     std::vector<thread_state> thread_states;
@@ -218,10 +222,15 @@ private:
             }
         }
 
-        thread_states[id].total_read_lock_ns = localLockStat.total_read_lock_ns.count();
-        thread_states[id].total_write_lock_ns = localLockStat.total_write_lock_ns.count();
-        thread_states[id].total_read_lock_ct = localLockStat.total_read_lock_ct;
-        thread_states[id].total_write_lock_ct = localLockStat.total_write_lock_ct;
+        thread_states[id].total_leaf_read_lock_ns = localLockStat.total_leaf_read_lock_ns.count();
+        thread_states[id].total_leaf_write_lock_ns = localLockStat.total_leaf_write_lock_ns.count();
+        thread_states[id].total_leaf_read_lock_ct = localLockStat.total_leaf_read_lock_ct;
+        thread_states[id].total_leaf_write_lock_ct = localLockStat.total_leaf_write_lock_ct;
+
+        thread_states[id].total_inner_read_lock_ns = localLockStat.total_inner_read_lock_ns.count();
+        thread_states[id].total_inner_write_lock_ns = localLockStat.total_inner_write_lock_ns.count();
+        thread_states[id].total_inner_read_lock_ct = localLockStat.total_inner_read_lock_ct;
+        thread_states[id].total_inner_write_lock_ct = localLockStat.total_inner_write_lock_ct;
     }
 
 public:
@@ -266,8 +275,10 @@ void btreemix_runner_loop(size_t items,
     size_t read_count, mapl_read_count;
     size_t write_count, mapl_write_count;
     double mapl_pct, mapl_read_pct, mapl_write_pct;
-    uint64_t total_read_lock_ns = 0, total_write_lock_ns = 0;
-    uint64_t total_read_lock_ct = 0, total_write_lock_ct = 0;
+    uint64_t total_leaf_read_lock_ns = 0, total_leaf_write_lock_ns = 0;
+    uint64_t total_leaf_read_lock_ct = 0, total_leaf_write_lock_ct = 0;
+    uint64_t total_inner_read_lock_ns = 0, total_inner_write_lock_ns = 0;
+    uint64_t total_inner_read_lock_ct = 0, total_inner_write_lock_ct = 0;
 
     do {
         // count timed tests
@@ -286,11 +297,18 @@ void btreemix_runner_loop(size_t items,
 
             for (const auto& ts : test.thread_states) {
                 total_next_leaf += ts.num_total_next_leaf;
+
                 total_no_wait_next_leaf += ts.num_no_wait_next_leaf;
-                total_read_lock_ns += ts.total_read_lock_ns;
-                total_write_lock_ns += ts.total_write_lock_ns;
-                total_read_lock_ct += ts.total_read_lock_ct;
-                total_write_lock_ct += ts.total_write_lock_ct;
+
+                total_leaf_read_lock_ns += ts.total_leaf_read_lock_ns;
+                total_leaf_write_lock_ns += ts.total_leaf_write_lock_ns;
+                total_leaf_read_lock_ct += ts.total_leaf_read_lock_ct;
+                total_leaf_write_lock_ct += ts.total_leaf_write_lock_ct;
+
+                total_inner_read_lock_ns += ts.total_inner_read_lock_ns;
+                total_inner_write_lock_ns += ts.total_inner_write_lock_ns;
+                total_inner_read_lock_ct += ts.total_inner_read_lock_ct;
+                total_inner_write_lock_ct += ts.total_inner_write_lock_ct;
             }
 
             auto stat = test.my_map.get_stats();
@@ -336,8 +354,11 @@ void btreemix_runner_loop(size_t items,
         total_next_leaf :
         0;
 
-    double avg_read_lock_time = total_read_lock_ns * 1.0 / total_read_lock_ct;
-    double avg_write_lock_time = total_write_lock_ns * 1.0 / total_write_lock_ct;
+    double avg_leaf_read_lock_time = total_leaf_read_lock_ns * 1.0 / total_leaf_read_lock_ct;
+    double avg_leaf_write_lock_time = total_leaf_write_lock_ns * 1.0 / total_leaf_write_lock_ct;
+
+    double avg_inner_read_lock_time = total_inner_read_lock_ns * 1.0 / total_inner_read_lock_ct;
+    double avg_inner_write_lock_time = total_inner_write_lock_ns * 1.0 / total_inner_write_lock_ct;
 
     float million_ops_per_sec = (actual_items / duration) / 1e6;
     std::cout << "RESULT"
@@ -351,8 +372,10 @@ void btreemix_runner_loop(size_t items,
               //<< " total_no_wait_next_leaf=" << total_no_wait_next_leaf
               << " wait_pct(%)=" << std::setprecision(2) << wait_percent << "%"
               << " time_total=" << std::setprecision(2) << duration
-              << " read_lock_time=" << std::fixed << std::setprecision(1) << avg_read_lock_time << "ns"
-              << " write_lock_time=" << std::fixed << std::setprecision(1) << avg_write_lock_time << "ns"
+              << " leaf_read_lock_time=" << std::fixed << std::setprecision(1) << avg_leaf_read_lock_time << "ns"
+              << " leaf_write_lock_time=" << std::fixed << std::setprecision(1) << avg_leaf_write_lock_time << "ns"
+              << " inner_read_lock_time=" << std::fixed << std::setprecision(1) << avg_inner_read_lock_time << "ns"
+              << " inner_write_lock_time=" << std::fixed << std::setprecision(1) << avg_inner_write_lock_time << "ns"
               << " time(ns)/item="
               << std::fixed << std::setprecision(2)
               << (duration * 1e9 / actual_items)
@@ -364,7 +387,7 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tRdLk\tWtLk\tMops/s\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tLfRdLk\tLfWtLk\tInRdLk\tInWtLk\tMops/s\n"
               << container_name << "\t"
               << dist_option_string << "\t"
               << INSERT_PROP << "\t"
@@ -375,8 +398,10 @@ void btreemix_runner_loop(size_t items,
               << std::setprecision(2) << mapl_pct << "%" <<"\t"
               << std::setprecision(2) << mapl_read_pct << "%" <<"\t"
               << std::setprecision(2) << mapl_write_pct << "%" <<"\t"
-              << std::fixed << std::setprecision(1) << avg_read_lock_time << "ns" << "\t"
-              << std::fixed << std::setprecision(1) << avg_write_lock_time << "ns" << "\t"
+              << std::fixed << std::setprecision(1) << avg_leaf_read_lock_time << "ns" << "\t"
+              << std::fixed << std::setprecision(1) << avg_leaf_write_lock_time << "ns" << "\t"
+              << std::fixed << std::setprecision(1) << avg_inner_read_lock_time << "ns" << "\t"
+              << std::fixed << std::setprecision(1) << avg_inner_write_lock_time << "ns" << "\t"
               << std::setprecision(2) << million_ops_per_sec << "\t"
               << std::endl;
 }
