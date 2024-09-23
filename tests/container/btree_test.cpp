@@ -2038,10 +2038,10 @@ void thread_func(int max_key, int num_operations, set_type* my_set,
                 key, scan_length,
                 &num_total_next_leaf, &num_no_wait_next_leaf,
                 [&prev, &num_set]
-                (const set_type::value_type& kv) {
+                (const set_type::value_type& kv) noexcept {
                     int cur = kv;
-                    for (int i = prev + 1; i < cur; ++i) {
-                        die_unless(!truth_source[i].in_set);
+                    for (int k = prev + 1; k < cur; ++k) {
+                        die_unless(!truth_source[k].in_set);
                     }
                     die_unless(truth_source[cur].in_set);
                     --num_set;

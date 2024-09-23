@@ -319,7 +319,7 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
     // acquire write lock.
     while (writer.test_and_set(std::memory_order_acq_rel)) {
       waited = true;
-      writer.wait(true, std::memory_order_acq_rel);
+      writer.wait(true, std::memory_order_acquire);
     }
 
     if (readers > 0) waited = true;

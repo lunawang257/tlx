@@ -80,13 +80,13 @@ private:
 
 public:
     Test_Set_MixedOp(size_t items,
-                    size_t num_threads = 1,
+                    size_t n_threads = 1,
                     const TestOption d_option = ZIPF) {
 
         max_key = items * key_space_factor;
         insert_random_values(items);
 
-        cur_numthreads = num_threads;
+        cur_numthreads = n_threads;
         dist_option = d_option;
 
         reset();
@@ -194,7 +194,7 @@ private:
                                              &num_total_next_leaf,
                                              &num_no_wait_next_leaf,
                     [id, this]
-                    (const ValType&) {
+                    (const ValType&) noexcept {
                         ++this->thread_states[id].scan_count;
                     }
                 );
@@ -263,7 +263,7 @@ public:
 template <typename TestClass>
 void btreemix_runner_loop(size_t items,
                           const std::string& container_name,
-                          const int num_threads = 1,
+                          const int n_threads = 1,
                           const TestOption dist_option = ZIPF) {
 
     double duration;
@@ -287,7 +287,7 @@ void btreemix_runner_loop(size_t items,
 
         {
             // initialize test structures
-            TestClass test(items, num_threads, dist_option);
+            TestClass test(items, n_threads, dist_option);
 
             // run timed test procedure
             test.run(items, repeat_until);
@@ -383,7 +383,7 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec
               << std::endl;
 
-    std::cout << "[Throughput] slot_max="<< g_slot_max << "; num_thread=" << num_threads << "; throughput="
+    std::cout << "[Throughput] slot_max="<< g_slot_max << "; num_thread=" << n_threads << "; throughput="
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
