@@ -35,6 +35,10 @@ scanProp=17
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 
+if [ "$(uname -s)" == "Linux" ]; then
+    prog="numactl -N -0 -m 0 $prog"
+fi
+
 rm -f "$out"
 
 # shellcheck disable=SC2043
