@@ -146,6 +146,15 @@ public:
     }
 };
 
+struct ThreadLocalLockStat {
+    std::chrono::duration<uint64_t, std::nano> total_read_lock_ns;
+    std::chrono::duration<uint64_t, std::nano> total_write_lock_ns;
+
+    uint64_t total_read_lock_ct = 0;
+    uint64_t total_write_lock_ct = 0;
+};
+thread_local ThreadLocalLockStat localLockStat;
+
 class ReaderWriterLock {
 
 public:
@@ -170,6 +179,9 @@ public:
    */
   void read_lock(int cpuid = -1) {
 
+    localLockStat.total_read_lock_ct++;
+    auto start = std::chrono::high_resolution_clock::now();
+
     readers.add(1, cpuid);
 
     while (writer.test(std::memory_order_relaxed)) {
@@ -177,6 +189,8 @@ public:
       writer.wait(true, std::memory_order_relaxed);
       readers.add(1, cpuid);
     }
+
+    localLockStat.total_read_lock_ns += std::chrono::high_resolution_clock::now() - start;
   }
 
   void read_unlock(int cpuid) {
@@ -189,6 +203,9 @@ public:
    * Then wait till reader count is 0.
    */
   void write_lock() {
+    localLockStat.total_write_lock_ct++;
+    auto start = std::chrono::high_resolution_clock::now();
+
     // acquire write lock.
     while (writer.test_and_set(std::memory_order_acq_rel)) {
       writer.wait(true, std::memory_order_acq_rel);
@@ -196,6 +213,8 @@ public:
     // wait for readers to finish
     while (readers.get()) {
     }
+
+    localLockStat.total_write_lock_ns += std::chrono::high_resolution_clock::now() - start;
   }
 
   bool try_upgrade_release_on_fail(int cpuid) {
@@ -225,15 +244,6 @@ private:
   std::atomic_flag writer{false};
   partitioned_counter<48> readers{};
 };
-
-struct ThreadLocalLockStat {
-    std::chrono::duration<uint64_t, std::nano> total_read_lock_ns;
-    std::chrono::duration<uint64_t, std::nano> total_write_lock_ns;
-
-    uint64_t total_read_lock_ct = 0;
-    uint64_t total_write_lock_ct = 0;
-};
-thread_local ThreadLocalLockStat localLockStat;
 
 class ReaderWriterLock2 {
 public:
@@ -297,7 +307,7 @@ bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
     bool waited = false;
 
     localLockStat.total_write_lock_ct++;
-    
+
     auto start = std::chrono::high_resolution_clock::now();
 
     // acquire write lock.

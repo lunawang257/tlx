@@ -1363,7 +1363,7 @@ public:
         bool should_maplize() {
             TLX_BTREE_ASSERT(!mapl);
             int percent = mutex_.con_tracker.percent_waited();
-            return percent > maplize_threshold && node::slotuse >= 2 * slice_size;
+            return percent >= maplize_threshold && node::slotuse >= 2 * slice_size;
         }
 
         void maplize(BTree* treep) {
