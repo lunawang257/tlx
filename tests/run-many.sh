@@ -29,7 +29,7 @@ MAX_THREAD=4
 N=1024000
 sliceSize=32
 sliceSizeMax=64
-insertProp=34
+insertProp=33
 lookupProp=17
 scanProp=17
 
@@ -39,6 +39,7 @@ rm -f "$out"
 
 # shellcheck disable=SC2043
 for slotMax in 256 32; do
+    scanLen=$((slotMax*2))
     case $slotMax in
         32)
             sliceSize=8
@@ -60,12 +61,12 @@ for slotMax in 256 32; do
     esac
     sliceSizeMax=$((sliceSize*2))
     # shellcheck disable=SC2043
-    for valSize in 256 64; do
+    for valSize in 256 64 ; do
         # shellcheck disable=SC2043
-        for maplize_threshold in 0 100 ; do
-            # shellcheck disable=SC2043
-            for dist in zipf uniform ; do
-                for ((thread=1;thread<=MAX_THREAD;thread++)); do
+        for dist in zipf uniform ; do
+            for ((thread=1;thread<=MAX_THREAD;thread*=2)); do
+                # shellcheck disable=SC2043
+                for maplize_threshold in 0 100 ; do
                     printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
                     runName="SlotMax-$slotMax-ValSize-$valSize-SliceSz-$sliceSize"
                     runName="${runName}-SlcSzMx-$sliceSizeMax-Thread-$thread"
@@ -83,7 +84,8 @@ for slotMax in 256 32; do
 --maplize-threshhold $maplize_threshold \
 -I $insertProp \
 -L $lookupProp \
--c $scanProp \
+--scan-prop $scanProp \
+--scan-len $scanLen \
 --dist $dist \
 --repeats $REPEAT"
                     echo "$cmd"
@@ -101,9 +103,9 @@ for slotMax in 256 32; do
                             gprof "$prog" gmon.out > "$outPath/gmon-${ts}-$runName.txt"
                         fi
                     fi
-                done # for threads
-            done # for dist
-        done # for maplize_threshold
+                done # for maplize_threshold
+            done # for threads
+        done # for dist
     done # for valSize
 done # for slotMax
 if [ -f "gmon.out" ]; then
