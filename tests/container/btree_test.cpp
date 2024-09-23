@@ -2228,8 +2228,9 @@ template<int TestSlotMax>
 bool mapl_has_extra() {
     typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
     set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-    DBG(typename TestType<TestSlotMax>::test_set_type my_set;);
-    leaf.maplize(DBG(&my_set.tree_));
+    typename TestType<TestSlotMax>::test_set_type my_set;
+    leaf.maplize(&my_set.tree_);
+    std::cout << "sizeof(leaf.mapl->extra)=" << sizeof(leaf.mapl->extra) << "\n" << std::flush;
     verify_mapl<TestSlotMax>("maplize", leaf, R"(
     #slices=3
     slice[0]: 0:10 1:20
@@ -2245,12 +2246,12 @@ bool mapl_has_extra() {
 template<int TestSlotMax>
 void test_mapl_with_extra() {
 
-    DBG(typename TestType<TestSlotMax>::test_set_type my_set;);
+    typename TestType<TestSlotMax>::test_set_type my_set;
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
 
-        leaf.maplize(DBG(&my_set.tree_));
+        leaf.maplize(&my_set.tree_);
 
         verify_mapl<TestSlotMax>("aligned", leaf, R"(
 #slices=2
@@ -2303,7 +2304,7 @@ Free list: 10 11
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
-        leaf.maplize(DBG(&my_set.tree_));
+        leaf.maplize(&my_set.tree_);
 
         verify_mapl<TestSlotMax>("unaligned", leaf, R"(
 #slices=2
@@ -2324,7 +2325,7 @@ Free list: 5 6 7 8 9 10 11
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-        leaf.maplize(DBG(&my_set.tree_));
+        leaf.maplize(&my_set.tree_);
 
         // bc i messed up writing the tests
         slice_insert<TestSlotMax>(&leaf, 15);
@@ -2374,11 +2375,11 @@ Free list: 4 5 6 3 7 8 9 10 11
 template<int TestSlotMax>
 void test_mapl_without_extra() { // array 'extra' is empty
 
-    DBG(typename TestType<TestSlotMax>::test_set_type my_set;);
+    typename TestType<TestSlotMax>::test_set_type my_set;
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-        leaf.maplize(DBG(&my_set.tree_));
+        leaf.maplize(&my_set.tree_);
 
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
 #slices=3
@@ -2416,7 +2417,7 @@ Free list:
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
-        leaf.maplize(DBG(&my_set.tree_));
+        leaf.maplize(&my_set.tree_);
 
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
 #slices=3
@@ -2438,7 +2439,7 @@ Free list: 5 6 7
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50, 60});
-        leaf.maplize(DBG(&my_set.tree_));
+        leaf.maplize(&my_set.tree_);
         verify_mapl<TestSlotMax>("maplize", leaf, R"(
 #slices=3
 slice[0]: 0:10 1:20
@@ -2505,7 +2506,7 @@ Free list: 4 5 6 3 7
     {
         typename TestType<TestSlotMax>::test_leaf_type leaf(nullptr);
         set_leaf_data<TestSlotMax>(&leaf, {10, 20, 30, 40, 50});
-        leaf.maplize(DBG(&my_set.tree_));
+        leaf.maplize(&my_set.tree_);
         leaf.mutex_.write_lock();
         leaf.mapl->rebalance();
 

@@ -797,7 +797,7 @@ public:
                 TLX_BTREE_ASSERT(prev_slice.slotuse == perslice);
             }*/
         }
-    };
+    } __attribute__((__aligned__(CACHE_LINE_SIZE)));
 
 
     struct LockHelper {
@@ -1543,15 +1543,15 @@ public:
                 os << idx << " ";
                 TLX_BTREE_ASSERT(idx <= leaf_slotmax + mapl_size);
                 LOG_STR("mapl " << mapl << " free idx " << idx);
-                if (idx < leaf_slotmax)
+                if (idx < leaf_slotmax) {
                     std::memcpy(&idx, &slotdata[idx], sizeof(idx_t));
-                else
+                } else {
 #pragma GCC diagnostic push // TODO: remove extra
 #pragma GCC diagnostic ignored "-Warray-bounds="
 #pragma GCC diagnostic ignored "-Wzero-length-bounds"
-                    TLX_BTREE_ASSERT(false);
                     std::memcpy(&idx, &mapl->extra[idx - leaf_slotmax], sizeof(idx_t));
 #pragma GCC diagnostic pop // TODO: remove extra
+                }
                 num_slot_on_free++;
                 if (num_slot_on_free > (leaf_slotmax + mapl_size + 1)) {
                     TLX_BTREE_ASSERT(false);
