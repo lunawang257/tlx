@@ -7,6 +7,7 @@
 
 const char* help_message = R"(
 Usage:
+  -b --benchmarking [0/1]           Benchmarking with Phased Scan
   -c --scan-prop [num]              Scan Proportion
   -d --dist [zipf|uniform]          Workload distribution
   -h --help                         Show this help message
@@ -14,7 +15,7 @@ Usage:
   -I --insert-prop [num]            Insert Proportion
   -l --scan-len [num]               Scan Length
   -L --lookup-prop [num]            Lookup Proportion
-  -m --is-mapl                      For update/lookup, whether run maplized version
+  -m --is-mapl [0/1]                For update/lookup, whether run maplized version
   -M --slice-size-max [num]         Max Slice Size
   -p --test [update|lookup|maplize|scan|btreemix|rebalance] \
                                     Test option, \
@@ -60,6 +61,7 @@ extern void run_all_args(void);
 int main(int argc, char* argv[]) {
     // Define long options
     static struct option long_options[] = {
+        {"benchmarking", required_argument, nullptr, 'b'},
         {"scan-prop", required_argument, nullptr, 'c'},
         {"dist", required_argument, nullptr, 'd'},
         {"help", no_argument, nullptr, 'h'},
@@ -83,8 +85,15 @@ int main(int argc, char* argv[]) {
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "c:d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:l:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "b:c:d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:l:", long_options, &option_index)) != -1) {
         switch (c) {
+        case 'b':
+            benchmarking = atoi(optarg); // Convert argument to integer
+            if (benchmarking != 0 && benchmarking != 1) {
+                fprintf(stderr, "Error: is_benchmarking option must be 0 or 1.\n");
+                return 1;
+            }
+            break;
         case 'c':
             SCAN_PROP = atol(optarg);
             break;
@@ -180,6 +189,7 @@ int main(int argc, char* argv[]) {
               << "LOOKUP_PROP=" << LOOKUP_PROP << "\t"
               << "SCAN_PROP=" << SCAN_PROP << "\t"
               << "Scan_len=" << scan_len << "\t"
+              << "benchmarking=" << benchmarking << "\t"
               << std::endl;
 
     std::cout << "pid: " << getpid() << std::endl;

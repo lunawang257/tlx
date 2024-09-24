@@ -28,8 +28,6 @@ bool prt_retry = prt_lock;
 bool prt_op = true;
 bool prt_split = true;
 
-extern set_type *g_test_set;
-
 enum {
   STACK_START_TO_PRINT = 3,
   NUM_STACK_TO_PRINT = 4
