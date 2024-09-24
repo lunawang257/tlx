@@ -25,8 +25,8 @@ if btreemix_fast_compile:
     btreemix_value_size_list = [256, 64]
 
 if leaf_fast_compile:
-    leaf_slot_max_list = [64]
-    leaf_value_size_list = [128]
+    leaf_slot_max_list = [64, 128, 256, 512]
+    leaf_value_size_list = [64, 128, 256, 512]
 
 # List of command formats to be included in the single file
 command_formats = [
@@ -129,14 +129,14 @@ def main():
             for slot_max in slot_max_list:
                 for value_size in value_size_list:
                     max_slice_size_exp = int(math.log2(slot_max// 2))
-                    slice_size_list = [2 ** i for i in range(3, max_slice_size_exp + 1)]
+                    slice_size_list = [2 ** i for i in range(3, max_slice_size_exp + 2)]
                     for slice_size in slice_size_list:
-                        if slice_size < 8: # minimum slice size is 8
+                        if slice_size < slot_max / 4: # minimum slice size is slot_max / 4
                             continue
-                        if slice_size * 4 > slot_max: # minimum num slices is 4
+                        if slice_size > slot_max: # maxmum num slices is slot_max
                             continue
-                        for slice_size_max in [slice_size * 2]: # + 1, int(slice_size * 1.5), slice_size * 2]: #, slice_size * 3]:
-                            if slice_size_max > slot_max: break
+                        for slice_size_max in [slice_size + 1, int(slice_size * 1.5), slice_size * 2, slice_size * 3]:
+                            #if slice_size_max > slot_max: break
                             line = command_format.format(slot_max=slot_max,
                                                          value_size=value_size,
                                                          slice_size=slice_size,
