@@ -408,3 +408,27 @@ private:
   std::atomic_flag writer{false};
   std::atomic<int> readers{};
 };
+
+class DummyReaderWriterLock {
+public:
+
+  bool try_read_lock(int cpuid __attribute__((unused)) = -1) {
+    return true;
+  }
+
+  void read_lock(int cpuid __attribute__((unused)) = -1) {}
+
+  void read_unlock(int cpuid __attribute__((unused)) = -1) {}
+
+  bool read_locked() { return true; }
+
+  void write_lock() {}
+
+  bool write_locked() { return true; }
+
+  bool try_upgrade_release_on_fail(int cpuid __attribute__((unused))) {
+    return true;
+  }
+
+  void write_unlock(void) {}
+};
