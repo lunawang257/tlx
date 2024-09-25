@@ -14,6 +14,7 @@
 #include <map>
 #include <mutex>
 #include <ostream>
+#include <signal.h>
 #include <regex>
 #include <sstream>
 #include <stack>
