@@ -135,7 +135,7 @@ def main():
                             continue
                         if slice_size > slot_max: # maxmum num slices is slot_max
                             continue
-                        for slice_size_max in [slice_size + 1, int(slice_size * 1.5), slice_size * 2, slice_size * 3]:
+                        for slice_size_max in [slice_size + 1]: #, int(slice_size * 1.5), slice_size * 2, slice_size * 3]:
                             #if slice_size_max > slot_max: break
                             line = command_format.format(slot_max=slot_max,
                                                          value_size=value_size,
