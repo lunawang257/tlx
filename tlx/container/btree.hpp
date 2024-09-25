@@ -245,15 +245,21 @@ public:
 
     using data_type = typename get_data_type<value_type>::type;
 
-#ifdef MAPL_NO_LOCK
-    using MaplLock = DummyReaderWriterLock;
-#else
+#ifdef NDEBUG
+
+#  ifdef MAPL_NO_LOCK
     using MaplLock = ReaderWriterLock2;
+#  else
+    using MaplLock = DummyReaderWriterLock;
+#  endif
+
+#else
+    struct LockHelper;
+    using MaplLock = LockHelper;
+    using ReaderWriterLock2 = LockHelper;
 #endif
 
-    DBG(struct LockHelper;)
     DBG(using ReaderWriterLock = LockHelper;)
-    DBG(using ReaderWriterLock2 = LockHelper;)
 
 public:
     //! \name Constructed Types
