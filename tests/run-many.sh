@@ -25,7 +25,7 @@ out="$outPath/results-$ts.txt"
 
 # smaller will reduce run time
 REPEAT=1
-MAX_THREAD=16
+MAX_THREAD=4
 N=10000
 sliceSize=64
 sliceSizeMax=65
@@ -39,7 +39,7 @@ rm -f "$out"
 echo "Output file: $out"
 
 # shellcheck disable=SC2043
-for slotMax in 512; do
+for slotMax in 256; do
     scanLen=$((slotMax*2))
     case $slotMax in
         32)
@@ -62,10 +62,10 @@ for slotMax in 512; do
     esac
     sliceSizeMax=$((sliceSize*2))
     # shellcheck disable=SC2043
-    for valSize in 512 ; do
+    for valSize in 256 ; do
         # shellcheck disable=SC2043
         for dist in zipf uniform ; do
-            for ((thread=1;thread<=MAX_THREAD;thread*=2)); do
+            for ((thread=1;thread<=MAX_THREAD;thread++)); do
                 # shellcheck disable=SC2043
                 for maplize_threshold in 0 100 ; do
                     printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"

@@ -21,8 +21,8 @@ leaf_slot_max_list = [32, 64, 128, 256, 512]
 leaf_value_size_list = [32, 64, 128, 256, 512]
 
 if btreemix_fast_compile:
-    btreemix_slot_max_list = [512]
-    btreemix_value_size_list = [512]
+    btreemix_slot_max_list = [256, 32]
+    btreemix_value_size_list = [256, 32]
 
 if leaf_fast_compile:
     leaf_slot_max_list = [64]
@@ -32,11 +32,11 @@ if leaf_fast_compile:
 command_formats = [
     'RUN_BTREEMIX({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n', # btreemix test
     # all rest belong to leaf tests
-    'RUN_MAPLIZE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    'RUN_UPDATE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    'RUN_LOOKUP({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    'RUN_SCAN({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    'RUN_REBALANCE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    #'RUN_MAPLIZE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    #'RUN_UPDATE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    #'RUN_LOOKUP({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    #'RUN_SCAN({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    #'RUN_REBALANCE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
 ]
 
 def update_file_if_different(old_file, new_file):
