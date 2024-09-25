@@ -248,9 +248,9 @@ public:
 #ifdef NDEBUG
 
 #  ifdef MAPL_NO_LOCK
-    using MaplLock = ReaderWriterLock2;
-#  else
     using MaplLock = DummyReaderWriterLock;
+#  else
+    using MaplLock = ReaderWriterLock2;
 #  endif
 
 #else
@@ -3904,7 +3904,7 @@ private:
 #ifdef MAPL_NO_LOCK
                     leaf->mutex_.write_lock();
 #else
-                    leaf->mutex_.read_lock();
+                    leaf->mutex_.read_lock(cpu_id);
 #endif
                 }
                 else {
