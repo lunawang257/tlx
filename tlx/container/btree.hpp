@@ -3885,7 +3885,7 @@ private:
             LeafNode* leaf = static_cast<LeafNode*>(n);
             LeafNode* original_leaf = leaf;
             unsigned short slot = -1;
-        retry:
+[[maybe_unused]] retry:
             if constexpr (concurrent) {
                 if constexpr (optimism) {
 #ifdef MAPL_NO_LOCK
@@ -3898,7 +3898,7 @@ private:
                     leaf->mutex_.write_lock();
                 }
             }
-        retry_no_lock:
+[[maybe_unused]] retry_no_lock:
             if (!leaf->mapl) {
                 if constexpr (concurrent) {
                     if constexpr (optimism) {
