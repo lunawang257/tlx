@@ -39,7 +39,7 @@ rm -f "$out"
 echo "Output file: $out"
 
 # shellcheck disable=SC2043
-for slotMax in 256; do
+for slotMax in 512; do
     scanLen=$((slotMax*2))
     case $slotMax in
         32)
@@ -62,7 +62,7 @@ for slotMax in 256; do
     esac
     sliceSizeMax=$sliceSizeMax
     # shellcheck disable=SC2043
-    for valSize in 256 ; do
+    for valSize in 512 ; do
         # shellcheck disable=SC2043
         for dist in zipf uniform ; do
             for ((thread=1;thread<=MAX_THREAD;thread++)); do
