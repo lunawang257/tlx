@@ -21,8 +21,8 @@ leaf_slot_max_list = [32, 64, 128, 256, 512]
 leaf_value_size_list = [32, 64, 128, 256, 512]
 
 if btreemix_fast_compile:
-    btreemix_slot_max_list = [512]
-    btreemix_value_size_list = [512]
+    btreemix_slot_max_list = [256, 32]
+    btreemix_value_size_list = [256, 64, 32]
 
 if leaf_fast_compile:
     leaf_slot_max_list = [512]
@@ -129,7 +129,7 @@ def main():
             for slot_max in slot_max_list:
                 for value_size in value_size_list:
                     max_slice_size_exp = int(math.log2(slot_max// 2))
-                    slice_size_list = [64] # [2 ** i for i in range(3, max_slice_size_exp + 2)]
+                    slice_size_list = [2 ** i for i in range(3, max_slice_size_exp + 2)]
                     for slice_size in slice_size_list:
                         if slice_size < slot_max / 8: # minimum slice size
                             continue
