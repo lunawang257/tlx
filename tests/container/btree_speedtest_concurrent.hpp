@@ -6,7 +6,10 @@
 #include <tlx/timestamp.hpp>
 
 #include <tests/container/btree_speedtest_controller.hpp>
+#include <tests/container/btree_fast_log.hpp>
 #include "trace.h"
+
+const size_t NUM_THREADS = 16; // just set a max value to make btree_fast_log.hpp happy
 
 // *** Settings
 bool g_use_slbtree = false;
@@ -23,8 +26,13 @@ size_t LOOKUP_PROP = 17;
 size_t INSERT_PROP = 33;
 size_t SCAN_PROP = 17;
 size_t scan_len = 32;
+size_t BENCH_LOOKUP_PROP = 0;
+size_t BENCH_INSERT_PROP = 10;
+size_t BENCH_SCAN_PROP = 80;
+uint8_t benchmarking = 0;
 
 const int seed = 34234235; //std::random_device{}();
+const uint8_t NUM_PHASES = 3;
 
 //! Test a generic set type with insert, find and delete sequences
 template <typename SpeedTestT>
@@ -39,11 +47,11 @@ public:
     size_t actual_items = 0;
 
     struct alignas(128) thread_state { // align to cache line
-        int count;
-        int rc;
+        int count = 0;
+        int rc = 0;
         int scan_count;
-        uint64_t num_total_next_leaf;
-        uint64_t num_no_wait_next_leaf;
+        uint64_t num_total_next_leaf = 0;
+        uint64_t num_no_wait_next_leaf = 0;
 
         uint64_t total_leaf_read_lock_ns;
         uint64_t total_leaf_write_lock_ns;
@@ -54,6 +62,16 @@ public:
         uint64_t total_inner_write_lock_ns;
         uint64_t total_inner_read_lock_ct;
         uint64_t total_inner_write_lock_ct;
+
+        std::chrono::duration<uint64_t, std::nano> insert_op_ns[NUM_PHASES] = {};
+        std::chrono::duration<uint64_t, std::nano> delete_op_ns[NUM_PHASES] = {};
+        std::chrono::duration<uint64_t, std::nano> lookup_op_ns[NUM_PHASES] = {};
+        std::chrono::duration<uint64_t, std::nano> scan_op_ns[NUM_PHASES] = {};
+
+        uint64_t insert_op_ct[NUM_PHASES] = {0};
+        uint64_t delete_op_ct[NUM_PHASES] = {0};
+        uint64_t lookup_op_ct[NUM_PHASES] = {0};
+        uint64_t scan_op_ct[NUM_PHASES] = {0};
     };
 
     std::vector<thread_state> thread_states;
@@ -96,17 +114,19 @@ public:
 
 private:
     int key_space_factor = 2;
-    std::atomic<int> num_running = 0;
-    std::atomic<int> num_stopped = 0;
+    std::atomic<size_t> num_running = 0;
+    std::atomic<size_t> num_stopped = 0;
+    std::atomic<size_t> one_third_reached = 0;
+    std::atomic<size_t> two_third_reached = 0;
     double ts_start = 0.0, ts_stop = 0.0;
     size_t cur_numthreads = 0;
     TestOption dist_option = ZIPF;
 
-    enum Operation {
-        OP_INSERT,
-        OP_DELETE,
-        OP_LOOKUP,
-        OP_SCAN
+    enum TestOperation {
+        TEST_OP_INSERT,
+        TEST_OP_DELETE,
+        TEST_OP_LOOKUP,
+        TEST_OP_SCAN
     };
 
     bool stop = false;
@@ -115,23 +135,35 @@ private:
         ts_start = ts_stop = 0.0;
         num_running = 0;
         num_stopped = 0;
+        one_third_reached = 0;
+        two_third_reached = 0;
         actual_items = 0;
         stop = false;
     }
 
-    void preload_ops(int id, int iterations,
-                    std::vector<std::pair<Operation, key_type>>& operations) {
-        std::mt19937 gen(seed + id);
+    void preload_mixed_ops(int thread_id, size_t iterations,
+                           std::vector<std::pair<TestOperation, key_type>>& operations) {
 
-        std::uniform_int_distribution<size_t> op_dist(0, 99); //which operation to use
+        std::mt19937 gen(seed + thread_id);
 
-        typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
+        typename SpeedTestT::UniDistKeyT op_dist(0, 99); //which operation to use
+        typename SpeedTestT::UniDistKeyT uniform_dist_first_half(0, max_key/2); // first half of the key
+        typename SpeedTestT::UniDistKeyT uniform_dist_second_half(max_key/2+1, max_key); // second half of the key
 
-        int zipseed = static_cast<int>(std::time(nullptr));
+        typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key); // uniform key
+
+        int zipseed = static_cast<int>(std::time(nullptr)); // zipf key
         util::TraceZipfian zipf_dist(zipseed, 0, max_key, 0.99);
 
-        for (int i = 0; i < iterations; i++) {
-            std::pair<Operation, key_type> op;
+        size_t insert_p = INSERT_PROP;
+        size_t lookup_p = LOOKUP_PROP;
+        size_t scan_p = SCAN_PROP;
+
+        size_t one_third_mark = iterations / 3;
+        size_t two_third_mark = iterations * 2 / 3;
+
+        for (size_t op_idx = 0; op_idx < iterations; op_idx++) {
+            std::pair<TestOperation, key_type> op;
 
             if (dist_option == ZIPF) {
                 op.second = zipf_dist.Next();
@@ -139,27 +171,143 @@ private:
                 op.second = uniform_dist(gen);
             }
 
+            if ((benchmarking == 1) && (op_idx > one_third_mark)) {
+                insert_p = BENCH_INSERT_PROP;
+                lookup_p = BENCH_LOOKUP_PROP;
+                scan_p = BENCH_SCAN_PROP;
+
+                op.second = uniform_dist_first_half(gen);
+
+                if (op_idx > two_third_mark) {
+                    op.second = uniform_dist_second_half(gen);
+                }
+            }
+
             size_t op_prob = op_dist(gen);
-            if (op_prob < INSERT_PROP) {
-                op.first = OP_INSERT;
-            } else if (op_prob < INSERT_PROP + LOOKUP_PROP) {
-                op.first = OP_LOOKUP;
-            } else if (op_prob < INSERT_PROP + LOOKUP_PROP + SCAN_PROP) {
-                op.first = OP_SCAN;
+            if (op_prob < insert_p) {
+                op.first = TEST_OP_INSERT;
+            } else if (op_prob < insert_p + lookup_p) {
+                op.first = TEST_OP_LOOKUP;
+            } else if (op_prob < insert_p + lookup_p + scan_p) {
+                op.first = TEST_OP_SCAN;
             } else {
-                op.first = OP_DELETE;
+                op.first = TEST_OP_DELETE;
             }
 
             operations.push_back(op);
         }
     }
 
-    void mixed_ops(int id, int iterations, int total_threads) {
-        std::vector<std::pair<Operation, key_type>> operations;
-        //preload the operations(id, iterations)
-        preload_ops(id, iterations, operations);
+    void update_thread_states(int thread_id,
+                              uint8_t phase_idx,
+                              TestOperation op_type,
+                              std::chrono::time_point<std::chrono::high_resolution_clock> start,
+                              std::chrono::time_point<std::chrono::high_resolution_clock> end) {
 
-        local_thread_id = id;
+        ++thread_states[thread_id].count;
+        switch (op_type) {
+            case TEST_OP_INSERT: {
+                thread_states[thread_id].insert_op_ns[phase_idx] += (end - start);
+                ++thread_states[thread_id].insert_op_ct[phase_idx];
+                break;
+            }
+            case TEST_OP_LOOKUP: {
+                thread_states[thread_id].lookup_op_ns[phase_idx] += (end - start);
+                ++thread_states[thread_id].lookup_op_ct[phase_idx];
+                break;
+            }
+            case TEST_OP_DELETE: {
+                thread_states[thread_id].delete_op_ns[phase_idx] += (end - start);
+                ++thread_states[thread_id].delete_op_ct[phase_idx];
+                break;
+            }
+            case TEST_OP_SCAN: {
+                if (phase_idx == 0) {
+                    std::cout << "scan in phase 1";
+                }
+                thread_states[thread_id].scan_op_ns[phase_idx] += (end - start);
+                ++thread_states[thread_id].scan_op_ct[phase_idx];
+                break;
+            }
+        }
+    }
+
+    void run_mixed_ops(int thread_id, const std::vector<std::pair<TestOperation, key_type>>& operations) {
+        for (size_t op_idx = 0; op_idx < operations.size() && !stop; ++op_idx) {
+            std::chrono::time_point<std::chrono::high_resolution_clock> start, end;
+
+            auto& op = operations[op_idx];
+            switch (op.first) {
+            case TEST_OP_INSERT: {
+                ValType val = ValType(op.second, DataType());
+
+                start = std::chrono::high_resolution_clock::now();
+                bool succeeded = my_map.insert(val).second;
+                end = std::chrono::high_resolution_clock::now();
+
+                thread_states[thread_id].rc += succeeded;
+                break;
+            }
+            case TEST_OP_LOOKUP: {
+                start = std::chrono::high_resolution_clock::now();
+                bool found = my_map.exists(op.second);
+                end = std::chrono::high_resolution_clock::now();
+
+                thread_states[thread_id].rc += found;
+                break;
+            }
+            case TEST_OP_SCAN: {
+                uint16_t num_total_next_leaf = 0;
+                uint16_t num_no_wait_next_leaf = 0;
+
+                start = std::chrono::high_resolution_clock::now();
+                my_map.map_range_length_safe(op.second, //key
+                                            scan_len,
+                                            &num_total_next_leaf,
+                                            &num_no_wait_next_leaf,
+                    [thread_id, this]
+                    (const ValType&) noexcept {
+                        ++this->thread_states[thread_id].scan_count;
+                    }
+                );
+                end = std::chrono::high_resolution_clock::now();
+
+                thread_states[thread_id].num_total_next_leaf += num_total_next_leaf;
+                thread_states[thread_id].num_no_wait_next_leaf += num_no_wait_next_leaf;
+                break;
+            }
+            case TEST_OP_DELETE: {
+                start = std::chrono::high_resolution_clock::now();
+                bool erased = my_map.erase(op.second);
+                end = std::chrono::high_resolution_clock::now();
+
+                thread_states[thread_id].rc += erased;
+                break;
+            }
+            } // switch operation
+
+            size_t one_third_mark = operations.size() / 3;
+            size_t two_third_mark = operations.size() * 2 / 3;
+            if (op_idx == one_third_mark) {
+                std::cout << "one third mark";
+            }
+            if (op_idx <= one_third_mark) {
+                update_thread_states(thread_id, 0, op.first, start, end);
+            } else if (op_idx > two_third_mark) {
+                update_thread_states(thread_id, 2, op.first, start, end);
+            } else {
+                update_thread_states(thread_id, 1, op.first, start, end);
+            }
+
+        } // for each operation
+    }
+
+    void mixed_ops(int thread_id, size_t iterations, size_t total_threads) {
+        std::vector<std::pair<TestOperation, key_type>> operations; // operations by non-phased threads
+
+        preload_mixed_ops(thread_id, iterations, operations);
+
+        local_thread_id = thread_id;
 
         auto old_val = num_running.fetch_add(1, std::memory_order_relaxed);
         if (old_val + 1 == total_threads) { // this is the last thread starts running
@@ -170,48 +318,7 @@ private:
            }
         }
 
-        for (size_t i = 0; i < operations.size() && !stop; ++i) {
-            auto& op = operations[i];
-            switch (op.first) {
-            case OP_INSERT: {
-                ValType val = ValType(op.second, DataType());
-                bool succeeded = my_map.insert(val).second;
-                ++thread_states[id].count;
-                thread_states[id].rc += succeeded;
-                break;
-            }
-            case OP_LOOKUP: {
-                bool found = my_map.exists(op.second);
-                ++thread_states[id].count;
-                thread_states[id].rc += found;
-                break;
-            }
-            case OP_SCAN: {
-                uint16_t num_total_next_leaf = 0;
-                uint16_t num_no_wait_next_leaf = 0;
-                my_map.map_range_length_safe(op.second, //key
-                                             scan_len,
-                                             &num_total_next_leaf,
-                                             &num_no_wait_next_leaf,
-                    [id, this]
-                    (const ValType&) noexcept {
-                        ++this->thread_states[id].scan_count;
-                    }
-                );
-
-                thread_states[id].num_total_next_leaf += num_total_next_leaf;
-                thread_states[id].num_no_wait_next_leaf += num_no_wait_next_leaf;
-                ++thread_states[id].count;
-                break;
-            }
-            case OP_DELETE: {
-                bool erased = my_map.erase(op.second);
-                ++thread_states[id].count;
-                thread_states[id].rc += erased;
-                break;
-            }
-            } // switch operation
-        } // for each operation
+        run_mixed_ops(thread_id, operations);
 
         old_val = num_stopped.fetch_add(1, std::memory_order_relaxed);
         if (old_val == 0) { // this is the first thread stops
@@ -222,15 +329,15 @@ private:
             }
         }
 
-        thread_states[id].total_leaf_read_lock_ns = localLockStat.total_leaf_read_lock_ns.count();
-        thread_states[id].total_leaf_write_lock_ns = localLockStat.total_leaf_write_lock_ns.count();
-        thread_states[id].total_leaf_read_lock_ct = localLockStat.total_leaf_read_lock_ct;
-        thread_states[id].total_leaf_write_lock_ct = localLockStat.total_leaf_write_lock_ct;
+        thread_states[thread_id].total_leaf_read_lock_ns = localLockStat.total_leaf_read_lock_ns.count();
+        thread_states[thread_id].total_leaf_write_lock_ns = localLockStat.total_leaf_write_lock_ns.count();
+        thread_states[thread_id].total_leaf_read_lock_ct = localLockStat.total_leaf_read_lock_ct;
+        thread_states[thread_id].total_leaf_write_lock_ct = localLockStat.total_leaf_write_lock_ct;
 
-        thread_states[id].total_inner_read_lock_ns = localLockStat.total_inner_read_lock_ns.count();
-        thread_states[id].total_inner_write_lock_ns = localLockStat.total_inner_write_lock_ns.count();
-        thread_states[id].total_inner_read_lock_ct = localLockStat.total_inner_read_lock_ct;
-        thread_states[id].total_inner_write_lock_ct = localLockStat.total_inner_write_lock_ct;
+        thread_states[thread_id].total_inner_read_lock_ns = localLockStat.total_inner_read_lock_ns.count();
+        thread_states[thread_id].total_inner_write_lock_ns = localLockStat.total_inner_write_lock_ns.count();
+        thread_states[thread_id].total_inner_read_lock_ct = localLockStat.total_inner_read_lock_ct;
+        thread_states[thread_id].total_inner_write_lock_ct = localLockStat.total_inner_write_lock_ct;
     }
 
 public:
@@ -280,6 +387,16 @@ void btreemix_runner_loop(size_t items,
     uint64_t total_inner_read_lock_ns = 0, total_inner_write_lock_ns = 0;
     uint64_t total_inner_read_lock_ct = 0, total_inner_write_lock_ct = 0;
 
+    std::chrono::duration<uint64_t, std::nano> total_insert_op_ns[NUM_PHASES] = {};
+    std::chrono::duration<uint64_t, std::nano> total_delete_op_ns[NUM_PHASES] = {};
+    std::chrono::duration<uint64_t, std::nano> total_lookup_op_ns[NUM_PHASES] = {};
+    std::chrono::duration<uint64_t, std::nano> total_scan_op_ns[NUM_PHASES] = {};
+
+    uint64_t total_insert_op_ct[NUM_PHASES] = {0};
+    uint64_t total_delete_op_ct[NUM_PHASES] = {0};
+    uint64_t total_lookup_op_ct[NUM_PHASES] = {0};
+    uint64_t total_scan_op_ct[NUM_PHASES] = {0};
+
     do {
         // count timed tests
         duration = 0.0;
@@ -309,6 +426,24 @@ void btreemix_runner_loop(size_t items,
                 total_inner_write_lock_ns += ts.total_inner_write_lock_ns;
                 total_inner_read_lock_ct += ts.total_inner_read_lock_ct;
                 total_inner_write_lock_ct += ts.total_inner_write_lock_ct;
+
+                std::transform(total_insert_op_ns, total_insert_op_ns + NUM_PHASES,
+                               ts.insert_op_ns, total_insert_op_ns, std::plus<>());
+                std::transform(total_lookup_op_ns, total_lookup_op_ns + NUM_PHASES,
+                               ts.lookup_op_ns, total_lookup_op_ns, std::plus<>());
+                std::transform(total_delete_op_ns, total_delete_op_ns + NUM_PHASES,
+                               ts.delete_op_ns, total_delete_op_ns, std::plus<>());
+                std::transform(total_scan_op_ns, total_scan_op_ns + NUM_PHASES,
+                               ts.scan_op_ns, total_scan_op_ns, std::plus<>());
+
+                std::transform(total_insert_op_ct, total_insert_op_ct + NUM_PHASES,
+                               ts.insert_op_ct, total_insert_op_ct, std::plus<>());
+                std::transform(total_lookup_op_ct, total_lookup_op_ct + NUM_PHASES,
+                               ts.lookup_op_ct, total_lookup_op_ct, std::plus<>());
+                std::transform(total_delete_op_ct, total_delete_op_ct + NUM_PHASES,
+                               ts.delete_op_ct, total_delete_op_ct, std::plus<>());
+                std::transform(total_scan_op_ct, total_scan_op_ct + NUM_PHASES,
+                               ts.scan_op_ct, total_scan_op_ct, std::plus<>());
             }
 
             auto stat = test.my_map.get_stats();
@@ -360,6 +495,27 @@ void btreemix_runner_loop(size_t items,
     double avg_inner_read_lock_time = total_inner_read_lock_ns * 1.0 / total_inner_read_lock_ct;
     double avg_inner_write_lock_time = total_inner_write_lock_ns * 1.0 / total_inner_write_lock_ct;
 
+    double insert_time[NUM_PHASES];
+    double delete_time[NUM_PHASES];
+    double lookup_time[NUM_PHASES];
+    double scan_time[NUM_PHASES];
+    std::transform(total_insert_op_ct, total_insert_op_ct + NUM_PHASES,
+                   total_insert_op_ns, insert_time, [](auto op_ct, auto op_ns) {
+                       return (op_ct * 1.0 / op_ns.count() * 1e9 / 1e6);
+                   });
+    std::transform(total_delete_op_ct, total_delete_op_ct + NUM_PHASES,
+                   total_delete_op_ns, delete_time, [](auto op_ct, auto op_ns) {
+                       return (op_ct * 1.0 / op_ns.count() * 1e9 / 1e6);
+                   });
+    std::transform(total_lookup_op_ct, total_lookup_op_ct + NUM_PHASES,
+                   total_lookup_op_ns, lookup_time, [](auto op_ct, auto op_ns) {
+                       return (op_ct * 1.0 / op_ns.count() * 1e9 / 1e6);
+                   });
+    std::transform(total_scan_op_ct, total_scan_op_ct + NUM_PHASES,
+                   total_scan_op_ns, scan_time, [](auto op_ct, auto op_ns) {
+                       return (op_ns.count() * 1.0 / op_ct / 1e3);
+                   });
+
     float million_ops_per_sec = (actual_items / duration) / 1e6;
     std::cout << "RESULT"
               << " container=" << container_name
@@ -368,6 +524,7 @@ void btreemix_runner_loop(size_t items,
               << " LOOKUP_PROP=" << LOOKUP_PROP
               << " SCAN_PROP=" << SCAN_PROP
               << " dist=" << dist_option_string
+              << " benchmarking=" << std::to_string(benchmarking)
               //<< " total_next_leaf=" << total_next_leaf
               //<< " total_no_wait_next_leaf=" << total_no_wait_next_leaf
               << " wait_pct(%)=" << std::setprecision(2) << wait_percent << "%"
@@ -387,9 +544,10 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tLfRdLk\tLfWtLk\tInRdLk\tInWtLk\tMops/s\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tBch\tInsertP\tLookupP\tScanP\tScanLen\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tLfRdLk\tLfWtLk\tInRdLk\tInWtLk\tP1Inst\tP1Dlt\tP1LkP\tP1Scn\tP2Inst\tP2Dlt\tP2LkP\tP2Scn\tP3Inst\tP3Dlt\tP3LkP\tP3Scn\tMops/s\titms\trpts\tactItms\tDrtion\n"
               << container_name << "\t"
               << dist_option_string << "\t"
+              << std::to_string(benchmarking) << "\t"
               << INSERT_PROP << "\t"
               << LOOKUP_PROP << "\t"
               << SCAN_PROP << "\t"
@@ -402,7 +560,21 @@ void btreemix_runner_loop(size_t items,
               << std::fixed << std::setprecision(1) << avg_leaf_write_lock_time << "ns" << "\t"
               << std::fixed << std::setprecision(1) << avg_inner_read_lock_time << "ns" << "\t"
               << std::fixed << std::setprecision(1) << avg_inner_write_lock_time << "ns" << "\t"
-              << std::setprecision(2) << million_ops_per_sec << "\t"
+              << std::setprecision(1) << insert_time[0] << "us" << "\t"
+              << std::setprecision(1) << delete_time[0] << "us" << "\t"
+              << std::setprecision(1) << lookup_time[0] << "us" << "\t"
+              << std::setprecision(1) << scan_time[0] << "us" << "\t"
+              << std::setprecision(1) << insert_time[1] << "us" << "\t"
+              << std::setprecision(1) << delete_time[1] << "us" << "\t"
+              << std::setprecision(1) << lookup_time[1] << "us" << "\t"
+              << std::setprecision(1) << scan_time[1] << "us" << "\t"
+              << std::setprecision(1) << insert_time[2] << "us" << "\t"
+              << std::setprecision(1) << delete_time[2] << "us" << "\t"
+              << std::setprecision(1) << lookup_time[2] << "us" << "\t"
+              << std::setprecision(1) << scan_time[2] << "us" << "\t"
+              << std::setprecision(1) << million_ops_per_sec << "\t"
+              << items << "\t" << start_repeat << "\t"
+              << actual_items << "\t" << duration << "\t"
               << std::endl;
 }
 
