@@ -60,7 +60,7 @@ for slotMax in 256; do
         *)
             sliceSize=32
     esac
-    sliceSizeMax=$((sliceSize*2))
+    sliceSizeMax=$sliceSizeMax
     # shellcheck disable=SC2043
     for valSize in 256 ; do
         # shellcheck disable=SC2043

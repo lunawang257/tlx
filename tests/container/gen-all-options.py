@@ -21,22 +21,22 @@ leaf_slot_max_list = [32, 64, 128, 256, 512]
 leaf_value_size_list = [32, 64, 128, 256, 512]
 
 if btreemix_fast_compile:
-    btreemix_slot_max_list = [256, 32]
-    btreemix_value_size_list = [256, 32]
+    btreemix_slot_max_list = [512]
+    btreemix_value_size_list = [512]
 
 if leaf_fast_compile:
-    leaf_slot_max_list = [64, 128, 256, 512]
-    leaf_value_size_list = [64, 128, 256, 512]
+    leaf_slot_max_list = [512]
+    leaf_value_size_list = [512]
 
 # List of command formats to be included in the single file
 command_formats = [
     'RUN_BTREEMIX({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n', # btreemix test
     # all rest belong to leaf tests
-    #'RUN_MAPLIZE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    #'RUN_UPDATE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    #'RUN_LOOKUP({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    #'RUN_SCAN({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    #'RUN_REBALANCE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_MAPLIZE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_UPDATE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_LOOKUP({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_SCAN({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_REBALANCE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
 ]
 
 def update_file_if_different(old_file, new_file):
@@ -129,9 +129,9 @@ def main():
             for slot_max in slot_max_list:
                 for value_size in value_size_list:
                     max_slice_size_exp = int(math.log2(slot_max// 2))
-                    slice_size_list = [2 ** i for i in range(3, max_slice_size_exp + 2)]
+                    slice_size_list = [64] # [2 ** i for i in range(3, max_slice_size_exp + 2)]
                     for slice_size in slice_size_list:
-                        if slice_size < slot_max / 4: # minimum slice size is slot_max / 4
+                        if slice_size < slot_max / 8: # minimum slice size
                             continue
                         if slice_size > slot_max: # maxmum num slices is slot_max
                             continue
