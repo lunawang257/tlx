@@ -24,13 +24,13 @@ ts=$(date +"%Y-%m-%d-%H-%M")
 out="$outPath/results-$ts.txt"
 
 # smaller will reduce run time
-REPEAT=16
-MAX_THREAD=4
-N=1024000
-sliceSize=32
-sliceSizeMax=64
-insertProp=33
-lookupProp=34
+REPEAT=1
+MAX_THREAD=16
+N=10000
+sliceSize=64
+sliceSizeMax=65
+insertProp=100
+lookupProp=0
 scanProp=0
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
@@ -39,7 +39,7 @@ rm -f "$out"
 echo "Output file: $out"
 
 # shellcheck disable=SC2043
-for slotMax in 256 32; do
+for slotMax in 512; do
     scanLen=$((slotMax*2))
     case $slotMax in
         32)
@@ -62,7 +62,7 @@ for slotMax in 256 32; do
     esac
     sliceSizeMax=$((sliceSize*2))
     # shellcheck disable=SC2043
-    for valSize in 256 64 ; do
+    for valSize in 512 ; do
         # shellcheck disable=SC2043
         for dist in zipf uniform ; do
             for ((thread=1;thread<=MAX_THREAD;thread*=2)); do
@@ -73,7 +73,7 @@ for slotMax in 256 32; do
                     runName="${runName}-SlcSzMx-$sliceSizeMax-Thread-$thread"
                     runName="${runName}-MplThrh-$maplize_threshold-Dist-$dist"
                     runName="${runName}-InsertP-$insertProp-LookupP-$lookupProp"
-                    oneResult="$outPath/all-res/$runName.txt"
+                    oneResult="$outPath/all-res/$ts-$runName.txt"
                     cmd="$prog \
 --test btreemix \
 --slot-max $slotMax \
@@ -94,7 +94,7 @@ for slotMax in 256 32; do
                     fi
                     echo "$cmd"
                     if [ "$dryrun" != "1" ] ; then
-                        eval $cmd > "$oneResult"
+                        eval "$cmd" > "$oneResult"
                         if [ ! -f "$out" ]; then
                             tail -2 "$oneResult"
                             tail -2 "$oneResult" > "$out"
@@ -104,7 +104,13 @@ for slotMax in 256 32; do
                         fi
                         # generate perf profile on Linux
                         if [ "$(uname -s)" == "Linux" ]; then
-                            gprof "$prog" gmon.out > "$outPath/gmon-${ts}-$runName.txt"
+                            gmonOutName="${ts}-gmon-$runName.txt"
+                            longGmon="${outPath}/all-res/${gmonOutName}"
+                            shortGmon="${outPath}/${gmonOutName}"
+                            #echo "longGmon=$longGmon"
+                            #echo "shortGmon=$shortGmon"
+                            gprof "$prog" gmon.out > "$longGmon"
+                            "${SCRIPT_DIR}/filter_gmon.py" < "$longGmon" > "$shortGmon"
                         fi
                     fi
                 done # for maplize_threshold
