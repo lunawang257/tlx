@@ -422,9 +422,13 @@ public:
 
   bool read_locked() { return true; }
 
+  bool self_read_locked () { return true; }
+
   void write_lock() {}
 
   bool write_locked() { return true; }
+
+  bool self_write_locked () { return true; }
 
   bool try_upgrade_release_on_fail(int cpuid __attribute__((unused))) {
     return true;

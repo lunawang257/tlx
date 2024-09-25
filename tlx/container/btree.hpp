@@ -426,7 +426,7 @@ public:
 
     struct Slice {
         Mapl *mapl;
-        ReaderWriterLock2 lock;
+        MaplLock lock;
         idx_t index_array[slice_sizemax];
         int slotuse;
 
@@ -510,7 +510,7 @@ public:
         static const ssize_t numslices = (leaf_slotmax + slice_size - 1) / slice_size;
         Slice slices[numslices];
         idx_t free_slot_head;
-        ReaderWriterLock2 free_slot_mtx;
+        MaplLock free_slot_mtx;
         static const idx_t free_slot_end = leaf_slotmax + mapl_size;
         key_type slice_boundary[numslices - 1];
         value_type *slotdatap;
@@ -547,14 +547,18 @@ public:
                     slotuse_offset += lb_slice_size;
                 }
 
+#ifndef MAPL_NO_LOCK
                 DBG(slices[i].lock.sliceid = i;)
                 DBG(slices[i].lock.nodep = leaf;)
+#endif
             }
 
             TLX_BTREE_ASSERT(lb_slotuse_extra == 0);
 
+#ifndef MAPL_NO_LOCK
             DBG(free_slot_mtx.sliceid = MAPL_FREE_LIST_MTX;)
             DBG(free_slot_mtx.nodep = leaf;)
+#endif
 
             for (int i = 0; i < numslices - 1; i++) {
                 slice_boundary[i] = key_of_value::get(
@@ -1380,6 +1384,9 @@ public:
         }
 
         bool should_maplize_based_on_contention() {
+#ifdef MAPL_NO_LOCK
+            return maplize_threshold == 0 && node::slotuse >= 2 * slice_size;
+#endif
             TLX_BTREE_ASSERT(!mapl);
             int percent = mutex_.con_tracker.percent_waited();
             return percent >= maplize_threshold && node::slotuse >= 2 * slice_size;
@@ -3902,7 +3909,13 @@ private:
             if (!leaf->mapl) {
                 if constexpr (concurrent) {
                     if constexpr (optimism) {
-#ifndef MAPL_NO_LOCK
+#ifdef MAPL_NO_LOCK
+                        if (leaf != root_ && !leaf->is_full() &&
+                            leaf->should_maplize()) {
+                            leaf->maplize(this);
+                            goto retry_no_lock;
+                        }
+#else
                         // printf("trying to lock leaf lock from %p\n", leaf);
                         if (leaf->mutex_.try_upgrade_release_on_fail(cpu_id)) {
                             // root is not allowed to be mapl

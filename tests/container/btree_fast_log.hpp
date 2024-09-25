@@ -443,12 +443,14 @@ void log_lock(void* node __attribute__((unused)),
             log_info.min = log_info.max = 0;
             if (mapl) {
                 log_info.slice = mapl->slices + sliceid;
+#ifndef MAPL_NO_LOCK
                 if (sliceid == MAPL_FREE_LIST_MTX) {
                     lockp = &mapl->free_slot_mtx;
                 }
                 else if (sliceid != MAPL_NONE) {
                     lockp = &mapl->slices[sliceid].lock;
                 }
+#endif
             } else {
                 log_info.slice = nullptr;
             }
