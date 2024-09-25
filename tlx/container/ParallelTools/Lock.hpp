@@ -102,47 +102,89 @@ public:
   ~partitioned_counter() { delete[] local_counters; }
 };
 
-struct ContentionCount {
-      std::atomic<int> no_wait = 0;
-      std::atomic<int> wait = 0;
-  };
+template<int NumCounters>
+struct StatsCount {
+    std::atomic<int> counter[NumCounters];
+};
 
-struct ContentionTracker {
-    static const int size = 4;
-    static const int rollover_threshold = 100;
-private:
-    ContentionCount buffer[size];
+template<int RolloverThreshold, int NumCounters, int BufferSize>
+struct StatsTracker {
+    static const int size = BufferSize;
+    static const int num_counters = NumCounters;
+    static const int rollover_threshold = RolloverThreshold;
+
+    StatsCount<num_counters> buffer[size];
     std::atomic<int> first = 0;
+    int total[num_counters]; // total except buffer[first]
+    int all_total = 0; // all total except all data in buffer[first]
 
-public:
+private:
     void rollover() {
-        int my_first = (first + 1)%size;
-        buffer[my_first].wait = 0;
-        buffer[my_first].no_wait = 0;
+        int my_first = (first + 1) % size;
+        for (int i = 0; i < num_counters; i++) {
+            int oldVal = buffer[my_first].counter[i].exchange(0);
+            total[i] -= oldVal;
+            all_total -= oldVal;
+        }
+
         first = my_first;
     }
 
-    int percent_waited() {
-        int wait_count = 0;
-        int no_wait_count = 0;
-        for (int i = 0; i < size; i++) {
-            wait_count += buffer[i].wait;
-            no_wait_count += buffer[i].no_wait;
+public:
+    StatsTracker() {
+        for (int c = 0; c < num_counters; c++) {
+            for (int i = 0; i < size; i++) {
+                buffer[i].counter[c] = 0;
+            }
+            total[c] = 0;
         }
-
-        return (wait_count * 100) / (wait_count + no_wait_count);
+        all_total = 0;
     }
 
-    void track_no_wait() {
-        if ( ++buffer[first].no_wait >= rollover_threshold) {
+    int percent(int counter) {
+        int first_total = 0;
+        for (int c = 0; c < num_counters; c++) {
+            first_total += buffer[first].counter[c];
+        }
+
+        return buffer[first].counter[counter] * 100 / (all_total + first_total);
+    }
+
+    void track(int counter) {
+        if ( ++buffer[first].counter[counter] >= rollover_threshold) {
             rollover();
         }
+    }
+};
+
+struct ContentionTracker {
+    StatsTracker<100, 2, 4> tracker;
+    int percent_waited() {
+        return tracker.percent(0);
     }
 
     void track_wait() {
-        if ( ++buffer[first].wait >= rollover_threshold) {
-            rollover();
-        }
+        tracker.track(0);
+    }
+
+    void track_no_wait() {
+        tracker.track(1);
+    }
+};
+
+enum {
+    LEAF_OP_FIND,
+    LEAF_OP_UPDATE,
+    LEAF_OP_SCAN,
+};
+struct LeafOpTracker {
+    StatsTracker<10, 3, 4> tracker;
+    int get(int op) {
+        return tracker.total[op] + tracker.buffer[tracker.first].counter[op];
+    }
+
+    void track(int op) {
+        tracker.track(op);
     }
 };
 

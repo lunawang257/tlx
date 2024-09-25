@@ -287,6 +287,23 @@ public:
     //! can hold. Slice::index_array is allocated based on this size
     static const unsigned short slice_sizemax = traits::slice_sizemax;
 
+    //! Calculate relative speed of different operations
+    static const int perf_find = 10; // a baseline, about 0.15us
+    static const int num_half_pages = leaf_slotmax * sizeof(Value) > 8192 ?
+        leaf_slotmax * sizeof(Value) / 8192 : 1;
+
+    static const int perf_find_mapl = perf_find + perf_find / 2;
+
+    static const int perf_write_mapl = perf_find_mapl;
+
+    static const int perf_write = perf_write_mapl * num_half_pages;
+
+    static const int perf_scan = perf_find * num_half_pages;
+    static const int perf_scan_mapl = perf_scan + perf_scan / 2;
+
+    static const int perf_maplize = perf_find * leaf_slotmax / slice_size / 4;
+    static const int perf_unmaplize = perf_find * num_half_pages * 2;
+
     static const int mapl_size = 0; // not used any more
 
     //! Debug parameter: Enables expensive and thorough checking of the B+ tree
@@ -1224,6 +1241,9 @@ public:
 
         mutable ReaderWriterLock2 mutex_;
 
+        LeafOpTracker op_tracker;
+
+
         Mapl* mapl = nullptr;
 
         //! Array of (key, data) pairs
@@ -1349,10 +1369,18 @@ public:
             slotdata[slot] = value;
         }
 
-        bool should_maplize() {
+        bool should_maplize_based_on_contention() {
             TLX_BTREE_ASSERT(!mapl);
             int percent = mutex_.con_tracker.percent_waited();
             return percent >= maplize_threshold && node::slotuse >= 2 * slice_size;
+        }
+
+        bool should_maplize_based_on_leaf_op() {
+            return true;
+        }
+
+        bool should_maplize() {
+            return should_maplize_based_on_contention();
         }
 
         void maplize(BTree* treep) {
