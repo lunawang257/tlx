@@ -375,7 +375,7 @@ void btreemix_runner_loop(size_t items,
 
     double duration;
     size_t actual_items = 0;
-    double min_run_time = 1.0;
+    double min_run_time = 0.0;
     size_t repeat_until = items * start_repeat;
     uint64_t total_next_leaf = 0, total_no_wait_next_leaf = 0;
     size_t leaves_count, mapl_leaves_count;
