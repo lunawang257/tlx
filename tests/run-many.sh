@@ -25,7 +25,7 @@ out="$outPath/results-$ts.txt"
 
 # smaller will reduce run time
 REPEAT=0.01
-MAX_THREAD=4
+#MAX_THREAD=4
 N=1024000
 sliceSize=64
 sliceSizeMax=65
@@ -66,7 +66,7 @@ for slotMax in 512 256 128 64 32; do
     for valSize in 512 256 128 64 32 ; do
         # shellcheck disable=SC2043
         for dist in zipf uniform ; do
-            for ((thread=1;thread<=MAX_THREAD;thread*=4)); do
+            for thread in 1 4 8 12 16; do
                 # shellcheck disable=SC2043
                 for maplize_threshold in 0 100 ; do
                     props=(
