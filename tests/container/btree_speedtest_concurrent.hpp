@@ -15,7 +15,7 @@ const size_t NUM_THREADS = 16; // just set a max value to make btree_fast_log.hp
 bool g_use_slbtree = false;
 size_t min_items = 125; //! starting number of items to insert
 size_t max_items = 1024000 * 64; //! maximum number of items to insert
-size_t start_repeat = 1;
+double start_repeat = 1;
 size_t g_slot_max = 64;
 ssize_t g_root_slot = 0;
 bool skip_std_set = false;
@@ -79,12 +79,10 @@ public:
     MapType my_map;
 
 private:
-    key_type max_key;
-
     void insert_random_values(const size_t num_items) {
         std::mt19937 gen(seed);
 
-        typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key);
+        typename SpeedTestT::UniDistKeyT uniform_dist(0, MAX_KEY);
 
         while (my_map.tree_.size() < num_items) {
             key_type key = uniform_dist(gen);
@@ -101,17 +99,21 @@ public:
                     size_t n_threads = 1,
                     const TestOption d_option = ZIPF) {
 
-        max_key = items * key_space_factor;
-        insert_random_values(items);
+        MAX_KEY = items * KEY_SPACE_FACTOR;
+        insert_random_values(items); //preload btree with "items" number of value
 
         cur_numthreads = n_threads;
         dist_option = d_option;
+
+        reset();
     }
 
     static const char * op() { return "set_mixed_ops"; }
 
 private:
-    int key_space_factor = 2;
+    static const uint8_t KEY_SPACE_FACTOR = 2;
+    key_type MAX_KEY;
+
     std::atomic<size_t> num_running = 0;
     std::atomic<size_t> num_stopped = 0;
     std::atomic<size_t> one_third_reached = 0;
@@ -145,13 +147,13 @@ private:
         std::mt19937 gen(seed + thread_id);
 
         typename SpeedTestT::UniDistKeyT op_dist(0, 99); //which operation to use
-        typename SpeedTestT::UniDistKeyT uniform_dist_first_half(0, max_key/2); // first half of the key
-        typename SpeedTestT::UniDistKeyT uniform_dist_second_half(max_key/2+1, max_key); // second half of the key
+        typename SpeedTestT::UniDistKeyT uniform_dist_first_half(0, MAX_KEY/2); // first half of the key
+        typename SpeedTestT::UniDistKeyT uniform_dist_second_half(MAX_KEY/2+1, MAX_KEY); // second half of the key
 
-        typename SpeedTestT::UniDistKeyT uniform_dist(0, max_key); // uniform key
+        typename SpeedTestT::UniDistKeyT uniform_dist(0, MAX_KEY); // uniform key
 
         int zipseed = static_cast<int>(std::time(nullptr)); // zipf key
-        util::TraceZipfian zipf_dist(zipseed, 0, max_key, 0.99);
+        util::TraceZipfian zipf_dist(zipseed, 0, MAX_KEY, 0.99);
 
         size_t insert_p = INSERT_PROP;
         size_t lookup_p = LOOKUP_PROP;
@@ -344,9 +346,9 @@ public:
         thread_states.resize(cur_numthreads);
         reset();
 
-        for (size_t i = 0; i < cur_numthreads; ++i) {
+        for (size_t thread_id = 0; thread_id < cur_numthreads; ++thread_id) {
             threads.emplace_back(&Test_Set_MixedOp::mixed_ops,
-                                 this, i, per_thread, cur_numthreads);
+                                 this, thread_id, per_thread, cur_numthreads);
         }
 
         for (auto& t : threads) t.join();
@@ -407,6 +409,7 @@ void btreemix_runner_loop(size_t items,
         // count timed tests
         duration = 0.0;
         actual_items = items;
+
         total_next_leaf = total_no_wait_next_leaf = 0;
         total_leaf_read_lock_ns = total_leaf_write_lock_ns = 0;
         total_leaf_read_lock_ct = 0; total_leaf_write_lock_ct = 0;
@@ -625,7 +628,7 @@ void btreemix_runner_loop(size_t items,
               << std::setprecision(2) << avg_delete_time << "us" << "\t"
               << std::setprecision(2) << avg_lookup_time << "us" << "\t"
               << std::setprecision(2) << avg_scan_time << "us" << "\t"
-              << items << "\t" << start_repeat << "\t"
+              << items << "\t" << std::setprecision(2) << start_repeat << "\t"
               << actual_items << "\t" << duration << "\t"
               << std::endl;
 }

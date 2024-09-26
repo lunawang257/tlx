@@ -22,7 +22,7 @@ Usage:
                                     update means insert and delete, \
                                     btreemix means btree concurrent mixed operations \
                                     insert\delete\lookup\scan\rebalance \
-  -r --repeats  <num>               Set Repeats (default: 1)
+  -r --repeats  <real num>          Set Repeats, can be a decimal number (default: 1)
   -s --slot-max [num]               Maximum slot value
   -S --slice-size [num]             Slice Size
   -t --num-threads [num]            Number of threads
@@ -141,9 +141,15 @@ int main(int argc, char* argv[]) {
         case 'M':
             slice_size_max = std::atoi(optarg);
             break;
-        case 'r':
-            start_repeat = std::atoi(optarg);
+        case 'r': {
+            char* end;
+            start_repeat = std::strtod(optarg, &end);
+            if (*end != '\0') {
+                std::cout << "Conversion failed!" << std::endl;
+                return 1;
+            }
             break;
+        }
         case 's':
             slot_max = std::atoi(optarg);
             break;
@@ -183,7 +189,7 @@ int main(int argc, char* argv[]) {
               << "NUM_ITERATIONS=" << NUM_ITERATIONS << "\t"
               << "is_mapl=" << is_mapl << "\t"
               << "num_threads=" << num_threads << "\t"
-              << "start_repeat=" << start_repeat << "\t"
+              << "start_repeat=" << std::setprecision(2) << start_repeat << "\t"
               << "maplize_threshold=" << maplize_threshold << "\t"
               << "INSERT_PROP=" << INSERT_PROP << "\t"
               << "LOOKUP_PROP=" << LOOKUP_PROP << "\t"
