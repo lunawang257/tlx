@@ -66,7 +66,7 @@ for slotMax in 512 256 128 64 32; do
     for valSize in 512 256 128 64 32 ; do
         # shellcheck disable=SC2043
         for dist in zipf uniform ; do
-            for ((thread=1;thread<=MAX_THREAD;thread++)); do
+            for ((thread=1;thread<=MAX_THREAD;thread*=4)); do
                 # shellcheck disable=SC2043
                 for maplize_threshold in 0 100 ; do
                     props=(
@@ -75,6 +75,9 @@ for slotMax in 512 256 128 64 32; do
                         "0 0 0 0"
                         "0 0 100 100"
                         "0 0 100 100000"
+                        "50 50 0 0"
+                        "5 95 0 0"
+                        "5 0 95 100"
                     )
                     for prop_str in "${props[@]}" ; do
                         prop=($prop_str)
@@ -87,6 +90,7 @@ for slotMax in 512 256 128 64 32; do
                         runName="${runName}-SlcSzMx-$sliceSizeMax-Thread-$thread"
                         runName="${runName}-MplThrh-$maplize_threshold-Dist-$dist"
                         runName="${runName}-InsertP-$insertProp-LookupP-$lookupProp"
+                        runName="${runName}-ScanProp-$scanProp-ScanLen-$scanLen"
                         oneResult="$outPath/all-res/$ts-$runName.txt"
                         cmd="$prog \
 --test btreemix \
@@ -106,7 +110,7 @@ for slotMax in 512 256 128 64 32; do
                         if [ "$(uname -s)" == "Linux" ]; then
                             cmd="numactl -N -0 -m 0 $cmd"
                         fi
-                        echo "$cmd"
+                        echo "$cmd > $oneResult"
                         if [ "$dryrun" != "1" ] ; then
                             eval "$cmd" > "$oneResult"
                             if [ ! -f "$out" ]; then
