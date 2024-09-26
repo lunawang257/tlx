@@ -101,10 +101,10 @@ for slotMax in 512 256 128 64 32; do
 --iteration $N \
 --num-threads $thread \
 --maplize-threshhold $maplize_threshold \
---I $insertProp \
---L $lookupProp \
----scan-prop $scanProp \
----scan-len $scanLen \
+-I $insertProp \
+-L $lookupProp \
+--scan-prop $scanProp \
+--scan-len $scanLen \
 --dist $dist \
 --repeats $REPEAT"
                         if [ "$(uname -s)" == "Linux" ]; then
