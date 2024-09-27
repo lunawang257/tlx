@@ -629,7 +629,7 @@ void btreemix_runner_loop(size_t items,
               << std::setprecision(2) << avg_lookup_time << "us" << "\t"
               << std::setprecision(2) << avg_scan_time << "us" << "\t"
               << items << "\t" << std::setprecision(2) << start_repeat << "\t"
-              << actual_items << "\t" << duration << "\t"
+              << actual_items << "\t" << duration
               << std::endl;
 }
 
