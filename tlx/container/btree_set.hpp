@@ -326,6 +326,10 @@ public:
 
     //! \}
 
+    unsigned short get_height() const {
+        return tree_.get_height();
+    }
+
     void get_root_info(unsigned short *level, unsigned short *slotuse) const {
         *level = *slotuse = 0;
         //tree_.get_root_info(level, slotuse);

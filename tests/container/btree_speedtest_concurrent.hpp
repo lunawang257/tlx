@@ -46,6 +46,9 @@ public:
     double duration = 0.0;
     size_t actual_items = 0;
 
+    unsigned short start_height = 0;
+    unsigned short end_height = 0;
+
     struct alignas(128) thread_state { // align to cache line
         int count = 0;
         int rc = 0;
@@ -303,6 +306,7 @@ private:
 
         auto old_val = num_running.fetch_add(1, std::memory_order_relaxed);
         if (old_val + 1 == total_threads) { // this is the last thread starts running
+            start_height = my_map.get_height(); // retrieve the btree height before running starts
             ts_start = tlx::timestamp();
         } else { // wait for other thread to get to this point
            while (num_running < total_threads) {
@@ -320,6 +324,8 @@ private:
                 stop = true; // stop all threads
             }
         }
+
+        end_height = my_map.get_height(); // retrieve the btree height after running stops
 
         thread_states[thread_id].total_leaf_read_lock_ns = localLockStat.total_leaf_read_lock_ns.count();
         thread_states[thread_id].total_leaf_write_lock_ns = localLockStat.total_leaf_write_lock_ns.count();
@@ -399,6 +405,8 @@ void btreemix_runner_loop(size_t items,
     uint64_t total_delete_ct = 0;
     uint64_t total_lookup_ct = 0;
     uint64_t total_scan_ct = 0;
+
+    unsigned short start_height = 0, end_height = 0;
 
     do {
         // count timed tests
@@ -513,6 +521,9 @@ void btreemix_runner_loop(size_t items,
                   << mapl_write_pct << "%"
                   << std::endl;
 
+        start_height = test.start_height;
+        end_height = test.end_height;
+
         // discard and repeat if test took less than one second.
         if (duration < min_run_time) repeat_until *= 2;
     }
@@ -562,6 +573,11 @@ void btreemix_runner_loop(size_t items,
     double avg_lookup_time = total_lookup_ns * 1.0 / total_lookup_ct / 1e3;
     double avg_scan_time = total_scan_ns * 1.0 / total_scan_ct / 1e3;
 
+    double avg_insert_mops = total_insert_ct * 1.0 * 1e3 / total_insert_ns;
+    double avg_delete_mops = total_delete_ct * 1.0 * 1e3 / total_delete_ns;
+    double avg_lookup_mops = total_lookup_ct * 1.0 * 1e3 / total_lookup_ns;
+    double avg_scan_mops = total_scan_ct * 1.0 * 1e3 / total_scan_ns;
+
     float million_ops_per_sec = (actual_items / duration) / 1e6;
     std::cout << "RESULT"
               << " container=" << container_name
@@ -590,15 +606,21 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tDist\tBch\tInsertP\tLookupP\tScnP\tScnLen\tMops/s\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tLfRdLk\tLfWtLk\tInRdLk\tInWtLk\tP1Inst\tP1Dlt\tP1LkP\tP1Scn\tP2Inst\tP2Dlt\tP2LkP\tP2Scn\tP3Inst\tP3Dlt\tP3LkP\tP3Scn\tInstT\tDelT\tLkpT\tScnT\titms\trpts\tactItms\tDrtion\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tSHght\tEHght\tDist\tBch\tInsertP\tLookupP\tScnP\tScnLen\tMops\tIntMops\tDelPops\tLkpMops\tScnMops\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tLfRdLk\tLfWtLk\tInRdLk\tInWtLk\tP1Inst\tP1Dlt\tP1LkP\tP1Scn\tP2Inst\tP2Dlt\tP2LkP\tP2Scn\tP3Inst\tP3Dlt\tP3LkP\tP3Scn\tInstT\tDelT\tLkpT\tScnT\titms\trpts\tactItms\tDrtion\n"
               << container_name << "\t"
+              << start_height << "\t"
+              << end_height << "\t"
               << dist_option_string << "\t"
               << std::to_string(benchmarking) << "\t"
               << INSERT_PROP << "\t"
               << LOOKUP_PROP << "\t"
               << SCAN_PROP << "\t"
               << scan_len << "\t"
-              << std::setprecision(2) << million_ops_per_sec << "\t"
+              << std::setprecision(4) << million_ops_per_sec << "\t"
+              << std::setprecision(3) << avg_insert_mops << "\t"
+              << std::setprecision(3) << avg_delete_mops << "\t"
+              << std::setprecision(3) << avg_lookup_mops << "\t"
+              << std::setprecision(3) << avg_scan_mops << "\t"
               << std::setprecision(2) << wait_percent << "%" <<"\t"
               << std::setprecision(2) << mapl_pct << "%" <<"\t"
               << std::setprecision(2) << mapl_read_pct << "%" <<"\t"
