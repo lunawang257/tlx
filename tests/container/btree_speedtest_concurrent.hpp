@@ -205,9 +205,6 @@ private:
                 break;
             }
             case TEST_OP_SCAN: {
-                if (phase_idx == 0) {
-                    std::cout << "scan in phase 1";
-                }
                 thread_states[thread_id].scan_op_ns[phase_idx] += (end - start);
                 ++thread_states[thread_id].scan_op_ct[phase_idx];
                 break;
