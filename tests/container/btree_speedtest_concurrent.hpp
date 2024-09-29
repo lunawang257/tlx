@@ -78,29 +78,12 @@ public:
 
     MapType my_map;
 
-private:
-    void insert_random_values(const size_t num_items) {
-        std::mt19937 gen(seed);
-
-        typename SpeedTestT::UniDistKeyT uniform_dist(0, MAX_KEY);
-
-        while (my_map.tree_.size() < num_items) {
-            key_type key = uniform_dist(gen);
-            ValType val = ValType(key, DataType());
-
-            my_map.insert(val);
-        }
-
-        //my_map.tree_.print(std::cout);
-    }
-
 public:
     Test_Set_MixedOp(size_t items,
                     size_t n_threads = 1,
                     const TestOption d_option = ZIPF) {
 
         MAX_KEY = items * KEY_SPACE_FACTOR;
-        insert_random_values(items); //preload btree with "items" number of value
 
         cur_numthreads = n_threads;
         dist_option = d_option;
@@ -222,9 +205,6 @@ private:
                 break;
             }
             case TEST_OP_SCAN: {
-                if (phase_idx == 0) {
-                    std::cout << "scan in phase 1";
-                }
                 thread_states[thread_id].scan_op_ns[phase_idx] += (end - start);
                 ++thread_states[thread_id].scan_op_ct[phase_idx];
                 break;
@@ -300,9 +280,23 @@ private:
         } // for each operation
     }
 
-    void mixed_ops(int thread_id, size_t iterations, size_t total_threads) {
-        std::vector<std::pair<TestOperation, key_type>> operations; // operations by non-phased threads
+    void initialize_btree(int thread_id, const size_t items) {
+        std::mt19937 gen(seed + thread_id);
+        typename SpeedTestT::UniDistKeyT uniform_dist(0, MAX_KEY);
 
+       for (size_t item_idx = 0; item_idx < items; item_idx++) {
+            key_type key = uniform_dist(gen);
+            ValType val = ValType(key, DataType());
+
+            my_map.insert(val);
+        }
+    }
+
+    void mixed_ops(int thread_id, const size_t num_items, size_t iterations, size_t total_threads) {
+
+        initialize_btree(thread_id, num_items);
+
+        std::vector<std::pair<TestOperation, key_type>> operations; // operations by non-phased threads
         preload_mixed_ops(thread_id, iterations, operations);
 
         local_thread_id = thread_id;
@@ -339,16 +333,17 @@ private:
     }
 
 public:
-    void run(size_t iterations __attribute__((unused)), size_t repeats) {
+    void run(size_t items __attribute__((unused)), size_t repeats) {
         std::vector<std::thread> threads;
         size_t per_thread = repeats / cur_numthreads;
+        size_t per_thread_items = items / cur_numthreads;
 
         thread_states.resize(cur_numthreads);
         reset();
 
         for (size_t thread_id = 0; thread_id < cur_numthreads; ++thread_id) {
             threads.emplace_back(&Test_Set_MixedOp::mixed_ops,
-                                 this, thread_id, per_thread, cur_numthreads);
+                                 this, thread_id, per_thread_items, per_thread, cur_numthreads);
         }
 
         for (auto& t : threads) t.join();
