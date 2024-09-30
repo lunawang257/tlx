@@ -504,7 +504,7 @@ public:
             i -= chunk_num * chunk_size;
             return chunk_arr[chunk_num][i];*/
         }
-    } __attribute__((__aligned__(CACHE_LINE_SIZE)));
+    };
 
     // allow get_overall to efficiently get the next key
     struct MaplKeyContext {
@@ -515,8 +515,8 @@ public:
     struct Mapl {
         static const ssize_t numslices = (leaf_slotmax + slice_size - 1) / slice_size;
         Slice slices[numslices];
-        idx_t free_slot_head;
         MaplLock free_slot_mtx;
+        idx_t free_slot_head;
         static const idx_t free_slot_end = leaf_slotmax + mapl_size;
         key_type slice_boundary[numslices - 1];
         value_type *slotdatap;
@@ -834,7 +834,7 @@ public:
                 TLX_BTREE_ASSERT(prev_slice.slotuse == perslice);
             }*/
         }
-    } __attribute__((__aligned__(CACHE_LINE_SIZE)));
+    };
 
 
     struct LockHelper {
