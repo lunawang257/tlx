@@ -184,10 +184,10 @@ if(NOT MSVC)
     set(LINUX TRUE)
   endif()
 
-  # enable profiling
-  if(LINUX)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
-  endif()
+  # enable profiling, which has a VERY HIGH PERFORMANCE PENALTY
+  #if(LINUX)
+  #  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+  #endif()
 
   # enable UndefinedBehaviorSanitizer
   #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined")
