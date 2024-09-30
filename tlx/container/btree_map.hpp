@@ -326,6 +326,10 @@ public:
         return tree_.get_stats();
     }
 
+    unsigned short get_height() const {
+        return tree_.get_height();
+    }
+
     //! \}
 
 public:

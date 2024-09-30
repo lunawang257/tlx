@@ -2824,6 +2824,23 @@ public:
         return &stats_;
     }
 
+    unsigned short get_height() const {
+        int cpu_id;
+        unsigned short height;
+        if constexpr (concurrent) {
+            cpu_id = sched_getcpu();
+            mutex.read_lock(cpu_id);
+        }
+
+        height = root_ ? root_->level + 1 : 0;
+
+        if constexpr (concurrent) {
+            mutex.read_unlock(cpu_id);
+        }
+
+        return height;
+    }
+
     //! \}
     lock_requirement lock_req = lock_all;
 public:
