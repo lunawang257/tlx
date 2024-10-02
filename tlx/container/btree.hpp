@@ -504,7 +504,7 @@ public:
             i -= chunk_num * chunk_size;
             return chunk_arr[chunk_num][i];*/
         }
-    };
+    } __attribute__((__aligned__(CACHE_LINE_SIZE)));
 
     // allow get_overall to efficiently get the next key
     struct MaplKeyContext {
