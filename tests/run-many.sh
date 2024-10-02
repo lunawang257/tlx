@@ -26,7 +26,11 @@ out="$outPath/${base}-results-$ts.txt"
 
 # smaller will reduce run time
 REPEAT=0.1
-MAX_THREAD=$(numactl --hardware | awk '/node 0 cpus:/ {print NF-3}')
+if [ "$(uname -s)" == "Linux" ]; then
+    MAX_THREAD=$(numactl --hardware | awk '/node 0 cpus:/ {print NF-3}')
+else
+    MAX_THREAD=4
+fi
 echo Max CPU is $MAX_THREAD
 N=1024000
 sliceSize=64
