@@ -32,7 +32,7 @@ else
     MAX_THREAD=4
 fi
 echo Max CPU is $MAX_THREAD
-N=1024000
+N=2048000
 sliceSize=64
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
@@ -46,8 +46,7 @@ for valSize in 256 ; do
     for dist in zipf uniform ; do
         for maplize_threshold in 0 100 ; do
             # shellcheck disable=SC2043
-            #for slotMax in 512 256 128 64 32; do
-            for slotMax in 512 256 128 64 32; do
+            for slotMax in 1024 512 256 128 64 32 16; do
                 scanLen=$((slotMax*2))
                 case $slotMax in
                     32)
