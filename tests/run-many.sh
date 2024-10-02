@@ -64,7 +64,7 @@ for valSize in 256 ; do
                     *)
                         sliceSize=32
                 esac
-                for ((sliceSize=4;sliceSize<=slotMax/2;sliceSize=sliceSize*2)) ; do
+                for ((sliceSize=4;sliceSize<=slotMax;sliceSize=sliceSize*2)) ; do
                     if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "4" ]]; then
                         continue
                     fi
