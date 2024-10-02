@@ -298,6 +298,11 @@ int main(int argc, char* argv[]) {
 
     if (!test_invoked) {
         std::cout << "No tests were invoked. Maybe didn't specify the right slots or value size?\n";
+        std::cout << "slot_max=" << slot_max << "\t"
+              << "val_size=" << val_size << "\t"
+              << "slice_size=" << slice_size << "\t"
+              << "slice_size_max=" << slice_size_max << "\t"
+              << std::endl;
     }
 
     return 0;
