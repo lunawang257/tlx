@@ -1426,7 +1426,7 @@ public:
             }
 #endif
 
-            value_type ordered[node::slotuse];
+            value_type *ordered = new value_type[node::slotuse];
             MaplKeyContext ctx;
             for (int i = 0; i < node::slotuse; i++) {
                 ordered[i] = get_overall(i, &ctx);
@@ -1434,6 +1434,7 @@ public:
             for (int i = 0; i < node::slotuse; i++) {
                 slotdata[i] = ordered[i];
             }
+            delete []ordered;
             delete mapl;
             mapl = nullptr;
 

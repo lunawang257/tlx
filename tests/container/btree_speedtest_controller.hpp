@@ -26,6 +26,9 @@ typedef uint64_t key_type;
 template<int ValSize>
 struct long_val_type {
     char value[ValSize];
+    long_val_type() {
+        memset(value, 123, ValSize);
+    }
 };
 
 // Define test_leaf_type using the redefined test_set_type template
