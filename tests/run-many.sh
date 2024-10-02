@@ -21,17 +21,14 @@ mkdir -p "$outPath/all-res"
 
 ts=$(date +"%Y-%m-%d-%H-%M")
 
-out="$outPath/results-$ts.txt"
+base=$(basename -- "$outPath")
+out="$outPath/${base}-results-$ts.txt"
 
 # smaller will reduce run time
-REPEAT=0.01
-#MAX_THREAD=4
+REPEAT=0.1
+MAX_THREAD=6
 N=1024000
 sliceSize=64
-sliceSizeMax=65
-insertProp=100
-lookupProp=0
-scanProp=0
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 
@@ -39,6 +36,7 @@ rm -f "$out"
 echo "Output file: $out"
 
 # shellcheck disable=SC2043
+#for slotMax in 512 256 128 64 32; do
 for slotMax in 512 256 128 64 32; do
     scanLen=$((slotMax*2))
     case $slotMax in
@@ -60,13 +58,13 @@ for slotMax in 512 256 128 64 32; do
         *)
             sliceSize=32
     esac
-    #sliceSizeMax=$sliceSizeMax
+  for ((sliceSize=4;sliceSize<=slotMax/2;sliceSize=sliceSize*2)) ; do
     sliceSizeMax=$(( sliceSize + 1 ))
     # shellcheck disable=SC2043
-    for valSize in 512 256 128 64 32 ; do
+    for valSize in 256 ; do
         # shellcheck disable=SC2043
         for dist in zipf uniform ; do
-            for thread in 1 4 8 12 16; do
+            for thread in $MAX_THREAD; do
                 # shellcheck disable=SC2043
                 for maplize_threshold in 0 100 ; do
                     props=(
@@ -78,6 +76,9 @@ for slotMax in 512 256 128 64 32; do
                         "50 50 0 0"
                         "5 95 0 0"
                         "5 0 95 100"
+                    )
+                    props=(
+                        "100 0 0 100000"
                     )
                     for prop_str in "${props[@]}" ; do
                         prop=($prop_str)
@@ -120,22 +121,23 @@ for slotMax in 512 256 128 64 32; do
                                 tail -1 "$oneResult"
                                 tail -1 "$oneResult" >> "$out"
                             fi
-                            # generate perf profile on Linux
-                            if [ "$(uname -s)" == "Linux" ]; then
-                                gmonOutName="${ts}-gmon-$runName.txt"
-                                longGmon="${outPath}/all-res/${gmonOutName}"
-                                shortGmon="${outPath}/${gmonOutName}"
-                                #echo "longGmon=$longGmon"
-                                #echo "shortGmon=$shortGmon"
-                                gprof "$prog" gmon.out > "$longGmon"
-                                "${SCRIPT_DIR}/filter_gmon.py" < "$longGmon" > "$shortGmon"
-                            fi
+#                            # generate perf profile on Linux
+#                            if [ "$(uname -s)" == "Linux" ]; then
+#                                gmonOutName="${ts}-gmon-$runName.txt"
+#                                longGmon="${outPath}/all-res/${gmonOutName}"
+#                                shortGmon="${outPath}/${gmonOutName}"
+#                                #echo "longGmon=$longGmon"
+#                                #echo "shortGmon=$shortGmon"
+#                                gprof "$prog" gmon.out > "$longGmon"
+#                                "${SCRIPT_DIR}/filter_gmon.py" < "$longGmon" > "$shortGmon"
+#                            fi
                         fi
                     done # for insert/lookup/scan prop
                 done # for maplize_threshold
             done # for threads
         done # for dist
     done # for valSize
+  done # for sliceSize
 done # for slotMax
 if [ -f "gmon.out" ]; then
     rm gmon.out

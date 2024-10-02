@@ -258,6 +258,8 @@ elseif(MSVC)
   list(APPEND TLX_DEFINITIONS "NOMINMAX")
 endif()
 
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Ofast")
+
 if(TLX_USE_LTO)
   # build with link-time optimization
   include(CheckCXXCompilerFlag)
