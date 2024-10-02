@@ -21,16 +21,16 @@ def process_csv(input_file, output_file=None):
     df_grouped = df_insertp_100.groupby(['Dist', 'ValSize', 'MplThrh'])
 
     # Step 5: Find the highest "Mops/s" value for each group
-    df_max_mops = df_grouped['Mops/s'].max().reset_index()
+    df_max_mops = df_grouped['Mops'].max().reset_index()
 
     # Step 6: Merge with the original DataFrame to get the corresponding "SlotMax" values
-    df_result = pd.merge(df_max_mops, df_insertp_100, on=['Dist', 'ValSize', 'MplThrh', 'Mops/s'], how='left')
+    df_result = pd.merge(df_max_mops, df_insertp_100, on=['Dist', 'ValSize', 'MplThrh', 'Mops'], how='left')
 
     # Keep only necessary columns
-    df_result = df_result[['Dist', 'ValSize', 'MplThrh', 'SlotMax', 'Mops/s', 'Threads']]
+    df_result = df_result[['Dist', 'ValSize', 'MplThrh', 'SlotMax', 'Mops', 'Threads', 'SHght', 'EHght']]
 
     # Rename the "Mops/s" column to "Inst_Mops/s"
-    df_result = df_result.rename(columns={'Mops/s': 'Inst_Mops/s'})
+    df_result = df_result.rename(columns={'Mops': 'Inst_Mops'})
 
     # Step 6: Replace "MplThrh" values: 0 -> "MaplTree", 100 -> "BTree"
     #df_result['MplThrh'] = df_result['MplThrh'].replace({0: 'MaplTree', 100: 'BTree'})
@@ -39,6 +39,8 @@ def process_csv(input_file, output_file=None):
     df_result.to_csv(output_file, index=False)
 
     print(f"Processing complete. Output saved to {output_file}")
+
+#process_csv('/Users/local/results-2024-09-27-07-35.txt')
 
 # Main function to handle command line arguments
 if __name__ == "__main__":
