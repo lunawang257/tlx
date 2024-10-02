@@ -46,7 +46,7 @@ for valSize in 256 ; do
     for dist in zipf uniform ; do
         for maplize_threshold in 0 100 ; do
             # shellcheck disable=SC2043
-            for slotMax in 1024 512 256 128 64 32 16; do
+            for slotMax in 4096 2048 1024 512 256 128 64 32 16 8 4; do
                 scanLen=$((slotMax*2))
                 case $slotMax in
                     32)
