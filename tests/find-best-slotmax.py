@@ -27,7 +27,7 @@ def process_csv(input_file, output_file=None):
     df_result = pd.merge(df_max_mops, df_insertp_100, on=['Dist', 'ValSize', 'MplThrh', 'Mops'], how='left')
 
     # Keep only necessary columns
-    df_result = df_result[['Dist', 'ValSize', 'MplThrh', 'SlotMax', 'Mops', 'Threads', 'SHght', 'EHght']]
+    df_result = df_result[['Dist', 'ValSize', 'SliceSz', 'MplThrh', 'SlotMax', 'Mops', 'Threads', 'SHght', 'EHght']]
 
     # Rename the "Mops/s" column to "Inst_Mops/s"
     df_result = df_result.rename(columns={'Mops': 'Inst_Mops'})
