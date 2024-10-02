@@ -13,7 +13,7 @@
 
 // if defined, Mapl Slice no longer takes lock, but leaf takes write lock for
 // any slice updates
-#define MAPL_NO_LOCK
+//#define MAPL_NO_LOCK
 
 #include <die/core.hpp>
 
@@ -1390,9 +1390,7 @@ public:
         }
 
         bool should_maplize_based_on_contention() {
-#ifdef MAPL_NO_LOCK
             return maplize_threshold == 0 && node::slotuse >= 2 * slice_size;
-#endif
             TLX_BTREE_ASSERT(!mapl);
             int percent = mutex_.con_tracker.percent_waited();
             return percent >= maplize_threshold && node::slotuse >= 2 * slice_size;
