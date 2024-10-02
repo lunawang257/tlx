@@ -130,7 +130,7 @@ def main():
                 for value_size in value_size_list:
                     max_slice_size_exp = int(math.log2(slot_max// 2))
                     #slice_size_list = [2 ** i for i in range(2, max_slice_size_exp + 2)]
-                    slice_size_list = [4, 8, 16, 32, 64]
+                    slice_size_list = [4, 8, 16, 32, 64, 128, 256]
                     for slice_size in slice_size_list:
                         #if slice_size < slot_max / 8: # minimum slice size
                         #    continue
