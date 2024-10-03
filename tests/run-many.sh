@@ -95,6 +95,9 @@ for valSize in 256 ; do
                             "5 95 0 0"    # YCSB-B
                             "5 0 95 100"  # YCSB-E
                         )
+                        props=(
+                            "100 0 0 0"   # all insert
+                        )
                         for prop_str in "${props[@]}" ; do
                             prop=($prop_str)
                             insertProp=${prop[0]}
