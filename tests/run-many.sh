@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: run-many.sh [-n] [output-dir-name]
+# Usage: run-many.sh [-n] [output-dir-name] [baseName]
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
@@ -10,8 +10,22 @@ else
     dryrun=0
 fi
 
+if [ "$1" != "" ]; then
+    outPath=$1
+    shift
+else
+    outPath=$HOME/tlx-perf
+    mkdir -p "$outPath"
+fi
+
+if [ "$1" != ""]; then
+    base=$1
+else
+    base=$(basename -- "$outPath")
+fi
+
 paperMode=0 # find best config (slotMax, sliceSize) for each tree
-paperMode=1 # calculate results for all threads with best config for each tree
+#paperMode=1 # calculate results for all threads with best config for each tree
 
 if [ "$paperMode" != "0" ]; then
     echo paper mode
@@ -23,17 +37,10 @@ else
     echo non-paper mode
 fi
 
-if [ "$1" != "" ]; then
-    outPath=$1
-else
-    outPath=$HOME/tlx-perf
-    mkdir -p "$outPath"
-fi
 mkdir -p "$outPath/all-res"
 
 ts=$(date +"%Y-%m-%d-%H-%M")
 
-base=$(basename -- "$outPath")
 out="$outPath/${base}-results-$ts.txt"
 
 # smaller will reduce run time
@@ -44,8 +51,7 @@ else
     MAX_THREAD=4
 fi
 echo Max CPU is $MAX_THREAD
-N=2048000
-sliceSize=64
+N=$((4*1000*1000))
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 
@@ -59,26 +65,6 @@ for valSize in 256 ; do
         for maplize_threshold in 0 100 ; do
             # shellcheck disable=SC2043
             for slotMax in 4096 2048 1024 512 256 128 64 32 16 8 4; do
-                scanLen=$((slotMax*2))
-                case $slotMax in
-                    32)
-                        sliceSize=8
-                        ;;
-                    64)
-                        sliceSize=8
-                        ;;
-                    128)
-                        sliceSize=32
-                        ;;
-                    256)
-                        sliceSize=32
-                        ;;
-                    512)
-                        sliceSize=64
-                        ;;
-                    *)
-                        sliceSize=32
-                esac
                 startSliceSize=4
                 for ((sliceSize=startSliceSize;sliceSize<=64;sliceSize=sliceSize*2)) ; do
                     if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "$startSliceSize" ]]; then
@@ -102,17 +88,12 @@ for valSize in 256 ; do
                         fi
                         # shellcheck disable=SC2043
                         props=(
-                            "100 0 0 0"
-                            "0 100 0 0"
-                            "0 0 0 0"
-                            "0 0 100 100"
-                            "0 0 100 100000"
-                            "50 50 0 0"
-                            "5 95 0 0"
-                            "5 0 95 100"
-                        )
-                        props=(
-                            "100 0 0 100000"
+                            "100 0 0 0"   # all insert
+                            "0 100 0 0"   # all lookup (YCSB-C)
+                            "0 0 0 0"     # all delete
+                            "50 50 0 0"   # YCSB-A
+                            "5 95 0 0"    # YCSB-B
+                            "5 0 95 100"  # YCSB-E
                         )
                         for prop_str in "${props[@]}" ; do
                             prop=($prop_str)
@@ -126,7 +107,7 @@ for valSize in 256 ; do
                             runName="${runName}-MplThrh-$maplize_threshold-Dist-$dist"
                             runName="${runName}-InsertP-$insertProp-LookupP-$lookupProp"
                             runName="${runName}-ScanProp-$scanProp-ScanLen-$scanLen"
-                            oneResult="$outPath/all-res/$ts-$runName.txt"
+                            oneResult="$outPath/all-res/${base}-$ts-$runName.txt"
                             cmd="$prog \
     --test btreemix \
     --slot-max $slotMax \
