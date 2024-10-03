@@ -79,18 +79,15 @@ for valSize in 256 ; do
                     *)
                         sliceSize=32
                 esac
-                for ((sliceSize=4;sliceSize<=64;sliceSize=sliceSize*2)) ; do
-                    if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "4" ]]; then
+                startSliceSize=4
+                for ((sliceSize=startSliceSize;sliceSize<=64;sliceSize=sliceSize*2)) ; do
+                    if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "$startSliceSize" ]]; then
                         continue
                     fi
                     sliceSizeMax=$(( sliceSize + 1 ))
 
                     if [ "$paperMode" != "0" ]; then
                         if [ "$maplize_threshold" == "0" ]; then # MAPL tree
-                            BEST_BTREE_SLOT_MAX=128
-                            BEST_MAPL_SLOT_MAX=2048
-                            BEST_MAPL_SLICE_SIZE=16
-                            BEST_MAPL_SLICE_SIZE_MAX=17
                             slotMax=$BEST_MAPL_SLOT_MAX
                             sliceSize=$BEST_MAPL_SLICE_SIZE
                             sliceSizeMax=$BEST_MAPL_SLICE_SIZE_MAX
