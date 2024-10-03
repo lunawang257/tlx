@@ -99,6 +99,7 @@ public:
 private:
     static const uint8_t KEY_SPACE_FACTOR = 2;
     key_type MAX_KEY;
+    std::vector<key_type> inserted_keys[NUM_THREADS];
 
     std::atomic<size_t> num_running = 0;
     std::atomic<size_t> num_stopped = 0;
@@ -148,6 +149,8 @@ private:
         size_t one_third_mark = iterations / 3;
         size_t two_third_mark = iterations * 2 / 3;
 
+        std::uniform_int_distribution<size_t> inserted_key_dist(0, inserted_keys[thread_id].size()-1);
+
         for (size_t op_idx = 0; op_idx < iterations; op_idx++) {
             std::pair<TestOperation, key_type> op;
 
@@ -178,6 +181,7 @@ private:
                 op.first = TEST_OP_SCAN;
             } else {
                 op.first = TEST_OP_DELETE;
+                op.second = inserted_keys[thread_id][op_idx];
             }
 
             operations.push_back(op);
@@ -260,6 +264,8 @@ private:
                 break;
             }
             case TEST_OP_DELETE: {
+                TLX_BTREE_ASSERT(my_map.exists(op.second));
+
                 start = std::chrono::high_resolution_clock::now();
                 bool erased = my_map.erase(op.second);
                 end = std::chrono::high_resolution_clock::now();
@@ -292,6 +298,8 @@ private:
             ValType val = ValType(key, DataType());
 
             my_map.insert(val);
+
+            inserted_keys[thread_id].push_back(key);
         }
     }
 
