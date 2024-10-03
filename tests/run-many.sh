@@ -10,6 +10,18 @@ else
     dryrun=0
 fi
 
+paperMode=0 # find best config (slotMax, sliceSize) for each tree
+paperMode=1 # calculate results for all threads with best config for each tree
+
+if [ "$paperMode" != "0" ]; then
+    echo paper mode
+    BEST_BTREE_SLOT_MAX=128
+    BEST_MAPL_SLOT_MAX=2048
+    BEST_MAPL_SLICE_SIZE=16
+    BEST_MAPL_SLICE_SIZE_MAX=17
+else
+    echo non-paper mode
+fi
 
 if [ "$1" != "" ]; then
     outPath=$1
@@ -72,7 +84,25 @@ for valSize in 256 ; do
                         continue
                     fi
                     sliceSizeMax=$(( sliceSize + 1 ))
-                    for thread in $MAX_THREAD; do
+
+                    if [ "$paperMode" != "0" ]; then
+                        if [ "$maplize_threshold" == "0" ]; then # MAPL tree
+                            BEST_BTREE_SLOT_MAX=128
+                            BEST_MAPL_SLOT_MAX=2048
+                            BEST_MAPL_SLICE_SIZE=16
+                            BEST_MAPL_SLICE_SIZE_MAX=17
+                            slotMax=$BEST_MAPL_SLOT_MAX
+                            sliceSize=$BEST_MAPL_SLICE_SIZE
+                            sliceSizeMax=$BEST_MAPL_SLICE_SIZE_MAX
+                        else # B-tree
+                            slotMax=$BEST_BTREE_SLOT_MAX
+                        fi
+                    fi
+
+                    for thread in $MAX_THREAD 1 2 4 8 12; do
+                        if [[ $thread -gt "$MAX_THREAD" ]]; then
+                           continue
+                        fi
                         # shellcheck disable=SC2043
                         props=(
                             "100 0 0 0"
@@ -140,8 +170,17 @@ for valSize in 256 ; do
                                 #fi
                             fi
                         done # for insert/lookup/scan prop
+                        if [ "$paperMode" == "0" ]; then # non-paper mode, only run one thread
+                            break
+                        fi
                     done # for threads
+                    if [ "$paperMode" != "0" ]; then # paper mode, only run one sliceSize
+                        break
+                    fi
                 done # for sliceSize
+                if [ "$paperMode" != "0" ]; then # paper mode, only run one slotMax
+                    break
+                fi
             done # for slotMax
         done # for maplize_threshold
     done # for dist
