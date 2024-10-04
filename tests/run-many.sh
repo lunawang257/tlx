@@ -25,7 +25,7 @@ else
 fi
 
 paperMode=0 # find best config (slotMax, sliceSize) for each tree
-#paperMode=1 # calculate results for all threads with best config for each tree
+paperMode=1 # calculate results for all threads with best config for each tree
 
 if [ "$paperMode" != "0" ]; then
     echo paper mode
@@ -66,7 +66,7 @@ else
     MAX_THREAD=4
 fi
 echo Max CPU is $MAX_THREAD
-N=$((4*1000*1000))
+N=$((25*1000*1000))
 
 COMMON_REPEAT=0.1
 SCAN_REPEAT=0.01 # scan is too slow, repeat less
