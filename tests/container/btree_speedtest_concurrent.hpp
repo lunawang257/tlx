@@ -9,7 +9,7 @@
 #include <tests/container/btree_fast_log.hpp>
 #include "trace.h"
 
-const size_t NUM_THREADS = 16; // just set a max value to make btree_fast_log.hpp happy
+const size_t NUM_THREADS = 32; // just set a max value to make btree_fast_log.hpp happy
 
 // *** Settings
 bool g_use_slbtree = false;
@@ -253,7 +253,7 @@ private:
                                             &num_total_next_leaf,
                                             &num_no_wait_next_leaf,
                     [thread_id, this]
-                    (const ValType&) noexcept {
+                    (const ValType*) noexcept {
                         ++this->thread_states[thread_id].scan_count;
                     }
                 );

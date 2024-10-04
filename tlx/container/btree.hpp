@@ -3082,7 +3082,7 @@ public:
                 } else {
                     slicenum = 0;
                 }
-                for (; slicenum < leaf->mapl->numslices; slicenum++) {
+                for (; !(*stop) && slicenum < leaf->mapl->numslices; slicenum++) {
                     Slice& slice = leaf->mapl->slices[slicenum];
                     if constexpr (concurrent) {
                         slice.lock.read_lock();
@@ -3101,7 +3101,7 @@ public:
                             *stop = true;
                             break;
                         }
-                        std::apply(f, std::forward_as_tuple(slice.value(ind)));
+                        f(&leaf->slotdata[slice.index_array[ind]]);
                         count++;
                     }
                     reach_slice_end = (ind == slice.slotuse);
@@ -3124,7 +3124,7 @@ public:
                         *stop = true;
                         break;
                     }
-                    std::apply(f, std::forward_as_tuple(leaf->slotdata[i]));
+                    f(&leaf->slotdata[i]);
                     count++;
                 }
                 reach_leaf_end = (i >= leaf->slotuse);
