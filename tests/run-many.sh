@@ -38,15 +38,16 @@ if [ "$paperMode" != "0" ]; then
     BEST_MAPL_SLICE_SIZE=16
     BEST_MAPL_SLICE_SIZE_MAX=17
 
-    # with balanced workload
-    BEST_BTREE_SLOT_MAX=64
-    BEST_MAPL_SLOT_MAX=1024
-    BEST_MAPL_SLICE_SIZE=64
-    BEST_MAPL_SLICE_SIZE_MAX=65
-
     # best overall performance, optimized with 25% insert, 25% delete
     # 25% lookup, and 25% scan of length 1000
+    # M1 results:
     BEST_MAPL_SLOT_MAX=512
+    BEST_MAPL_SLICE_SIZE=32
+    BEST_MAPL_SLICE_SIZE_MAX=33
+
+    # Linux results with balanced
+    BEST_BTREE_SLOT_MAX=64
+    BEST_MAPL_SLOT_MAX=8192
     BEST_MAPL_SLICE_SIZE=32
     BEST_MAPL_SLICE_SIZE_MAX=33
 else
@@ -61,30 +62,32 @@ out="$outPath/${base}-results-$ts.txt"
 
 # smaller will reduce run time
 if [ "$(uname -s)" == "Linux" ]; then
-    MAX_THREAD=$(numactl --hardware | awk '/node 0 cpus:/ {print NF-3}')
+    NUMA_0_MAX_THREAD=$(numactl --hardware | awk '/node 0 cpus:/ {print NF-3}')
+    MAX_THREAD=32
 else
+    NUMA_0_MAX_THREAD=4
     MAX_THREAD=4
 fi
-echo Max CPU is $MAX_THREAD
+echo Max CPU is $NUMA_0_MAX_THREAD
 N=$((25*1000*1000))
 
 COMMON_REPEAT=0.1
 SCAN_REPEAT=0.01 # scan is too slow, repeat less
 # shellcheck disable=SC2043
 props=(
-    #ins fnd scn len repeat
-    "100   0  0   0"  # all insert
-    "0   100  0   0"  # all lookup (YCSB-C)
-    "0     0  0   0"  # all delete
-    "50   50  0   0"  # YCSB-A
-    "5    95  0   0"  # YCSB-B
-    "5     0 95 100" # YCSB-E
+    #ins fnd  scn len repeat
+    "100   0    0   0"  # all insert
+    "0   100    0   0"  # all lookup (YCSB-C)
+    "0   100  100 100"  # all scan
+    "50   50    0   0"  # YCSB-A
+    "5    95    0   0"  # YCSB-B
+    "5     0   95 100"  # YCSB-E
+    #"0     0  0   0"    # all delete
 )
-
 if [ "$paperMode" == "0" ]; then
     # in non-paper mode, only get 100% insert results
     props=(
-        "25 25 25 1000"
+        "25 25 25 100"
     )
 fi
 
@@ -107,11 +110,11 @@ for prop_str in "${props[@]}" ; do
     for valSize in 256 ; do
         # shellcheck disable=SC2043
         for dist in uniform zipf ; do
-            for maplize_threshold in 0 100 ; do
+            for maplize_threshold in 100 ; do
                 # shellcheck disable=SC2043
-                for slotMax in 4096 2048 1024 512 256 128 64 32 16 8 4; do
-                    startSliceSize=4
-                    for ((sliceSize=startSliceSize;sliceSize<=64;sliceSize=sliceSize*2)) ; do
+                for slotMax in 16384 8192 ; do #4096 2048 1024 512 256 128 64 32 ; do
+                    startSliceSize=16
+                    for ((sliceSize=startSliceSize;sliceSize<=128;sliceSize=sliceSize*2)) ; do
                         if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "$startSliceSize" ]]; then
                             continue
                         fi
@@ -127,10 +130,12 @@ for prop_str in "${props[@]}" ; do
                                 sliceSizeMax=$BEST_MAPL_SLICE_SIZE_MAX
                             else # B-tree
                                 slotMax=$BEST_BTREE_SLOT_MAX
+                                sliceSize=$BEST_MAPL_SLICE_SIZE
+                                sliceSizeMax=$BEST_MAPL_SLICE_SIZE_MAX
                             fi
                         fi
 
-                        for ((thread=MAX_THREAD;thread>=1;thread=thread/2)); do
+                        for thread in 32 28 24 20 16 12 8 4 2 1 ; do
                             if [[ $thread -gt "$MAX_THREAD" ]]; then
                                 continue
                             fi
@@ -156,8 +161,10 @@ for prop_str in "${props[@]}" ; do
 --scan-len $scanLen \
 --dist $dist \
 --repeats $repeat"
-                            if [ "$(uname -s)" == "Linux" ]; then
-                                cmd="numactl -N -0 -m 0 $cmd"
+                            if [[ $thread -gt "$NUMA_0_MAX_THREAD" ]]; then
+                                if [ "$(uname -s)" == "Linux" ]; then
+                                    cmd="numactl -N -0 -m 0 $cmd"
+                                fi
                             fi
                             echo "$cmd > $oneResult"
                             if [ "$dryrun" != "1" ] ; then
