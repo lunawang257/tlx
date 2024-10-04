@@ -56,7 +56,7 @@ public:
   void unlock() { flag = false; }
 };
 
-template <int num_counters = 8> class partitioned_counter {
+template <int num_counters = 32> class partitioned_counter {
 
 #ifdef __cpp_lib_hardware_interference_size
   static constexpr std::size_t hardware_constructive_interference_size =
@@ -290,7 +290,7 @@ public:
 
 private:
   std::atomic_flag writer{false};
-  partitioned_counter<48> readers{};
+  partitioned_counter<32> readers{};
 };
 
 class ReaderWriterLock2 {
