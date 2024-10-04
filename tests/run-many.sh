@@ -110,7 +110,7 @@ for prop_str in "${props[@]}" ; do
     for valSize in 256 ; do
         # shellcheck disable=SC2043
         for dist in uniform zipf ; do
-            for maplize_threshold in 100 ; do
+            for maplize_threshold in 0 100 ; do
                 # shellcheck disable=SC2043
                 for slotMax in 16384 8192 ; do #4096 2048 1024 512 256 128 64 32 ; do
                     startSliceSize=16
