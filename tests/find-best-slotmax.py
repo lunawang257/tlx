@@ -16,17 +16,16 @@ def process_csv(input_file, output_file=None):
     max_threads = df['Threads'].max()
     df_max_threads = df[df['Threads'] == max_threads]
 
-    # Step 3: Extract rows with "InsertP"=100 from the result of Step 2
-    df_insertp_100 = df_max_threads[df_max_threads['InsertP'] == 100]
+    # Step 3: no longer used
 
     # Step 4: Group and sort by "MplThrh", "Dist", "ValSize"
-    df_grouped = df_insertp_100.groupby(['Dist', 'ValSize', 'MplThrh'])
+    df_grouped = df_max_threads.groupby(['Dist', 'ValSize', 'MplThrh'])
 
     # Step 5: Find the highest "Mops/s" value for each group
     df_max_mops = df_grouped['Mops'].max().reset_index()
 
     # Step 6: Merge with the original DataFrame to get the corresponding "SlotMax" values
-    df_result = pd.merge(df_max_mops, df_insertp_100, on=['Dist', 'ValSize', 'MplThrh', 'Mops'], how='left')
+    df_result = pd.merge(df_max_mops, df_max_threads, on=['Dist', 'ValSize', 'MplThrh', 'Mops'], how='left')
 
     # Keep only necessary columns
     df_result = df_result[['Dist', 'ValSize', 'SliceSz', 'MplThrh', 'SlotMax', 'Mops', 'Threads', 'SHght', 'EHght']]

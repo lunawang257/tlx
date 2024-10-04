@@ -25,17 +25,30 @@ else
 fi
 
 paperMode=0 # find best config (slotMax, sliceSize) for each tree
-paperMode=1 # calculate results for all threads with best config for each tree
+#paperMode=1 # calculate results for all threads with best config for each tree
 
 if [ "$paperMode" != "0" ]; then
     echo paper mode
+
+    # optimized with 100% insert
     # on Linux is 128, on M2 is 16
     BEST_BTREE_SLOT_MAX=16
 
     BEST_MAPL_SLOT_MAX=2048
     BEST_MAPL_SLICE_SIZE=16
-
     BEST_MAPL_SLICE_SIZE_MAX=17
+
+    # with balanced workload
+    BEST_BTREE_SLOT_MAX=64
+    BEST_MAPL_SLOT_MAX=1024
+    BEST_MAPL_SLICE_SIZE=64
+    BEST_MAPL_SLICE_SIZE_MAX=65
+
+    # best overall performance, optimized with 25% insert, 25% delete
+    # 25% lookup, and 25% scan of length 1000
+    BEST_MAPL_SLOT_MAX=512
+    BEST_MAPL_SLICE_SIZE=32
+    BEST_MAPL_SLICE_SIZE_MAX=33
 else
     echo non-paper mode
 fi
@@ -53,7 +66,7 @@ else
     MAX_THREAD=4
 fi
 echo Max CPU is $MAX_THREAD
-N=$((2*1000*1000))
+N=$((4*1000*1000))
 
 COMMON_REPEAT=0.1
 SCAN_REPEAT=0.01 # scan is too slow, repeat less
@@ -71,7 +84,7 @@ props=(
 if [ "$paperMode" == "0" ]; then
     # in non-paper mode, only get 100% insert results
     props=(
-        "100 0 0 0"   # all insert
+        "25 25 25 1000"
     )
 fi
 
