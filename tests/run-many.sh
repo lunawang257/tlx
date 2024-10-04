@@ -102,6 +102,9 @@ for prop_str in "${props[@]}" ; do
                         if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "$startSliceSize" ]]; then
                             continue
                         fi
+                        if [[ "$sliceSize" -ge "$slotMax" ]]; then
+                            continue
+                        fi
                         sliceSizeMax=$(( sliceSize + 1 ))
 
                         if [ "$paperMode" != "0" ]; then
