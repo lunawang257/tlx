@@ -66,3 +66,4 @@ for testType in update lookup scan rebalance maplize; do
         done # slotMax
     done # valSize
 done # testType
+echo "$logfile"
