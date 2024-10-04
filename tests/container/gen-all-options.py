@@ -25,8 +25,8 @@ if btreemix_fast_compile:
     btreemix_value_size_list = [256]
 
 if leaf_fast_compile:
-    leaf_slot_max_list = []
-    leaf_value_size_list = []
+    leaf_slot_max_list = [128, 512, 2048]
+    leaf_value_size_list = [256]
 
 # List of command formats to be included in the single file
 command_formats = [

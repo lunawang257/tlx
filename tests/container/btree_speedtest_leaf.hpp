@@ -47,7 +47,7 @@ static void output_result(const std::string& operation,
               << "LockSize=" << LockSize << "\t"
               << "MaplOverhead=" << std::fixed << std::setprecision(2)
                                  << MaplOverhead * 100 << "%" << "\t"
-              << "avgTime=" << std::fixed << std::setprecision(2) << avgTime*1e6 << "us" << "\t"
+              << "avgTime=" << std::fixed << std::setprecision(4) << avgTime*1e6 << "us" << "\t"
               << std::endl;
 
     std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tLfSz\tMplOvrhd\tTime\n"
@@ -59,7 +59,7 @@ static void output_result(const std::string& operation,
               << LeafSize << "\t"
               << std::fixed << std::setprecision(2)
                             << MaplOverhead * 100 << "%" << "\t"
-              << std::fixed << std::setprecision(2) << avgTime*1e6 << "us" << "\t"
+              << std::fixed << std::setprecision(4) << avgTime*1e6 << "us" << "\t"
               << std::endl;
 }
 
