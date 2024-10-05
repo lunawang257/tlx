@@ -32,7 +32,7 @@ touch "$logfile"
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest"
 
-iter=1000000
+iter=100000
 
 rm -rf ./perfresults/*
 
@@ -40,29 +40,33 @@ for testType in update lookup scan rebalance maplize; do
     # shellcheck disable=SC2043
     for valSize in 256; do
         for slotMax in 64 256 2048 8192; do
-            slotSize=$(( slotMax / 4 ))
-            for slotSize in 16 32 64; do
-                if [ "$slotSize" -lt "8" ]; then
-                    continue # slice less than 8 is too small
-                fi
-                if [ "$slotSize" -gt "$(( slotMax * 4 ))" ]; then
-                    continue # less than 4 slices is too few
-                fi
-                slotSizeMax=$(( slotSize + 1 ))
-                for isMapl in 1 0; do
+            for isMapl in 1 0; do
+                for slotSize in 32 64; do
+                    if [ "$slotSize" -lt "8" ]; then
+                        continue # slice less than 8 is too small
+                    fi
+                    if [ "$slotSize" -gt "$(( slotMax * 4 ))" ]; then
+                        continue # less than 4 slices is too few
+                    fi
+                    slotSizeMax=$(( slotSize + 1 ))
                     #echo slotMax=$slotMax valSize=$valSize slotSize=$slotSize testType=$testType isMapl=$isMapl
+                    if [[ "$testType" == "rebalance" || "$testType" == "maplize" ]]; then
+                        # no need to test isMapl is 0 case for rebalance or maplize
+                        if [ "$isMapl" == "0" ]; then #
+                            break
+                        fi
+                    fi
                     cmd="${prog}_${testType} -i $iter -m $isMapl -p $testType -s $slotMax -v $valSize -S $slotSize -M $slotSizeMax"
                     echo "$cmd" | tee -a "${logfile}"
                     if [ "$dryrun" != "1" ] ; then
                         eval "$cmd" | tee -a "${logfile}"
                     fi
 
-                    if [[ "$testType" == "rebalance" || "$testType" == "maplize" ]]; then
-                        # no need to test isMapl is 0 case for rebalanceor maplize
+                    if [ "$isMapl" == "0" ]; then # one slotSize is enough for B-tree leaf
                         break
                     fi
-                done # isMapl
-            done # slotSize
+                done # slotSize
+            done # isMapl
         done # slotMax
     done # valSize
 done # testType
