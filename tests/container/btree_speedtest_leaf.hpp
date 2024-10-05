@@ -36,7 +36,7 @@ private:
 public:
 static void output_result(const std::string& operation,
                           const double avgTime = 0.0) {
-    std::cout << "Op=" << operation << "\t"
+/*     std::cout << "Op=" << operation << "\t"
               << "MaxSlots=" << TestSlotMax << "\t"
               << "ValueSize=" << ValSize << "\t"
               << "SliceSize=" << SliceSize << "\t"
@@ -48,17 +48,14 @@ static void output_result(const std::string& operation,
               << "MaplOverhead=" << std::fixed << std::setprecision(4)
                                  << MaplOverhead * 100 << "%" << "\t"
               << "avgTime=" << std::fixed << std::setprecision(4) << avgTime*1e6 << "us" << "\t"
-              << std::endl;
+              << std::endl; */
 
-    std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tLfSz\tMplOvrhd\tTime\n"
+    std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tTime\n"
               << operation << "\t"
               << TestSlotMax << "\t"
               << ValSize << "\t"
               << SliceSize << "\t"
               << SliceSizeMax << "\t"
-              << LeafSize << "\t"
-              << std::fixed << std::setprecision(4)
-                            << MaplOverhead * 100 << "%" << "\t"
               << std::fixed << std::setprecision(4) << avgTime*1e6 << "us" << "\t"
               << std::endl;
 }
@@ -243,16 +240,21 @@ static void test_maplize_insert_delete_perf() {
     double avg_insert_time = (insert_count > 0) ? total_insert_time.count() / insert_count : 0.0;
     double avg_delete_time = (delete_count > 0) ? total_delete_time.count() / delete_count : 0.0;
 
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average maplized insert time: " << std::setprecision(4) << avg_insert_time * 1e6 << " us" << std::endl;
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average maplized delete time: " << std::setprecision(4) << avg_delete_time * 1e6 << " us" << std::endl;
+    std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tTime\n";
+    std::cout << "mpl_inst" << "\t"
+              << TestSlotMax << "\t"
+              << ValSize << "\t"
+              << SliceSize << "\t"
+              << SliceSizeMax << "\t"
+              << std::fixed << std::setprecision(4) << avg_insert_time*1e6 << "us" << "\t"
+              << std::endl;
+    std::cout << "mpl_del" << "\t"
+              << TestSlotMax << "\t"
+              << ValSize << "\t"
+              << SliceSize << "\t"
+              << SliceSizeMax << "\t"
+              << std::fixed << std::setprecision(4) << avg_delete_time*1e6 << "us" << "\t"
+              << std::endl;
 }
 
 // Function to perform the insert operation
@@ -346,16 +348,21 @@ static void test_insert_delete_perf() {
     double avg_insert_time = (insert_count > 0) ? total_insert_time.count() / insert_count : 0.0;
     double avg_delete_time = (delete_count > 0) ? total_delete_time.count() / delete_count : 0.0;
 
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average insert time: " << std::setprecision(4) << avg_insert_time * 1e6 << " us" << std::endl;
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average delete time: " << std::setprecision(4) << avg_delete_time * 1e6 << " us" << std::endl;
+    std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tTime\n";
+    std::cout << "inst" << "\t"
+             << TestSlotMax << "\t"
+             << ValSize << "\t"
+             << SliceSize << "\t"
+             << SliceSizeMax << "\t"
+             << std::fixed << std::setprecision(4) << avg_insert_time*1e6 << "us" << "\t"
+             << std::endl;
+    std::cout << "del" << "\t"
+             << TestSlotMax << "\t"
+             << ValSize << "\t"
+             << SliceSize << "\t"
+             << SliceSizeMax << "\t"
+             << std::fixed << std::setprecision(4) << avg_delete_time*1e6 << "us" << "\t"
+             << std::endl;
 }
 
 // Unit test function
@@ -401,18 +408,21 @@ static void test_maplize_perf() {
     double avg_maplize_time = (maplize_count > 0) ? total_maplize_time.count() / maplize_count : 0.0;
     double avg_unmaplize_time = (unmaplize_count > 0) ? total_unmaplize_time.count() / unmaplize_count : 0.0;
 
-    output_result("maplize", avg_maplize_time);
-    output_result("unmaplize", avg_unmaplize_time);
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average maplize time: " << std::setprecision(4) << avg_maplize_time * 1e6 << " us" << std::endl;
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average unmaplize time: " << std::setprecision(4) << avg_unmaplize_time * 1e6 << " us" << std::endl;
+    std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tTime\n";
+    std::cout << "mpl" << "\t"
+             << TestSlotMax << "\t"
+             << ValSize << "\t"
+             << SliceSize << "\t"
+             << SliceSizeMax << "\t"
+             << std::fixed << std::setprecision(4) << avg_maplize_time*1e6 << "us" << "\t"
+             << std::endl;
+    std::cout << "unmpl" << "\t"
+             << TestSlotMax << "\t"
+             << ValSize << "\t"
+             << SliceSize << "\t"
+             << SliceSizeMax << "\t"
+             << std::fixed << std::setprecision(4) << avg_unmaplize_time*1e6 << "us" << "\t"
+             << std::endl;
 }
 
 // Main performance test function for lookup
@@ -462,16 +472,7 @@ static void test_lookup_perf() {
     // Calculate and print the average lookup time
     double avg_lookup_time = total_lookup_time.count() / num_iterations;
 
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average lookup time: " << std::setprecision(4) << avg_lookup_time * 1e6 << " us" << std::endl;
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " SliceSize: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Total number of slots accessed: " << total_slots << std::endl;
+    output_result("lookup", avg_lookup_time);
 }
 
 // Main performance test function for lookup
@@ -529,17 +530,7 @@ static void test_maplize_lookup_perf() {
 
     // Calculate and print the average lookup time
     double avg_lookup_time = total_lookup_time.count() / num_iterations;
-
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average maplized lookup time: " << std::setprecision(4) << avg_lookup_time * 1e6 << " us" << std::endl;
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Total number of pos accessed: " << total_pos << std::endl;
+    output_result("mpl_lkup", avg_lookup_time);
 }
 
 static void randomize_mapl_leaf_array(LeafVector& leaf_array) {
@@ -623,11 +614,7 @@ static void test_maplize_scan_perf() {
         std::cout << "dummy_count: " << dummy_count << "\n";
     }
 
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average maplized scan time: " << std::setprecision(4) << avg_scan_time * 1e6 << " us" << std::endl;
+    output_result("mpl_scn", avg_scan_time);
 }
 
 
@@ -679,11 +666,7 @@ static void test_scan_perf() {
         std::cout << "dummy_count: " << dummy_count << "\n";
     }
 
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average scan time: " << std::setprecision(4) << avg_scan_time * 1e6 << " us" << std::endl;
+    output_result("scan", avg_scan_time);
 }
 
 static void test_rebalance_perf() {
@@ -725,12 +708,7 @@ static void test_rebalance_perf() {
     // Calculate and print the average lookup time
     double avg_rebalance_time = total_rebalance_time.count() / num_iterations;
 
-    output_result("rebalance", avg_rebalance_time);
-    std::cout << "Max Slots: " << TestSlotMax
-              << " Value Size: " << ValSize
-              << " Slice Size: " << SliceSize
-              << " Slice Size Max: " << SliceSizeMax
-              << " Average rebalance time: " << std::setprecision(4) << avg_rebalance_time * 1e6 << " us" << std::endl;
+    output_result("blnce", avg_rebalance_time);
 }
 
 
