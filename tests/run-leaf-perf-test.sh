@@ -32,16 +32,16 @@ touch "$logfile"
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest"
 
-iter=100000
+iter=1000000
 
 rm -rf ./perfresults/*
 
 for testType in update lookup scan rebalance maplize; do
     # shellcheck disable=SC2043
     for valSize in 256; do
-        for slotMax in 128 512 2048; do
+        for slotMax in 64 256 2048 8192; do
             slotSize=$(( slotMax / 4 ))
-            for slotSize in 16 32; do
+            for slotSize in 16 32 64; do
                 if [ "$slotSize" -lt "8" ]; then
                     continue # slice less than 8 is too small
                 fi

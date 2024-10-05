@@ -63,13 +63,13 @@ out="$outPath/${base}-results-$ts.txt"
 # smaller will reduce run time
 if [ "$(uname -s)" == "Linux" ]; then
     NUMA_0_MAX_THREAD=$(numactl --hardware | awk '/node 0 cpus:/ {print NF-3}')
-    MAX_THREAD=32
+    MAX_THREAD=16
 else
     NUMA_0_MAX_THREAD=4
     MAX_THREAD=4
 fi
 echo Max CPU is $NUMA_0_MAX_THREAD
-N=$((25*1000*1000))
+N=$((100*1000*1000))
 
 COMMON_REPEAT=0.1
 SCAN_REPEAT=0.01 # scan is too slow, repeat less
@@ -161,7 +161,7 @@ for prop_str in "${props[@]}" ; do
 --scan-len $scanLen \
 --dist $dist \
 --repeats $repeat"
-                            if [[ $thread -gt "$NUMA_0_MAX_THREAD" ]]; then
+                            if [[ $thread -le "$NUMA_0_MAX_THREAD" ]]; then
                                 if [ "$(uname -s)" == "Linux" ]; then
                                     cmd="numactl -N -0 -m 0 $cmd"
                                 fi
