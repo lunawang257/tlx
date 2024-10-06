@@ -11,7 +11,8 @@
 
 const size_t NUM_THREADS = 32; // just set a max value to make btree_fast_log.hpp happy
 
-size_t max_runtime_ns = 5ull * 1000 * 1000 * 1000; // run 5 seconds max
+// measure at most this long to reduce run time
+size_t max_runtime_ns = 30ull * 1000 * 1000 * 1000;
 
 // *** Settings
 bool g_use_slbtree = false;
