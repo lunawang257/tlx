@@ -69,7 +69,7 @@ else
     MAX_THREAD=4
 fi
 echo Max CPU is $NUMA_0_MAX_THREAD
-N=$((100*1000*1000))
+N=$((25*1000*1000))
 
 COMMON_REPEAT=0.1
 SCAN_REPEAT=0.01 # scan is too slow, repeat less

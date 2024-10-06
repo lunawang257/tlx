@@ -473,6 +473,9 @@ static void test_lookup_perf() {
     double avg_lookup_time = total_lookup_time.count() / num_iterations;
 
     output_result("lookup", avg_lookup_time);
+    if (total_slots == 12345678ull) { // avoid pos being optimized out
+        std::cout << std::flush;
+    }
 }
 
 // Main performance test function for lookup
@@ -531,6 +534,9 @@ static void test_maplize_lookup_perf() {
     // Calculate and print the average lookup time
     double avg_lookup_time = total_lookup_time.count() / num_iterations;
     output_result("mpl_lkup", avg_lookup_time);
+    if (total_pos == 12345678ull) { // avoid pos being optimized out
+        std::cout << std::flush;
+    }
 }
 
 static void randomize_mapl_leaf_array(LeafVector& leaf_array) {

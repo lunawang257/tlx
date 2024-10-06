@@ -11,6 +11,8 @@
 
 const size_t NUM_THREADS = 32; // just set a max value to make btree_fast_log.hpp happy
 
+size_t max_runtime_ns = 5ull * 1000 * 1000 * 1000; // run 5 seconds max
+
 // *** Settings
 bool g_use_slbtree = false;
 size_t min_items = 125; //! starting number of items to insert
@@ -220,6 +222,9 @@ private:
     }
 
     void run_mixed_ops(int thread_id, const std::vector<std::pair<TestOperation, key_type>>& operations) {
+        std::chrono::time_point<std::chrono::high_resolution_clock> test_start;
+
+        test_start = std::chrono::high_resolution_clock::now();
         for (size_t op_idx = 0; op_idx < operations.size() && !stop; ++op_idx) {
             std::chrono::time_point<std::chrono::high_resolution_clock> start, end;
 
@@ -286,6 +291,14 @@ private:
                 update_thread_states(thread_id, 1, op.first, start, end);
             }
 
+            // check early exit
+            if (thread_id == 0 && (op_idx % 65536) == 0) {
+                std::chrono::duration<uint64_t, std::nano> runtime =
+                    std::chrono::high_resolution_clock::now() - test_start;
+                if (runtime.count() > max_runtime_ns) {
+                    stop = true;
+                }
+            }
         } // for each operation
     }
 
