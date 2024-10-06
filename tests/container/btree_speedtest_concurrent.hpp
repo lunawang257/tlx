@@ -292,7 +292,7 @@ private:
             }
 
             // check early exit
-            if (thread_id == 0 && (op_idx % 65536) == 0) {
+            if (thread_id == 0 && (op_idx % 256) == 0) {
                 std::chrono::duration<uint64_t, std::nano> runtime =
                     std::chrono::high_resolution_clock::now() - test_start;
                 if (runtime.count() > max_runtime_ns) {
