@@ -78,6 +78,12 @@ public:
         uint64_t delete_op_ct[NUM_PHASES] = {0};
         uint64_t lookup_op_ct[NUM_PHASES] = {0};
         uint64_t scan_op_ct[NUM_PHASES] = {0};
+
+        // mapl/unmapl stats
+        uint64_t total_mapl_ct = 0;
+        uint64_t total_unmapl_ct = 0;
+        uint64_t total_mapl_ns = 0;
+        uint64_t total_unmapl_ns = 0;
     };
 
     std::vector<thread_state> thread_states;
@@ -324,6 +330,9 @@ private:
         std::vector<std::pair<TestOperation, key_type>> operations; // operations by non-phased threads
         preload_mixed_ops(thread_id, iterations, operations);
 
+        //reset the mapl and unmapl stats
+        localMaplStat.reset();
+
         local_thread_id = thread_id;
 
         auto old_val = num_running.fetch_add(1, std::memory_order_relaxed);
@@ -358,6 +367,11 @@ private:
         thread_states[thread_id].total_inner_write_lock_ns = localLockStat.total_inner_write_lock_ns.count();
         thread_states[thread_id].total_inner_read_lock_ct = localLockStat.total_inner_read_lock_ct;
         thread_states[thread_id].total_inner_write_lock_ct = localLockStat.total_inner_write_lock_ct;
+
+        thread_states[thread_id].total_mapl_ns = localMaplStat.total_mapl_ns.count();
+        thread_states[thread_id].total_unmapl_ns = localMaplStat.total_unmapl_ns.count();
+        thread_states[thread_id].total_mapl_ct = localMaplStat.total_mapl_ct;
+        thread_states[thread_id].total_unmapl_ct = localMaplStat.total_unmapl_ct;
     }
 
 public:
@@ -428,6 +442,12 @@ void btreemix_runner_loop(size_t items,
     uint64_t total_lookup_ct = 0;
     uint64_t total_scan_ct = 0;
 
+    //mapl and unmapl stats
+    uint64_t total_mapl_ct = 0;
+    uint64_t total_unmapl_ct = 0;
+    uint64_t total_mapl_ns = 0;
+    uint64_t total_unmapl_ns = 0;
+
     unsigned short start_height = 0, end_height = 0;
 
     do {
@@ -462,6 +482,8 @@ void btreemix_runner_loop(size_t items,
         total_delete_ct = 0;
         total_lookup_ct = 0;
         total_scan_ct = 0;
+
+        total_mapl_ct = total_unmapl_ct = total_mapl_ns = total_unmapl_ns = 0;
 
         // initialize test structures
         TestClass test(items, n_threads, dist_option);
@@ -504,6 +526,12 @@ void btreemix_runner_loop(size_t items,
                             ts.delete_op_ct, total_delete_op_ct, std::plus<>());
             std::transform(total_scan_op_ct, total_scan_op_ct + NUM_PHASES,
                             ts.scan_op_ct, total_scan_op_ct, std::plus<>());
+
+            //mapl & unmapl stats
+            total_mapl_ct += ts.total_mapl_ct;
+            total_unmapl_ct += ts.total_unmapl_ct;
+            total_mapl_ns += ts.total_mapl_ns;
+            total_unmapl_ns += ts.total_unmapl_ns;
         }
 
         auto stat = test.my_map.get_stats();
@@ -628,7 +656,7 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tSHght\tEHght\tDist\tBch\tInsertP\tLookupP\tScnP\tScnLen\tMops\tIntMops\tDelPops\tLkpMops\tScnMops\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tLfRdLk\tLfWtLk\tInRdLk\tInWtLk\tP1Inst\tP1Dlt\tP1LkP\tP1Scn\tP2Inst\tP2Dlt\tP2LkP\tP2Scn\tP3Inst\tP3Dlt\tP3LkP\tP3Scn\tInstT\tDelT\tLkpT\tScnT\titms\trpts\tactItms\tDrtion\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tSHght\tEHght\tDist\tBch\tInsertP\tLookupP\tScnP\tScnLen\tMops\tIntMops\tDelPops\tLkpMops\tScnMops\tWaitPct\tMaplPct\tMaplRd\tMaplWt\tLfRdLk\tLfWtLk\tInRdLk\tInWtLk\tP1Inst\tP1Dlt\tP1LkP\tP1Scn\tP2Inst\tP2Dlt\tP2LkP\tP2Scn\tP3Inst\tP3Dlt\tP3LkP\tP3Scn\tInstT\tDelT\tLkpT\tScnT\titms\trpts\tactItms\tDrtion\tTInstT\tTInstC\tTDelT\tTDelC\tTLkpT\tTLkpC\tTScnT\tTScnC\tTMaplT\tTMaplC\tTUMaplT\tTUMaplC\n"
               << container_name << "\t"
               << start_height << "\t"
               << end_height << "\t"
@@ -668,7 +696,20 @@ void btreemix_runner_loop(size_t items,
               << std::setprecision(2) << avg_lookup_time << "us" << "\t"
               << std::setprecision(2) << avg_scan_time << "us" << "\t"
               << items << "\t" << std::setprecision(2) << start_repeat << "\t"
-              << actual_items << "\t" << duration
+              << actual_items << "\t"
+              << duration <<"\t"
+              << std::setprecision(2) << total_insert_ns * 1.0 / 1e6 << "ms" << "\t"
+              << total_insert_ct << "\t"
+              << std::setprecision(2) << total_delete_ns * 1.0 / 1e6 << "ms" << "\t"
+              << total_delete_ct << "\t"
+              << std::setprecision(2) << total_lookup_ns * 1.0 / 1e6 << "ms" << "\t"
+              << total_lookup_ct << "\t"
+              << std::setprecision(2) << total_scan_ns * 1.0 / 1e6 << "ms" << "\t"
+              << total_scan_ct << "\t"
+              << std::setprecision(4) << total_mapl_ns * 1.0 / 1e6 << "ms" << "\t"
+              << total_mapl_ct << "\t"
+              << std::setprecision(4) << total_unmapl_ns * 1.0 / 1e6 << "ms" << "\t"
+              << total_unmapl_ct << "\t"
               << std::endl;
 }
 

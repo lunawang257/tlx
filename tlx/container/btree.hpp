@@ -65,6 +65,26 @@ enum { // lock id in Mapl nodes
 // 0-100, if >30% locks waited, maplize the leaf. Unmaplize logic not done yet
 unsigned short maplize_threshold = 30;
 
+#include <chrono>
+
+struct ThreadLocalMaplStat {
+    // Initialize total_mapl_ns and total_unmapl_ns to zero
+    std::chrono::duration<uint64_t, std::nano> total_mapl_ns = std::chrono::duration<uint64_t, std::nano>::zero();
+    std::chrono::duration<uint64_t, std::nano> total_unmapl_ns = std::chrono::duration<uint64_t, std::nano>::zero();
+
+    uint64_t total_mapl_ct = 0;
+    uint64_t total_unmapl_ct = 0;  // Corrected from 'total_mapl_ct' to 'total_unmapl_ct'
+
+    // reset() function to set all values to 0
+    void reset() {
+        total_mapl_ns = std::chrono::duration<uint64_t, std::nano>::zero();
+        total_unmapl_ns = std::chrono::duration<uint64_t, std::nano>::zero();
+        total_mapl_ct = 0;
+        total_unmapl_ct = 0;
+    }
+};
+thread_local ThreadLocalMaplStat localMaplStat;
+
 namespace tlx {
 
 //! \addtogroup tlx_container
@@ -1407,8 +1427,13 @@ public:
         void maplize(BTree* treep) {
             LOG_STR("before maplize " << this << " min=" << min_key() << " max=" << max_key());
             TLX_BTREE_ASSERT(!mapl);
+
+            localMaplStat.total_mapl_ct++;
+            auto start = std::chrono::high_resolution_clock::now();
+
             mapl = new Mapl(slotdata, &(node::slotuse), this);
 
+            localMaplStat.total_mapl_ns += std::chrono::high_resolution_clock::now() - start;
 
             ++treep->stats_.mapl_leaves;
             LOG_STR("after maplize " << this << " min=" << min_key() << " max=" << max_key());
@@ -1424,6 +1449,9 @@ public:
             }
 #endif
 
+            localMaplStat.total_unmapl_ct++;
+            auto start = std::chrono::high_resolution_clock::now();
+
             value_type *ordered = new value_type[node::slotuse];
             MaplKeyContext ctx;
             for (int i = 0; i < node::slotuse; i++) {
@@ -1435,6 +1463,8 @@ public:
             delete []ordered;
             delete mapl;
             mapl = nullptr;
+
+            localMaplStat.total_unmapl_ns += std::chrono::high_resolution_clock::now() - start;
 
             --treep->stats_.mapl_leaves;
             LOG_STR("after unmaplize " << this << " min=" << min_key() << " max=" << max_key());
