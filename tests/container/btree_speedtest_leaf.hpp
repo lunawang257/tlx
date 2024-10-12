@@ -685,6 +685,11 @@ static void test_rebalance_perf() {
     // Initialize the leaf array with sorted values
     initialize_leaf_array(leaf_array, false); // Pass true for sorted
 
+    // Maplize each leaf
+    for (auto& leaf : leaf_array) {
+        leaf.maplize(&bt);
+    }
+
     // Random number generator setup
     std::mt19937 rng(seed);
     UniDistLeafT leaf_dist(0, array_size - 1);
@@ -699,7 +704,6 @@ static void test_rebalance_perf() {
     for (size_t i = 0; i < num_iterations; ++i) {
         // Select a random leaf
         auto& leaf = leaf_array[leaf_dist(rng)];
-        leaf.maplize(&bt);
 
         // Start time measurement
         auto start_time = std::chrono::high_resolution_clock::now();
