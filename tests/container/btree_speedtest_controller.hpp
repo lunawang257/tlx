@@ -16,7 +16,7 @@ enum TestOption {
     INVALID
 };
 
-const int MAX_KEY_RANGE = 100;
+const int MAX_KEY_RANGE = 10000;
 const int LEAF_ARRAY_SIZE = 1000;
 int NUM_ITERATIONS = 100000;
 
