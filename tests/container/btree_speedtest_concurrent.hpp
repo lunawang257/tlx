@@ -29,13 +29,8 @@ size_t LOOKUP_PROP = 17;
 size_t INSERT_PROP = 33;
 size_t SCAN_PROP = 17;
 size_t scan_len = 32;
-size_t BENCH_LOOKUP_PROP = 0;
-size_t BENCH_INSERT_PROP = 10;
-size_t BENCH_SCAN_PROP = 80;
-uint8_t benchmarking = 0;
 
 const int seed = 34234235; //std::random_device{}();
-const uint8_t NUM_PHASES = 3;
 
 //! Test a generic set type with insert, find and delete sequences
 template <typename SpeedTestT>
@@ -68,16 +63,6 @@ public:
         uint64_t total_inner_write_lock_ns;
         uint64_t total_inner_read_lock_ct;
         uint64_t total_inner_write_lock_ct;
-
-        std::chrono::duration<uint64_t, std::nano> insert_op_ns[NUM_PHASES] = {};
-        std::chrono::duration<uint64_t, std::nano> delete_op_ns[NUM_PHASES] = {};
-        std::chrono::duration<uint64_t, std::nano> lookup_op_ns[NUM_PHASES] = {};
-        std::chrono::duration<uint64_t, std::nano> scan_op_ns[NUM_PHASES] = {};
-
-        uint64_t insert_op_ct[NUM_PHASES] = {0};
-        uint64_t delete_op_ct[NUM_PHASES] = {0};
-        uint64_t lookup_op_ct[NUM_PHASES] = {0};
-        uint64_t scan_op_ct[NUM_PHASES] = {0};
 
         // mapl/unmapl stats
         uint64_t total_mapl_ct = 0;
@@ -155,9 +140,6 @@ private:
         size_t lookup_p = LOOKUP_PROP;
         size_t scan_p = SCAN_PROP;
 
-        size_t one_third_mark = iterations / 3;
-        size_t two_third_mark = iterations * 2 / 3;
-
         std::uniform_int_distribution<size_t> inserted_key_dist(0, inserted_keys[thread_id].size()-1);
 
         for (size_t op_idx = 0; op_idx < iterations; op_idx++) {
@@ -167,18 +149,6 @@ private:
                 op.second = zipf_dist.Next();
             } else {
                 op.second = uniform_dist(gen);
-            }
-
-            if ((benchmarking == 1) && (op_idx > one_third_mark)) {
-                insert_p = BENCH_INSERT_PROP;
-                lookup_p = BENCH_LOOKUP_PROP;
-                scan_p = BENCH_SCAN_PROP;
-
-                op.second = uniform_dist_first_half(gen);
-
-                if (op_idx > two_third_mark) {
-                    op.second = uniform_dist_second_half(gen);
-                }
             }
 
             size_t op_prob = op_dist(gen);
@@ -198,7 +168,6 @@ private:
     }
 
     void update_thread_states(int thread_id,
-                              uint8_t phase_idx,
                               TestOperation op_type,
                               std::chrono::time_point<std::chrono::high_resolution_clock> start,
                               std::chrono::time_point<std::chrono::high_resolution_clock> end) {
@@ -206,23 +175,15 @@ private:
         ++thread_states[thread_id].count;
         switch (op_type) {
             case TEST_OP_INSERT: {
-                thread_states[thread_id].insert_op_ns[phase_idx] += (end - start);
-                ++thread_states[thread_id].insert_op_ct[phase_idx];
                 break;
             }
             case TEST_OP_LOOKUP: {
-                thread_states[thread_id].lookup_op_ns[phase_idx] += (end - start);
-                ++thread_states[thread_id].lookup_op_ct[phase_idx];
                 break;
             }
             case TEST_OP_DELETE: {
-                thread_states[thread_id].delete_op_ns[phase_idx] += (end - start);
-                ++thread_states[thread_id].delete_op_ct[phase_idx];
                 break;
             }
             case TEST_OP_SCAN: {
-                thread_states[thread_id].scan_op_ns[phase_idx] += (end - start);
-                ++thread_states[thread_id].scan_op_ct[phase_idx];
                 break;
             }
         }
@@ -287,16 +248,7 @@ private:
             }
             } // switch operation
 
-            size_t one_third_mark = operations.size() / 3;
-            size_t two_third_mark = operations.size() * 2 / 3;
-
-            if (op_idx <= one_third_mark) {
-                update_thread_states(thread_id, 0, op.first, start, end);
-            } else if (op_idx > two_third_mark) {
-                update_thread_states(thread_id, 2, op.first, start, end);
-            } else {
-                update_thread_states(thread_id, 1, op.first, start, end);
-            }
+            update_thread_states(thread_id, op.first, start, end);
 
             // check early exit
             if (thread_id == 0 && (op_idx % 256) == 0) {
@@ -422,26 +374,6 @@ void btreemix_runner_loop(size_t items,
     uint64_t total_inner_read_lock_ns = 0, total_inner_write_lock_ns = 0;
     uint64_t total_inner_read_lock_ct = 0, total_inner_write_lock_ct = 0;
 
-    std::chrono::duration<uint64_t, std::nano> total_insert_op_ns[NUM_PHASES] = {};
-    std::chrono::duration<uint64_t, std::nano> total_delete_op_ns[NUM_PHASES] = {};
-    std::chrono::duration<uint64_t, std::nano> total_lookup_op_ns[NUM_PHASES] = {};
-    std::chrono::duration<uint64_t, std::nano> total_scan_op_ns[NUM_PHASES] = {};
-
-    uint64_t total_insert_op_ct[NUM_PHASES] = {0};
-    uint64_t total_delete_op_ct[NUM_PHASES] = {0};
-    uint64_t total_lookup_op_ct[NUM_PHASES] = {0};
-    uint64_t total_scan_op_ct[NUM_PHASES] = {0};
-
-    uint64_t total_insert_ns = 0;
-    uint64_t total_delete_ns = 0;
-    uint64_t total_lookup_ns = 0;
-    uint64_t total_scan_ns = 0;
-
-    uint64_t total_insert_ct = 0;
-    uint64_t total_delete_ct = 0;
-    uint64_t total_lookup_ct = 0;
-    uint64_t total_scan_ct = 0;
-
     //mapl and unmapl stats
     uint64_t total_mapl_ct = 0;
     uint64_t total_unmapl_ct = 0;
@@ -460,28 +392,6 @@ void btreemix_runner_loop(size_t items,
         total_leaf_read_lock_ct = 0; total_leaf_write_lock_ct = 0;
         total_inner_read_lock_ns = 0; total_inner_write_lock_ns = 0;
         total_inner_read_lock_ct = 0; total_inner_write_lock_ct = 0;
-
-        for (int i = 0; i < NUM_PHASES; ++i) {
-            total_insert_op_ns[i] = std::chrono::nanoseconds(0);  // Set each element to 0 ns
-            total_delete_op_ns[i] = std::chrono::nanoseconds(0);
-            total_lookup_op_ns[i] = std::chrono::nanoseconds(0);
-            total_scan_op_ns[i] = std::chrono::nanoseconds(0);
-
-            total_insert_op_ct[i] = 0;
-            total_delete_op_ct[i] = 0;
-            total_lookup_op_ct[i] = 0;
-            total_scan_op_ct[i] = 0;
-        }
-
-        total_insert_ns = 0;
-        total_delete_ns = 0;
-        total_lookup_ns = 0;
-        total_scan_ns = 0;
-
-        total_insert_ct = 0;
-        total_delete_ct = 0;
-        total_lookup_ct = 0;
-        total_scan_ct = 0;
 
         total_mapl_ct = total_unmapl_ct = total_mapl_ns = total_unmapl_ns = 0;
 
@@ -509,24 +419,6 @@ void btreemix_runner_loop(size_t items,
             total_inner_read_lock_ct += ts.total_inner_read_lock_ct;
             total_inner_write_lock_ct += ts.total_inner_write_lock_ct;
 
-            std::transform(total_insert_op_ns, total_insert_op_ns + NUM_PHASES,
-                            ts.insert_op_ns, total_insert_op_ns, std::plus<>());
-            std::transform(total_lookup_op_ns, total_lookup_op_ns + NUM_PHASES,
-                            ts.lookup_op_ns, total_lookup_op_ns, std::plus<>());
-            std::transform(total_delete_op_ns, total_delete_op_ns + NUM_PHASES,
-                            ts.delete_op_ns, total_delete_op_ns, std::plus<>());
-            std::transform(total_scan_op_ns, total_scan_op_ns + NUM_PHASES,
-                            ts.scan_op_ns, total_scan_op_ns, std::plus<>());
-
-            std::transform(total_insert_op_ct, total_insert_op_ct + NUM_PHASES,
-                            ts.insert_op_ct, total_insert_op_ct, std::plus<>());
-            std::transform(total_lookup_op_ct, total_lookup_op_ct + NUM_PHASES,
-                            ts.lookup_op_ct, total_lookup_op_ct, std::plus<>());
-            std::transform(total_delete_op_ct, total_delete_op_ct + NUM_PHASES,
-                            ts.delete_op_ct, total_delete_op_ct, std::plus<>());
-            std::transform(total_scan_op_ct, total_scan_op_ct + NUM_PHASES,
-                            ts.scan_op_ct, total_scan_op_ct, std::plus<>());
-
             //mapl & unmapl stats
             total_mapl_ct += ts.total_mapl_ct;
             total_unmapl_ct += ts.total_unmapl_ct;
@@ -544,18 +436,6 @@ void btreemix_runner_loop(size_t items,
 
         mapl_write_count = stat->write_mapl.get();
         write_count = mapl_write_count + stat->write_leaf.get();
-
-        for (int phase_idx = 0; phase_idx < NUM_PHASES; phase_idx++) {
-            total_insert_ns += total_insert_op_ns[phase_idx].count();
-            total_delete_ns += total_delete_op_ns[phase_idx].count();
-            total_lookup_ns += total_lookup_op_ns[phase_idx].count();
-            total_scan_ns += total_scan_op_ns[phase_idx].count();
-
-            total_insert_ct += total_insert_op_ct[phase_idx];
-            total_delete_ct += total_delete_op_ct[phase_idx];
-            total_lookup_ct += total_lookup_op_ct[phase_idx];
-            total_scan_ct += total_scan_op_ct[phase_idx];
-        }
 
         mapl_pct = 100.0 * mapl_leaves_count / leaves_count;
         mapl_read_pct = 100.0 * mapl_read_count / read_count;
@@ -597,37 +477,6 @@ void btreemix_runner_loop(size_t items,
     double avg_inner_read_lock_time = total_inner_read_lock_ns * 1.0 / total_inner_read_lock_ct;
     double avg_inner_write_lock_time = total_inner_write_lock_ns * 1.0 / total_inner_write_lock_ct;
 
-    double insert_time[NUM_PHASES];
-    double delete_time[NUM_PHASES];
-    double lookup_time[NUM_PHASES];
-    double scan_time[NUM_PHASES];
-    std::transform(total_insert_op_ct, total_insert_op_ct + NUM_PHASES,
-                   total_insert_op_ns, insert_time, [](auto op_ct, auto op_ns) {
-                       return (op_ns.count() * 1.0 / op_ct / 1e3);
-                   });
-    std::transform(total_delete_op_ct, total_delete_op_ct + NUM_PHASES,
-                   total_delete_op_ns, delete_time, [](auto op_ct, auto op_ns) {
-                       return (op_ns.count() * 1.0 / op_ct / 1e3);
-                   });
-    std::transform(total_lookup_op_ct, total_lookup_op_ct + NUM_PHASES,
-                   total_lookup_op_ns, lookup_time, [](auto op_ct, auto op_ns) {
-                       return (op_ns.count() * 1.0 / op_ct / 1e3);
-                   });
-    std::transform(total_scan_op_ct, total_scan_op_ct + NUM_PHASES,
-                   total_scan_op_ns, scan_time, [](auto op_ct, auto op_ns) {
-                       return (op_ns.count() * 1.0 / op_ct / 1e3);
-                   });
-
-    double avg_insert_time = total_insert_ns * 1.0 / total_insert_ct / 1e3;
-    double avg_delete_time = total_delete_ns * 1.0 / total_delete_ct / 1e3;
-    double avg_lookup_time = total_lookup_ns * 1.0 / total_lookup_ct / 1e3;
-    double avg_scan_time = total_scan_ns * 1.0 / total_scan_ct / 1e3;
-
-    double avg_insert_mops = total_insert_ct * 1.0 * 1e3 / total_insert_ns;
-    double avg_delete_mops = total_delete_ct * 1.0 * 1e3 / total_delete_ns;
-    double avg_lookup_mops = total_lookup_ct * 1.0 * 1e3 / total_lookup_ns;
-    double avg_scan_mops = total_scan_ct * 1.0 * 1e3 / total_scan_ns;
-
     float million_ops_per_sec = (actual_items / duration) / 1e6;
     std::cout << "RESULT"
               << " container=" << container_name
@@ -636,7 +485,6 @@ void btreemix_runner_loop(size_t items,
               << " LOOKUP_PROP=" << LOOKUP_PROP
               << " SCAN_PROP=" << SCAN_PROP
               << " dist=" << dist_option_string
-              << " benchmarking=" << std::to_string(benchmarking)
               //<< " total_next_leaf=" << total_next_leaf
               //<< " total_no_wait_next_leaf=" << total_no_wait_next_leaf
               << " wait_pct(%)=" << std::setprecision(2) << wait_percent << "%"
@@ -656,21 +504,16 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tSHght\tEHght\tDist\tBch\tInsertP\tLookupP\tScnP\tScnLen\tMops\tIntMops\tDelPops\tLkpMops\tScnMops\tWaitPct(%)\tMaplPct(%)\tMaplRd(%)\tMaplWt(%)\tLfRdLk(ns)\tLfWtLk(ns)\tInRdLk(ns)\tInWtLk(ns)\tP1Inst(us)\tP1Dlt(us)\tP1LkP(us)\tP1Scn(us)\tP2Inst(us)\tP2Dlt(us)\tP2LkP(us)\tP2Scn(us)\tP3Inst(us)\tP3Dlt(us)\tP3LkP(us)\tP3Scn(us)\tInstT(us)\tDelT(us)\tLkpT(us)\tScnT(us)\titms\trpts\tactItms\tDrtion\tTInstT(ms)\tTInstC\tTDelT(ms)\tTDelC\tTLkpT(ms)\tTLkpC\tTScnT(ms)\tTScnC\tTMaplT(ms)\tTMaplC\tTUMaplT(ms)\tTUMaplC\n"
+    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct(%)\tMaplPct(%)\tMaplRd(%)\tMaplWt(%)\tLfRdLk(ns)\tLfWtLk(ns)\tInRdLk(ns)\tInWtLk(ns)\titms\trpts\tactItms\tDrtion\tTMaplT(ms)\tTMaplC\tTUMaplT(ms)\tTUMaplC\n"
               << container_name << "\t"
               << start_height << "\t"
               << end_height << "\t"
               << dist_option_string << "\t"
-              << std::to_string(benchmarking) << "\t"
               << INSERT_PROP << "\t"
               << LOOKUP_PROP << "\t"
               << SCAN_PROP << "\t"
               << scan_len << "\t"
               << std::setprecision(4) << million_ops_per_sec << "\t"
-              << std::setprecision(3) << avg_insert_mops << "\t"
-              << std::setprecision(3) << avg_delete_mops << "\t"
-              << std::setprecision(3) << avg_lookup_mops << "\t"
-              << std::setprecision(3) << avg_scan_mops << "\t"
               << std::setprecision(2) << wait_percent << "\t"
               << std::setprecision(2) << mapl_pct << "\t"
               << std::setprecision(2) << mapl_read_pct << "\t"
@@ -679,33 +522,9 @@ void btreemix_runner_loop(size_t items,
               << std::fixed << std::setprecision(1) << avg_leaf_write_lock_time << "\t"
               << std::fixed << std::setprecision(1) << avg_inner_read_lock_time << "\t"
               << std::fixed << std::setprecision(1) << avg_inner_write_lock_time << "\t"
-              << std::setprecision(2) << insert_time[0] << "\t"
-              << std::setprecision(2) << delete_time[0] << "\t"
-              << std::setprecision(2) << lookup_time[0] <<  "\t"
-              << std::setprecision(2) << scan_time[0] <<  "\t"
-              << std::setprecision(2) << insert_time[1] <<  "\t"
-              << std::setprecision(2) << delete_time[1] <<  "\t"
-              << std::setprecision(2) << lookup_time[1] <<  "\t"
-              << std::setprecision(2) << scan_time[1] <<  "\t"
-              << std::setprecision(2) << insert_time[2] <<  "\t"
-              << std::setprecision(2) << delete_time[2] <<  "\t"
-              << std::setprecision(2) << lookup_time[2] <<  "\t"
-              << std::setprecision(2) << scan_time[2] <<  "\t"
-              << std::setprecision(2) << avg_insert_time <<  "\t"
-              << std::setprecision(2) << avg_delete_time <<  "\t"
-              << std::setprecision(2) << avg_lookup_time <<  "\t"
-              << std::setprecision(2) << avg_scan_time <<  "\t"
               << items << "\t" << std::setprecision(2) << start_repeat << "\t"
               << actual_items << "\t"
               << duration << "\t"
-              << std::setprecision(2) << total_insert_ns * 1.0 / 1e6 << "\t"
-              << total_insert_ct << "\t"
-              << std::setprecision(2) << total_delete_ns * 1.0 / 1e6 << "\t"
-              << total_delete_ct << "\t"
-              << std::setprecision(2) << total_lookup_ns * 1.0 / 1e6 << "\t"
-              << total_lookup_ct << "\t"
-              << std::setprecision(2) << total_scan_ns * 1.0 / 1e6 << "\t"
-              << total_scan_ct << "\t"
               << std::setprecision(4) << total_mapl_ns * 1.0 / 1e6 << "\t"
               << total_mapl_ct << "\t"
               << std::setprecision(4) << total_unmapl_ns * 1.0 / 1e6 << "\t"
