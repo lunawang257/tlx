@@ -13,10 +13,10 @@
 #include <tests/container/btree_speedtest_controller.hpp>
 #include "ParallelTools/Lock.hpp"
 
-template<int TestSlotMax, int ValSize, unsigned short SliceSize, unsigned short SliceSizeMax>
+template<int LeafSlotMax, int InnerSlotMax, int ValSize, unsigned short SliceSize, unsigned short SliceSizeMax>
 class TestLeafPerf {
 private:
-    using SpeedTestT = SpeedTestType<TestSlotMax, ValSize, SliceSize, SliceSizeMax>;
+    using SpeedTestT = SpeedTestType<LeafSlotMax, InnerSlotMax, ValSize, SliceSize, SliceSizeMax>;
     using LeafValueVector = std::vector<typename SpeedTestT::test_value_type>;
     using LeafVector = std::vector<typename SpeedTestT::test_leaf_type>;
     using UniDistKeyT = std::uniform_int_distribution<key_type>;
@@ -37,7 +37,7 @@ public:
 static void output_result(const std::string& operation,
                           const double avgTime = 0.0) {
 /*     std::cout << "Op=" << operation << "\t"
-              << "MaxSlots=" << TestSlotMax << "\t"
+              << "MaxSlots=" << LeafSlotMax << "\t"
               << "ValueSize=" << ValSize << "\t"
               << "SliceSize=" << SliceSize << "\t"
               << "SliceSizeMax=" << SliceSizeMax << "\t"
@@ -52,7 +52,7 @@ static void output_result(const std::string& operation,
 
     std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tTime\n"
               << operation << "\t"
-              << TestSlotMax << "\t"
+              << LeafSlotMax << "\t"
               << ValSize << "\t"
               << SliceSize << "\t"
               << SliceSizeMax << "\t"
@@ -83,7 +83,7 @@ static void set_leaf_data(typename SpeedTestT::test_leaf_type *leaf,
 // Function to generate random values
 static LeafValueVector generate_random_values() {
     // Determine the number of slots to fill
-    size_t num_slots = static_cast<size_t>(TestSlotMax * 0.75); // 75% of TestSlotMax
+    size_t num_slots = static_cast<size_t>(LeafSlotMax * 0.75); // 75% of LeafSlotMax
 
     LeafValueVector values;
     values.reserve(num_slots);
@@ -100,7 +100,7 @@ static LeafValueVector generate_random_values() {
 }
 
 /*
- * Each leaf is filled with 75% of TestSlotMax slots of val_type data with
+ * Each leaf is filled with 75% of LeafSlotMax slots of val_type data with
  * random keys within [1..100] and random values.
 */
 
@@ -118,15 +118,15 @@ static void initialize_leaf_array(LeafVector& leaf_array, bool sorted = false) {
     * This function test_maplize_insert_delete_perf tests the performance of
     * the insert and the delete opeations of maplized leaves. The test is performed as follows:
     * 1. A leaf array is initialized with a size defined as a variable with value of 1,000,000.
-    * 2. Each leaf is filled with 75% of TestSlotMax slots of long_valu_type data with
+    * 2. Each leaf is filled with 75% of LeafSlotMax slots of long_valu_type data with
     *   random keys with [1..100] and random characters as values, and then maplized.
     * 3. The test will run for number of iterations defined as a variable with value of 1,000,000.
     * 4. In each iteration
     *   a. A random leaf is selected from the leaf array.
-    *   b. If the slotuse of the leaf is between 50% and 100% of TestSlotMax,
+    *   b. If the slotuse of the leaf is between 50% and 100% of LeafSlotMax,
     *      randomly conduct either insert or delete operation.
-    *   c. If the slotuse of the leaf is equal to 50% of TestSlotMax, insert operation is conducted.
-    *   d. If the slotuse of the leaf is equal to 100% of TestSlotMax, delete operation is conducted.
+    *   c. If the slotuse of the leaf is equal to 50% of LeafSlotMax, insert operation is conducted.
+    *   d. If the slotuse of the leaf is equal to 100% of LeafSlotMax, delete operation is conducted.
     * 5. The insert operation is conducted as follows:
     *     a. a sliceNo is selected within [0..leaf.numslices()).
     *     b. a pos is selected within [0..leaf.mapl->slices[sliceNo].slotuse].
@@ -216,13 +216,13 @@ static void test_maplize_insert_delete_perf() {
         // Select a random leaf
         auto& leaf = leaf_array[leaf_dist(rng)];
 
-        // Calculate 50% and 75% of TestSlotMax
-        size_t slotuse_50 = static_cast<size_t>(TestSlotMax * 0.5);
-        //size_t slotuse_75 = static_cast<size_t>(TestSlotMax * 0.75);
+        // Calculate 50% and 75% of LeafSlotMax
+        size_t slotuse_50 = static_cast<size_t>(LeafSlotMax * 0.5);
+        //size_t slotuse_75 = static_cast<size_t>(LeafSlotMax * 0.75);
         typename SpeedTestT::test_value_type val = SpeedTestT::generate_random_value(rng);
 
         // Check the slotuse of the leaf and decide the operation
-        if (leaf.slotuse > slotuse_50 && leaf.slotuse < TestSlotMax) {
+        if (leaf.slotuse > slotuse_50 && leaf.slotuse < LeafSlotMax) {
             // Randomly decide to insert or delete
             if (action_dist(rng) < 0.5) {
                 perform_mapl_insert_operation(leaf, rng, val, total_insert_time, insert_count);
@@ -231,7 +231,7 @@ static void test_maplize_insert_delete_perf() {
             }
         } else if (leaf.slotuse <= slotuse_50) {
             perform_mapl_insert_operation(leaf, rng, val, total_insert_time, insert_count);
-        } else if (leaf.slotuse == TestSlotMax) {
+        } else if (leaf.slotuse == LeafSlotMax) {
             perform_mapl_delete_operation(leaf, rng, total_delete_time, delete_count);
         }
     }
@@ -242,14 +242,14 @@ static void test_maplize_insert_delete_perf() {
 
     std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tTime\n";
     std::cout << "mpl_inst" << "\t"
-              << TestSlotMax << "\t"
+              << LeafSlotMax << "\t"
               << ValSize << "\t"
               << SliceSize << "\t"
               << SliceSizeMax << "\t"
               << std::fixed << std::setprecision(4) << avg_insert_time*1e6 << "us" << "\t"
               << std::endl;
     std::cout << "mpl_del" << "\t"
-              << TestSlotMax << "\t"
+              << LeafSlotMax << "\t"
               << ValSize << "\t"
               << SliceSize << "\t"
               << SliceSizeMax << "\t"
@@ -321,9 +321,9 @@ static void test_insert_delete_perf() {
         // Select a random leaf
         auto& leaf = leaf_array[leaf_dist(rng)];
 
-        // Calculate 50% and 100% of TestSlotMax
-        size_t slotuse_50 = static_cast<size_t>(TestSlotMax * 0.5);
-        size_t slotuse_100 = TestSlotMax;
+        // Calculate 50% and 100% of LeafSlotMax
+        size_t slotuse_50 = static_cast<size_t>(LeafSlotMax * 0.5);
+        size_t slotuse_100 = LeafSlotMax;
 
         // Generate a random slot and value for insertion
         size_t slot = rng() % leaf.slotuse; // Random slot within current slotuse
@@ -350,14 +350,14 @@ static void test_insert_delete_perf() {
 
     std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tTime\n";
     std::cout << "inst" << "\t"
-             << TestSlotMax << "\t"
+             << LeafSlotMax << "\t"
              << ValSize << "\t"
              << SliceSize << "\t"
              << SliceSizeMax << "\t"
              << std::fixed << std::setprecision(4) << avg_insert_time*1e6 << "us" << "\t"
              << std::endl;
     std::cout << "del" << "\t"
-             << TestSlotMax << "\t"
+             << LeafSlotMax << "\t"
              << ValSize << "\t"
              << SliceSize << "\t"
              << SliceSizeMax << "\t"
@@ -410,14 +410,14 @@ static void test_maplize_perf() {
 
     std::cout << "Op\tSlotMx\tValSz\tSliceSz\tSlcSzMx\tTime\n";
     std::cout << "mpl" << "\t"
-             << TestSlotMax << "\t"
+             << LeafSlotMax << "\t"
              << ValSize << "\t"
              << SliceSize << "\t"
              << SliceSizeMax << "\t"
              << std::fixed << std::setprecision(4) << avg_maplize_time*1e6 << "us" << "\t"
              << std::endl;
     std::cout << "unmpl" << "\t"
-             << TestSlotMax << "\t"
+             << LeafSlotMax << "\t"
              << ValSize << "\t"
              << SliceSize << "\t"
              << SliceSizeMax << "\t"
@@ -540,7 +540,7 @@ static void test_maplize_lookup_perf() {
 }
 
 static void randomize_mapl_leaf_array(LeafVector& leaf_array) {
-    size_t num_iterations = 2* TestSlotMax; // Number of iterations
+    size_t num_iterations = 2* LeafSlotMax; // Number of iterations
     std::mt19937 rng(seed);
 
     // Time measurement variables

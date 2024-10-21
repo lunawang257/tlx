@@ -7,7 +7,7 @@
 typedef unsigned short short_val_type;
 
 // Define test_leaf_type using the redefined test_set_type template
-template<int TestSlotMax = 16>
+template<int LeafSlotMax = 16>
 class TestType {
 public:
     using test_set_type =
@@ -15,8 +15,8 @@ public:
                                 std::less<short_val_type>,
                                 struct tlx::btree_default_traits<
                                 short_val_type, short_val_type,
-                                TestSlotMax * (sizeof(short_val_type) + sizeof(void*)),
-                                TestSlotMax * sizeof(short_val_type)>,
+                                LeafSlotMax * (sizeof(short_val_type) + sizeof(void*)),
+                                LeafSlotMax * sizeof(short_val_type)>,
                                 std::allocator<short_val_type>,
                                 true // concurrent
                                 >;

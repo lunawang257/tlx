@@ -14,14 +14,15 @@ script_dir = os.path.dirname(__file__)
 btreemix_fast_compile = True
 leaf_fast_compile = True
 
-btreemix_slot_max_list = [32, 128, 256, 512]
+btreemix_leaf_slot_max_list = [32, 128, 256, 512]
+btreemix_inner_slot_max_list = [32, 64]
 btreemix_value_size_list = [64, 128, 256, 512]
 
 leaf_slot_max_list = [32, 64, 128, 256, 512]
 leaf_value_size_list = [32, 64, 128, 256, 512]
 
 if btreemix_fast_compile:
-    btreemix_slot_max_list = [8192, 64] #, 4096, 2048, 1024, 512, 256, 128, 64, 32]
+    btreemix_leaf_slot_max_list = [512] #, 4096, 2048, 1024, 512, 256, 128, 64, 32]
     btreemix_value_size_list = [256]
 
 if leaf_fast_compile:
@@ -32,13 +33,13 @@ if leaf_fast_compile:
 
 # List of command formats to be included in the single file
 command_formats = [
-    'RUN_BTREEMIX({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n', # btreemix test
+    'RUN_BTREEMIX({leaf_slot_max}, {inner_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n', # btreemix test
     # all rest belong to leaf tests
-    'RUN_MAPLIZE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    'RUN_UPDATE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    'RUN_LOOKUP({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    'RUN_SCAN({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
-    'RUN_REBALANCE({slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_MAPLIZE({leaf_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_UPDATE({leaf_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_LOOKUP({leaf_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_SCAN({leaf_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
+    'RUN_REBALANCE({leaf_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
 ]
 
 def update_file_if_different(old_file, new_file):
@@ -123,31 +124,42 @@ def main():
             sub_name_upper = sub_name.upper()
             f.write(f'    testOptions.insert({sub_name_upper});\n')
             if sub_name == "btreemix":
-                slot_max_list = btreemix_slot_max_list
+                leaf_slot_max_list = btreemix_leaf_slot_max_list
                 value_size_list = btreemix_value_size_list
             else:
-                slot_max_list = leaf_slot_max_list
                 value_size_list = leaf_value_size_list
-            for slot_max in slot_max_list:
+            for leaf_slot_max in leaf_slot_max_list:
                 for value_size in value_size_list:
-                    max_slice_size_exp = int(math.log2(slot_max// 2))
+                    max_slice_size_exp = int(math.log2(leaf_slot_max// 2))
                     #slice_size_list = [2 ** i for i in range(2, max_slice_size_exp + 2)]
                     slice_size_list = [16, 32, 64]
                     for slice_size in slice_size_list:
                         #if slice_size < slot_max / 8: # minimum slice size
                         #    continue
-                        if slice_size > slot_max: # maxmum num slices is slot_max
+                        if slice_size > leaf_slot_max: # maxmum num slices is slot_max
                             continue
                         for slice_size_max in [slice_size + 1]: #, int(slice_size * 1.5), slice_size * 2, slice_size * 3]:
                             #if slice_size_max > slot_max: break
-                            line = command_format.format(slot_max=slot_max,
-                                                         value_size=value_size,
-                                                         slice_size=slice_size,
-                                                         slice_size_max = slice_size_max)
-                            f.write('    ') # indentation
-                            f.write(line)
-                            lines += 1
-                            total_lines += 1
+                            if sub_name == "btreemix":
+                                for inner_slot_max in btreemix_inner_slot_max_list:
+                                    line = command_format.format(leaf_slot_max=leaf_slot_max,
+                                                                 inner_slot_max=inner_slot_max,
+                                                                 value_size=value_size,
+                                                                 slice_size=slice_size,
+                                                                 slice_size_max = slice_size_max)
+                                    f.write('    ') # indentation
+                                    f.write(line)
+                                    lines += 1
+                                    total_lines += 1
+                            else:
+                                line = command_format.format(leaf_slot_max=leaf_slot_max,
+                                                             value_size=value_size,
+                                                             slice_size=slice_size,
+                                                             slice_size_max = slice_size_max)
+                                f.write('    ') # indentation
+                                f.write(line)
+                                lines += 1
+                                total_lines += 1
             f.write('}\n')
 
     # update old file only if it has changed so Makefile doesn't build unchanged ones

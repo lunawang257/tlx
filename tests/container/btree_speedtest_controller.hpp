@@ -32,13 +32,14 @@ struct long_val_type {
 };
 
 // Define test_leaf_type using the redefined test_set_type template
-template<int TestSlotMax = 64,
+template<int LeafSlotMax = 64,
+         int InnerSlotMax = 64,
          int ValSize = 8,
          unsigned short SliceSize = 8,
          unsigned short SliceSizeMax = 16>
 struct SpeedTestType {
     static const int val_size = ValSize;
-    static const int slot_max = TestSlotMax;
+    static const int slot_max = LeafSlotMax;
     static const unsigned short slice_size = SliceSize;
     static const unsigned short slice_size_max = SliceSizeMax;
 
@@ -49,8 +50,8 @@ struct SpeedTestType {
     using key_compare = std::less<key_type>;  // Default comparison function
     using traits = tlx::btree_default_traits<key_type,
                         val_type,
-                        (sizeof(key_type) + sizeof(void*))*TestSlotMax,
-                        sizeof(val_type)*TestSlotMax,
+                        (sizeof(key_type) + sizeof(void*))*InnerSlotMax, //Inner Node
+                        sizeof(val_type)*LeafSlotMax, //Leaf Node
                         SliceSize,
                         SliceSizeMax>;  // Default traits
     using allocator_type = std::allocator<val_type>;  // Default allocator

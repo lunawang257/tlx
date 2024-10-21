@@ -168,9 +168,7 @@ private:
     }
 
     void update_thread_states(int thread_id,
-                              TestOperation op_type,
-                              std::chrono::time_point<std::chrono::high_resolution_clock> start,
-                              std::chrono::time_point<std::chrono::high_resolution_clock> end) {
+                              TestOperation op_type) {
 
         ++thread_states[thread_id].count;
         switch (op_type) {
@@ -248,7 +246,7 @@ private:
             }
             } // switch operation
 
-            update_thread_states(thread_id, op.first, start, end);
+            update_thread_states(thread_id, op.first);
 
             // check early exit
             if (thread_id == 0 && (op_idx % 256) == 0) {

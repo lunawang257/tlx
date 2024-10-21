@@ -16,13 +16,14 @@ Usage:
   -L --lookup-prop [num]            Lookup Proportion
   -m --is-mapl [0/1]                For update/lookup, whether run maplized version
   -M --slice-size-max [num]         Max Slice Size
+  -n --inner-max [num]              Maximum inner node slot value
   -p --test [update|lookup|maplize|scan|btreemix|rebalance] \
                                     Test option, \
                                     update means insert and delete, \
                                     btreemix means btree concurrent mixed operations \
                                     insert\delete\lookup\scan\rebalance \
   -r --repeats  <real num>          Set Repeats, can be a decimal number (default: 1)
-  -s --slot-max [num]               Maximum slot value
+  -s --slot-max [num]               Maximum leaf node slot value
   -S --slice-size [num]             Slice Size
   -t --num-threads [num]            Number of threads
   -T --maplize-threshhold [num]     Maplize Proportion
@@ -46,6 +47,7 @@ TestOption stringToTestOption(const std::string& str) {
 std::unordered_set<TestOption> testOptions;
 
 int slot_max = 0;
+int inner_max = 0;
 int val_size = 0;
 int slice_size = 0;
 int slice_size_max = 0;
@@ -69,6 +71,7 @@ int main(int argc, char* argv[]) {
         {"lookup-prop", required_argument, nullptr, 'L'},
         {"is-mapl", required_argument, nullptr, 'm'},
         {"slice-size-max", required_argument, nullptr, 'M'},
+        {"inner-max", required_argument, nullptr, 'n'},
         {"test", required_argument, nullptr, 'p'},
         {"repeats", required_argument, nullptr, 'r'},
         {"slot-max", required_argument, nullptr, 's'},
@@ -83,7 +86,7 @@ int main(int argc, char* argv[]) {
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "c:d:m:p:i:s:S:v:h:M:t:T:h:r:I:L:l:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "c:d:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:", long_options, &option_index)) != -1) {
         switch (c) {
         case 'c':
             SCAN_PROP = atol(optarg);
@@ -132,6 +135,9 @@ int main(int argc, char* argv[]) {
         case 'M':
             slice_size_max = std::atoi(optarg);
             break;
+        case 'n':
+            inner_max = std::atoi(optarg);
+            break;
         case 'r': {
             char* end;
             start_repeat = std::strtod(optarg, &end);
@@ -172,6 +178,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "slot_max=" << slot_max << "\t"
+              << "inner_max=" << inner_max << "\t"
               << "val_size=" << val_size << "\t"
               << "slice_size=" << slice_size << "\t"
               << "slice_size_max=" << slice_size_max << "\t"
@@ -190,74 +197,76 @@ int main(int argc, char* argv[]) {
 
     std::cout << "pid: " << getpid() << std::endl;
 
-#define RUN_MAPLIZE(slots, size, slice, slice_max)                      \
+#define RUN_MAPLIZE(leaf_slots, size, slice, slice_max)                 \
     if (testOptions.contains(MAPLIZE) &&                                \
-        slot_max == (slots) &&                                          \
+        slot_max == (leaf_slots) &&                                     \
         val_size == (size) &&                                           \
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
-        TestLeafPerf<slots, size, slice, slice_max>::                   \
+        TestLeafPerf<leaf_slots, size, slice, slice_max>::              \
             test_maplize_perf();                                        \
         test_invoked = true;                                            \
     }
 
-#define RUN_UPDATE(slots, size, slice, slice_max)                       \
+#define RUN_UPDATE(leaf_slots, size, slice, slice_max)                  \
     if (testOptions.contains(UPDATE) &&                                 \
-        slot_max == (slots) &&                                          \
+        slot_max == (leaf_slots) &&                                     \
         val_size == (size) &&                                           \
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
         if (is_mapl) {                                                  \
-            TestLeafPerf<slots, size, slice, slice_max>::               \
+            TestLeafPerf<leaf_slots, size, slice, slice_max>::          \
                 test_maplize_insert_delete_perf();                      \
         } else {                                                        \
-            TestLeafPerf<slots, size, slice, slice_max>::               \
+            TestLeafPerf<leaf_slots, size, slice, slice_max>::          \
                 test_insert_delete_perf();                              \
         }                                                               \
         test_invoked = true;                                            \
     }
 
-#define RUN_LOOKUP(slots, size, slice, slice_max)                       \
+#define RUN_LOOKUP(leaf_slots, size, slice, slice_max)                  \
     if (testOptions.contains(LOOKUP) &&                                 \
-        slot_max == (slots) &&                                          \
+        slot_max == (leaf_slots) &&                                     \
         val_size == (size) &&                                           \
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
         if (is_mapl) {                                                  \
-            TestLeafPerf<slots, size, slice, slice_max>::               \
+            TestLeafPerf<leaf_slots, size, slice, slice_max>::          \
                 test_maplize_lookup_perf();                             \
         } else {                                                        \
-            TestLeafPerf<slots, size, slice, slice_max>::               \
+            TestLeafPerf<leaf_slots, size, slice, slice_max>::          \
                 test_lookup_perf();                                     \
         }                                                               \
         test_invoked = true;                                            \
     }
 
-#define RUN_SCAN(slots, size, slice, slice_max)                         \
+#define RUN_SCAN(leaf_slots, inner_slots, size, slice, slice_max)       \
     if (testOptions.contains(SCAN) &&                                   \
-        slot_max == (slots) &&                                          \
+        slot_max == (leaf_slots) &&                                     \
         val_size == (size) &&                                           \
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
         if (is_mapl) {                                                  \
-            TestLeafPerf<slots, size, slice, slice_max>::               \
+            TestLeafPerf<leaf_slots, size, slice, slice_max>::          \
                 test_maplize_scan_perf();                               \
         } else {                                                        \
-            TestLeafPerf<slots, size, slice, slice_max>::               \
+            TestLeafPerf<leaf_slots, size, slice, slice_max>::          \
                 test_scan_perf();                                       \
         }                                                               \
         test_invoked = true;                                            \
     }
 
-#define RUN_BTREEMIX(slots, size, slice, slice_max)                     \
+#define RUN_BTREEMIX(leaf_slots, inner_slots, size, slice, slice_max)   \
     if (testOptions.contains(BTREEMIX) &&                               \
-        slot_max == (slots) &&                                          \
+        slot_max == (leaf_slots) &&                                     \
+        inner_max == (inner_slots) &&                                   \
         val_size == (size) &&                                           \
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
             std::stringstream ss;                                       \
             ss << "treemix" << "\t"                                     \
-               << slots << "\t"                                         \
+               << leaf_slots << "\t"                                    \
+               << inner_slots << "\t"                                   \
                << size << "\t"                                          \
                << slice << "\t"                                         \
                << slice_max << "\t"                                     \
@@ -265,7 +274,7 @@ int main(int argc, char* argv[]) {
                << maplize_threshold;                                    \
             btreemix_runner_loop<                                       \
                 Test_Set_MixedOp<SpeedTestType<                         \
-                    slots, size, slice, slice_max>>>(                   \
+                    leaf_slots, inner_slots, size, slice, slice_max>>>( \
                     NUM_ITERATIONS,                                     \
                     ss.str(),                                           \
                     num_threads,                                        \
@@ -273,13 +282,13 @@ int main(int argc, char* argv[]) {
         test_invoked = true;                                            \
     }
 
-#define RUN_REBALANCE(slots, size, slice, slice_max)                    \
+#define RUN_REBALANCE(leaf_slots, size, slice, slice_max)               \
     if (testOptions.contains(REBALANCE) &&                              \
-        slot_max == (slots) &&                                          \
+        slot_max == (leaf_slots) &&                                     \
         val_size == (size) &&                                           \
         slice_size == (slice) &&                                        \
         slice_size_max == (slice_max)) {                                \
-        TestLeafPerf<slots, size, slice, slice_max>::                   \
+        TestLeafPerf<leaf_slots, size, slice, slice_max>::              \
             test_rebalance_perf();                                      \
         test_invoked = true;                                            \
     }
@@ -289,6 +298,7 @@ int main(int argc, char* argv[]) {
     if (!test_invoked) {
         std::cout << "No tests were invoked. Maybe didn't specify the right slots or value size?\t"
                   << "slot_max=" << slot_max << "\t"
+                  << "inner_max=" << inner_max << "\t"
                   << "val_size=" << val_size << "\t"
                   << "slice_size=" << slice_size << "\t"
                   << "slice_size_max=" << slice_size_max << "\t"
