@@ -119,8 +119,8 @@ def main():
         with open(new_name, 'w') as f:
             lines = 0
             f.write('''// DO NOT EDIT! please change gen-leaf-cmd.py to edit
-    void run_all_args() {
-    ''')
+void run_all_args() {
+''')
             sub_name_upper = sub_name.upper()
             f.write(f'    testOptions.insert({sub_name_upper});\n')
             if sub_name == "btreemix":
