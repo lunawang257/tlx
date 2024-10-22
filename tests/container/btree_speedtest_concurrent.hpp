@@ -502,7 +502,7 @@ void btreemix_runner_loop(size_t items,
               << million_ops_per_sec << " Mops/s"
               << std::endl;
 
-    std::cout << "Test\tSlotMax\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct(%)\tMaplPct(%)\tMaplRd(%)\tMaplWt(%)\tLfRdLk(ns)\tLfWtLk(ns)\tInRdLk(ns)\tInWtLk(ns)\titms\trpts\tactItms\tDrtion\tTMaplT(ms)\tTMaplC\tTUMaplT(ms)\tTUMaplC\n"
+    std::cout << "Test\tSlotMax\tInnerSlots\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct(%)\tMaplPct(%)\tMaplRd(%)\tMaplWt(%)\tLfRdLk(ns)\tLfWtLk(ns)\tInRdLk(ns)\tInWtLk(ns)\titms\trpts\tactItms\tDrtion\tTMaplT(ms)\tTMaplC\tTUMaplT(ms)\tTUMaplC\n"
               << container_name << "\t"
               << start_height << "\t"
               << end_height << "\t"
