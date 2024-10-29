@@ -438,6 +438,7 @@ void btreemix_runner_loop(size_t items,
         mapl_pct = 100.0 * mapl_leaves_count / leaves_count;
         mapl_read_pct = 100.0 * mapl_read_count / read_count;
         mapl_write_pct = 100.0 * mapl_write_count / write_count;
+#if 0
         std::cout << "Insert=" << items << " repeat=" << repeat_until / items
                   << " repeat_until=" << repeat_until
                   << " real time " << std::setprecision(9) << duration
@@ -448,6 +449,7 @@ void btreemix_runner_loop(size_t items,
                   << " mapl writes:" << std::setprecision(4)
                   << mapl_write_pct << "%"
                   << std::endl;
+#endif
 
         start_height = test.start_height;
         end_height = test.end_height;
@@ -476,6 +478,8 @@ void btreemix_runner_loop(size_t items,
     double avg_inner_write_lock_time = total_inner_write_lock_ns * 1.0 / total_inner_write_lock_ct;
 
     float million_ops_per_sec = (actual_items / duration) / 1e6;
+
+#if 0
     std::cout << "RESULT"
               << " container=" << container_name
               << " op=" << TestClass::op()
@@ -501,8 +505,9 @@ void btreemix_runner_loop(size_t items,
     std::cout << "[Throughput] slot_max="<< g_slot_max << "; num_thread=" << n_threads << "; throughput="
               << million_ops_per_sec << " Mops/s"
               << std::endl;
+#endif
 
-    std::cout << "Test\tSlotMax\tInnerSlots\tValSize\tSliceSz\tSlcSzMx\tThreads\tMplThrh\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct(%)\tMaplPct(%)\tMaplRd(%)\tMaplWt(%)\tLfRdLk(ns)\tLfWtLk(ns)\tInRdLk(ns)\tInWtLk(ns)\titms\trpts\tactItms\tDrtion\tTMaplT(ms)\tTMaplC\tTUMaplT(ms)\tTUMaplC\n"
+    std::cout << "Test\tSlotMax\tInnerSlots\tValSize\tSliceSz\tSlcSzMx\tUnlock\tThreads\tMplThrh\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct(%)\tMaplPct(%)\tMaplRd(%)\tMaplWt(%)\tLfRdLk(ns)\tLfWtLk(ns)\tInRdLk(ns)\tInWtLk(ns)\tTMaplT(ms)\tTMaplC\tTUMaplT(ms)\tTUMaplC\titms\trpts\tDrtion\n"
               << container_name << "\t"
               << start_height << "\t"
               << end_height << "\t"
@@ -511,7 +516,7 @@ void btreemix_runner_loop(size_t items,
               << LOOKUP_PROP << "\t"
               << SCAN_PROP << "\t"
               << scan_len << "\t"
-              << std::setprecision(4) << million_ops_per_sec << "\t"
+              << std::fixed << std::setprecision(4) << million_ops_per_sec << "\t"
               << std::setprecision(2) << wait_percent << "\t"
               << std::setprecision(2) << mapl_pct << "\t"
               << std::setprecision(2) << mapl_read_pct << "\t"
@@ -520,13 +525,11 @@ void btreemix_runner_loop(size_t items,
               << std::fixed << std::setprecision(1) << avg_leaf_write_lock_time << "\t"
               << std::fixed << std::setprecision(1) << avg_inner_read_lock_time << "\t"
               << std::fixed << std::setprecision(1) << avg_inner_write_lock_time << "\t"
-              << items << "\t" << std::setprecision(2) << start_repeat << "\t"
-              << actual_items << "\t"
-              << duration << "\t"
               << std::setprecision(4) << total_mapl_ns * 1.0 / 1e6 << "\t"
               << total_mapl_ct << "\t"
               << std::setprecision(4) << total_unmapl_ns * 1.0 / 1e6 << "\t"
-              << total_unmapl_ct
+              << total_unmapl_ct << "\t"
+              << items << "\t" << std::setprecision(2) << start_repeat << "\t" << duration
               << std::endl;
 }
 

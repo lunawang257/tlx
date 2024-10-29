@@ -13,10 +13,18 @@
 #include <tests/container/btree_speedtest_controller.hpp>
 #include "ParallelTools/Lock.hpp"
 
-template<int LeafSlotMax, int InnerSlotMax, int ValSize, unsigned short SliceSize, unsigned short SliceSizeMax>
+template<int LeafSlotMax,
+         int InnerSlotMax,
+         int ValSize,
+         unsigned short SliceSize,
+         unsigned short SliceSizeMax>
 class TestLeafPerf {
 private:
-    using SpeedTestT = SpeedTestType<LeafSlotMax, InnerSlotMax, ValSize, SliceSize, SliceSizeMax>;
+    using SpeedTestT = SpeedTestType<LeafSlotMax,
+                                     InnerSlotMax,
+                                     ValSize,
+                                     SliceSize,
+                                     SliceSizeMax>;
     using LeafValueVector = std::vector<typename SpeedTestT::test_value_type>;
     using LeafVector = std::vector<typename SpeedTestT::test_leaf_type>;
     using UniDistKeyT = std::uniform_int_distribution<key_type>;

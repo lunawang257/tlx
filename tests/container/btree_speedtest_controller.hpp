@@ -36,7 +36,8 @@ template<int LeafSlotMax = 64,
          int InnerSlotMax = 64,
          int ValSize = 8,
          unsigned short SliceSize = 8,
-         unsigned short SliceSizeMax = 16>
+         unsigned short SliceSizeMax = 16,
+         bool early_unlock = false>
 struct SpeedTestType {
     static const int val_size = ValSize;
     static const int slot_max = LeafSlotMax;
@@ -61,7 +62,9 @@ struct SpeedTestType {
                                         data_type,
                                         key_compare,
                                         traits,
-                                        allocator_type, true>;
+                                        allocator_type,
+                                        true, //concurrent
+                                        early_unlock>;
 
     using test_value_type = typename test_map_type::value_type;
     using test_btree_type = typename test_map_type::btree_impl;

@@ -9,6 +9,7 @@ const char* help_message = R"(
 Usage:
   -c --scan-prop [num]              Scan Proportion
   -d --dist [zipf|uniform]          Workload distribution
+  -e --early-unlock [0/1]           Whether run early-unlock for mapl erase
   -h --help                         Show this help message
   -i --iteration [num]              Number of iterations
   -I --insert-prop [num]            Insert Proportion
@@ -52,6 +53,7 @@ int val_size = 0;
 int slice_size = 0;
 int slice_size_max = 0;
 int is_mapl = 0;
+int early_unlock = 0;
 int num_threads = 0;
 std::string test_option = "";
 TestOption dist_option = ZIPF;
@@ -64,6 +66,7 @@ int main(int argc, char* argv[]) {
     static struct option long_options[] = {
         {"scan-prop", required_argument, nullptr, 'c'},
         {"dist", required_argument, nullptr, 'd'},
+        {"early-unlock", required_argument, nullptr, 'e'},
         {"help", no_argument, nullptr, 'h'},
         {"iteration", required_argument, nullptr, 'i'},
         {"insert-prop", required_argument, nullptr, 'I'},
@@ -86,7 +89,7 @@ int main(int argc, char* argv[]) {
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "c:d:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "c:d:e:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:", long_options, &option_index)) != -1) {
         switch (c) {
         case 'c':
             SCAN_PROP = atol(optarg);
@@ -101,6 +104,13 @@ int main(int argc, char* argv[]) {
             }
             break;
         }
+        case 'e':
+            early_unlock = atoi(optarg); // Convert argument to integer
+            if (early_unlock != 0 && early_unlock != 1) {
+                fprintf(stderr, "Error: early_unlock option must be 0 or 1.\n");
+                return 1;
+            }
+            break;
         case 'p': { // test
             TestOption option = stringToTestOption(optarg);
             if (option != INVALID) {
@@ -186,6 +196,7 @@ int main(int argc, char* argv[]) {
               << "dist_option=" << dist_option << "\t"
               << "NUM_ITERATIONS=" << NUM_ITERATIONS << "\t"
               << "is_mapl=" << is_mapl << "\t"
+              << "early_unlock=" << early_unlock << "\t"
               << "num_threads=" << num_threads << "\t"
               << "start_repeat=" << std::setprecision(2) << start_repeat << "\t"
               << "maplize_threshold=" << maplize_threshold << "\t"
@@ -256,13 +267,19 @@ int main(int argc, char* argv[]) {
         test_invoked = true;                                            \
     }
 
-#define RUN_BTREEMIX(leaf_slots, inner_slots, size, slice, slice_max)   \
+#define RUN_BTREEMIX(leaf_slots,                                        \
+                     inner_slots,                                       \
+                     size,                                              \
+                     slice,                                             \
+                     slice_max,                                         \
+                     unlock)                                            \
     if (testOptions.contains(BTREEMIX) &&                               \
         slot_max == (leaf_slots) &&                                     \
         inner_max == (inner_slots) &&                                   \
         val_size == (size) &&                                           \
         slice_size == (slice) &&                                        \
-        slice_size_max == (slice_max)) {                                \
+        slice_size_max == (slice_max) &&                                \
+        (early_unlock != 0) == (unlock)) {                              \
             std::stringstream ss;                                       \
             ss << "treemix" << "\t"                                     \
                << leaf_slots << "\t"                                    \
@@ -270,11 +287,17 @@ int main(int argc, char* argv[]) {
                << size << "\t"                                          \
                << slice << "\t"                                         \
                << slice_max << "\t"                                     \
+               << early_unlock << "\t"                                  \
                << num_threads << "\t"                                   \
                << maplize_threshold;                                    \
             btreemix_runner_loop<                                       \
                 Test_Set_MixedOp<SpeedTestType<                         \
-                    leaf_slots, inner_slots, size, slice, slice_max>>>( \
+                    leaf_slots,                                         \
+                    inner_slots,                                        \
+                    size,                                               \
+                    slice,                                              \
+                    slice_max,                                          \
+                    unlock>>>(                                          \
                     NUM_ITERATIONS,                                     \
                     ss.str(),                                           \
                     num_threads,                                        \
@@ -302,6 +325,7 @@ int main(int argc, char* argv[]) {
                   << "val_size=" << val_size << "\t"
                   << "slice_size=" << slice_size << "\t"
                   << "slice_size_max=" << slice_size_max << "\t"
+                  << "early_unlock=" << early_unlock << "\t"
                   << std::endl;
     }
 

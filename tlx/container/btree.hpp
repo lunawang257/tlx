@@ -198,7 +198,8 @@ template <typename Key, typename Value,
           typename Traits = btree_default_traits<Key, Value, 256, 1024>,
           bool Duplicates = false,
           typename Allocator = std::allocator<Value>,
-          bool concurrent = false>
+          bool concurrent = false,
+          bool early_unlock = false>
 class BTree
 {
 public:
@@ -1262,8 +1263,6 @@ public:
         bool is_underflow() const {
             return (node::slotuse < inner_slotmin);
         }
-
-
     };
 
     //! Extended structure of a leaf node in memory. Contains pairs of keys and
@@ -4565,13 +4564,25 @@ private:
     //! \}
 
 public:
+
+    struct descend_info {
+        unsigned short slot;
+        InnerNode* inner;
+        ReaderWriterLock ** lock_p;
+
+
+        descend_info(unsigned short s, InnerNode* n = nullptr, ReaderWriterLock ** p = nullptr)
+        : slot(s), inner(n), lock_p(p) {}
+    };
+
     //! \name Public Erase Functions
     //! \{
 
     //! Erases one (the first) of the key/data pairs associated with the given
     //! key.
     template <bool optimism = true>
-    bool erase_one(const key_type& key, int cpu_id = -1) {
+    bool erase_one(const key_type& key, int cpu_id = -1,
+                   std::vector<descend_info>* desc_info_stack = nullptr) {
         TLX_BTREE_PRINT("BTree::erase_one(" << key <<
                         ") on btree size " << size());
         if constexpr (concurrent) {
@@ -4581,7 +4592,7 @@ public:
                 }
                 mutex.read_lock(cpu_id);
             } else {
-                mutex.write_lock();
+                mutex.write_lock(); //lock the root pointer
             }
         }
 
@@ -4602,14 +4613,19 @@ public:
 
         auto [result, try_again] =
             erase_one_descend<optimism>(key, root_, nullptr, nullptr, nullptr,
-                                        nullptr, nullptr, 0, &lock_p, cpu_id);
+                                        nullptr, nullptr, 0, &lock_p, cpu_id, desc_info_stack);
         if constexpr (concurrent) {
           if constexpr (optimism) {
             if (lock_p) {
               lock_p->read_unlock(cpu_id);
             }
             if (try_again) {
-              return erase_one<false>(key, cpu_id);
+                if (early_unlock) {
+                    std::vector<descend_info> desc_info_vector;
+                    return erase_one<false>(key, cpu_id, &desc_info_vector);
+                } else {
+                    return erase_one<false>(key, cpu_id, nullptr);
+                }
             }
           }
         }
@@ -4621,11 +4637,16 @@ public:
         if (debug) print(std::cout);
 #endif
         if (self_verify) verify();
-        if constexpr (concurrent && !optimism) {
-            if (lock_p) {
-                lock_p->write_unlock();
+        if constexpr (concurrent) {
+            if(!optimism) {
+                if (lock_p) {
+                    lock_p->write_unlock();
+                }
+            } else {
+                TLX_BTREE_ASSERT(!lock_p);
             }
         }
+
         return !result.has(btree_not_found);
     }
 
@@ -4694,7 +4715,7 @@ private:
                                node* left, node* right,
                                InnerNode* left_parent, InnerNode* right_parent,
                                InnerNode* parent, unsigned int parentslot, ReaderWriterLock ** parent_lock,
-                               int cpu_id) {
+                               int cpu_id, std::vector<descend_info>* desc_info_stack = nullptr) {
         if (curr->is_leafnode())
         {
             bool left_leaf_locked __attribute__((unused)) = false;
@@ -4729,10 +4750,10 @@ private:
                     (*parent_lock)->read_unlock(cpu_id);
                     *parent_lock = nullptr;
                 }
-                else {
+                else { //pesimisstic
                     leaf->mutex_.write_lock();
                 }
-            }
+            } //end of is_concurrent
             LeafNode* left_leaf = static_cast<LeafNode*>(left);
             LeafNode* right_leaf = static_cast<LeafNode*>(right);
 
@@ -4807,7 +4828,7 @@ private:
                 }
 
                 fix_underflow = leaf->is_underflow() && !(leaf == root_ && leaf->slotuse >= 1);
-            } else {
+            } else { //mapl leaf
                 stats_.write_mapl.add(1, cpu_id);
                 slicenum = leaf->mapl->get_slicenum(key);
                 Slice& slice = leaf->mapl->slices[slicenum];
@@ -4816,6 +4837,7 @@ private:
                     // to lock the slice
                     slice.lock.write_lock();
                 }
+
                 unsigned short ind = find_lower(&slice, key);
                 if (ind >= slice.slotuse || !key_equal(key, slice.key(ind))) {
                     if constexpr (concurrent) {
@@ -4827,18 +4849,18 @@ private:
                             leaf->mutex_.read_unlock(cpu_id);
 #endif
                         }
-                        else {
+                        else { //pesimisstic
                             leaf->mutex_.write_unlock();
                         }
                     }
-                    return {btree_not_found, false};
+                    return {btree_not_found, false}; //key not found
                 }
 
                 // in this case the parent needs to do something
                 // so in optimism mode we just fail back to the top
-                if constexpr (concurrent && optimism) {
+                if constexpr (concurrent &&optimism) {
                     if (slicenum == leaf->mapl->numslices - 1
-                        && ind == slice.slotuse - 1) {
+                        && ind == slice.slotuse - 1) { // delete the last item
                         slice.lock.write_unlock();
 #ifdef MAPL_NO_LOCK
                         leaf->mutex_.write_unlock();
@@ -4887,18 +4909,34 @@ private:
                     }
                     const key_type& to_set = leaf->max_key();
 
-                    if (parent && parentslot < parent->slotuse) {
-                        TLX_BTREE_ASSERT(parent->childid[parentslot] == curr);
-                        parent->slotkey[parentslot] = to_set;
-                    } else {
-                        if (leaf->slotuse >= 1)
-                        {
-                            myres |= result_t(
-                                btree_update_lastkey, to_set);
+                    if constexpr (early_unlock) {
+                        TLX_BTREE_ASSERT(desc_info_stack);
+                        for (auto it = desc_info_stack->rbegin(); it != desc_info_stack->rend(); ++it) {
+                            descend_info& info = *it;
+
+                            assert_inner_write_locked(info.inner);
+
+                            if (info.slot < info.inner->slotuse) {
+                                TLX_BTREE_ASSERT(key_equal(key, info.inner->slotkey[info.slot]));
+
+                                info.inner->slotkey[info.slot] = to_set;
+                                break;
+                            }
                         }
-                        else
-                        {
-                            TLX_BTREE_ASSERT(leaf == root_);
+                    } else {
+                        if (parent && parentslot < parent->slotuse) {
+                            TLX_BTREE_ASSERT(parent->childid[parentslot] == curr);
+                            parent->slotkey[parentslot] = to_set;
+                        } else {
+                            if (leaf->slotuse >= 1)
+                            {
+                                myres |= result_t(
+                                    btree_update_lastkey, to_set);
+                            }
+                            else
+                            {
+                                TLX_BTREE_ASSERT(leaf == root_);
+                            }
                         }
                     }
                 }
@@ -4924,6 +4962,29 @@ private:
                     if constexpr (optimism) {
                         TLX_BTREE_ASSERT(false);
                     }
+
+                    if constexpr (early_unlock) {
+                        TLX_BTREE_ASSERT(desc_info_stack);
+                        bool found_normal = false;
+                        for (auto it = desc_info_stack->rbegin(); it != desc_info_stack->rend(); ++it) {
+                            descend_info& info = *it;
+
+                            assert_inner_write_locked(info.inner);
+
+                            if (found_normal) {
+                                TLX_BTREE_ASSERT(info.inner->is_few() == false);
+                                info.inner->mutex_.write_unlock();
+
+                                (*info.lock_p)->write_unlock();
+                                *info.lock_p = nullptr;
+                            } else {
+                                if (info.inner->is_few() == false) {
+                                    found_normal = true;
+                                }
+                            }
+                        }
+                    }
+
                     if (left_leaf) {
                         left_leaf_locked = true;
                         left_leaf->mutex_.write_lock();
@@ -5047,7 +5108,7 @@ private:
             }
             return {myres, false};
         }
-        else // !curr->is_leafnode()
+        else // !curr->is_leafnode() current node is inner node
         {
             InnerNode* inner = static_cast<InnerNode*>(curr);
             if constexpr (concurrent) {
@@ -5056,7 +5117,7 @@ private:
                     (*parent_lock)->read_unlock(cpu_id);
                     *parent_lock = nullptr;
                 } else {
-                    inner->mutex_.write_lock();
+                    inner->mutex_.write_lock(); //write lock the inner node
                 }
             }
             InnerNode* left_inner = static_cast<InnerNode*>(left);
@@ -5066,6 +5127,22 @@ private:
             InnerNode* myleft_parent, * myright_parent;
 
             unsigned short slot = find_lower(inner, key);
+            if constexpr (concurrent && !optimism) { //pesimisstic, save info
+                if (parent) {
+                    assert_inner_write_locked(parent);
+                }
+                assert_inner_write_locked(inner);
+
+
+                if constexpr (early_unlock) {
+                     if (parent){
+                        TLX_BTREE_ASSERT(parent == desc_info_stack->back().inner);
+                    }
+
+                    descend_info d_info(slot, inner, parent_lock);
+                    desc_info_stack->push_back(d_info);
+                }
+            }
 
             if (slot == 0) {
                 myleft =
@@ -5096,7 +5173,7 @@ private:
                 inner->childid[slot],
                 myleft, myright,
                 myleft_parent, myright_parent,
-                inner, slot, &lock_p, cpu_id);
+                inner, slot, &lock_p, cpu_id, desc_info_stack);
             if constexpr (concurrent && optimism) {
               if (try_again) {
                 if (lock_p) {
@@ -5113,6 +5190,8 @@ private:
             {
                 if (concurrent) {
                     if (!optimism) {
+                        TLX_BTREE_ASSERT(lock_p);
+                        TLX_BTREE_ASSERT(lock_p == &inner->mutex_);
                         inner->mutex_.write_unlock();
                     } else {
                         if (lock_p) {
@@ -5128,6 +5207,7 @@ private:
                 if constexpr (concurrent) {
                     assert_inner_write_locked(parent);
                 }
+
                 if (parent && parentslot < parent->slotuse)
                 {
                     TLX_BTREE_PRINT("Fixing lastkeyupdate: key " <<
@@ -5148,6 +5228,10 @@ private:
 
             if (result.has(btree_fixmerge))
             {
+                if constexpr (concurrent) {
+                    assert_inner_write_locked(inner);
+                }
+
                 // either the current node or the next is empty and should be
                 // removed
                 if constexpr (concurrent) {
@@ -5163,12 +5247,13 @@ private:
                         node_write_lock(inner->childid[slot]);
                     }
                 }
-
+#if 0
                 if constexpr (concurrent) {
                     if (lock_p) {
                         assert_inner_write_locked(inner);
                     }
                 }
+#endif
 
                 // this is the child slot invalidated by the merge
                 TLX_BTREE_ASSERT(inner->childid[slot]->slotuse == 0);
@@ -5205,10 +5290,14 @@ private:
                 }
             }
             if (!skip_smo && inner->is_underflow() &&
-                !(inner == root_ && inner->slotuse >= 1))
+                !(inner == root_ && inner->slotuse >= 1)) //inner is underflow. If inner=root and root->slotuse = 0
             {
                 // case: the inner node is the root and has just one child. that
                 if constexpr (concurrent) {
+                    if (parent)
+                        assert_inner_write_locked(parent);
+                    assert_inner_write_locked(inner);
+
                     if (left_inner) left_inner->mutex_.write_lock();
                     if (right_inner) right_inner->mutex_.write_lock();
                 }
@@ -5218,6 +5307,7 @@ private:
                 {
                     TLX_BTREE_ASSERT(inner == root_);
                     TLX_BTREE_ASSERT(inner->slotuse == 0);
+                    assert_inner_write_locked(inner);
 
                     root_ = inner->childid[0];
                     if (root_->level == 0) {
@@ -5231,6 +5321,8 @@ private:
                     inner->slotuse = 0;
                     if constexpr (concurrent) {
                         if constexpr (!optimism) {
+                            TLX_BTREE_ASSERT(lock_p);
+                            TLX_BTREE_ASSERT(lock_p == &inner->mutex_);
                             inner->mutex_.write_unlock();
                         } else {
                             if (lock_p) {
@@ -5387,7 +5479,9 @@ private:
             }
             if constexpr (concurrent) {
                 if constexpr (!optimism) {
-                    inner->mutex_.write_unlock();
+                    if (lock_p) {
+                        lock_p->write_unlock();
+                    }
                 } else {
                     if (lock_p) {
                         lock_p->read_unlock(cpu_id);

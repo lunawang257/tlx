@@ -34,9 +34,10 @@ namespace tlx {
 template <typename Key_, typename Data_,
           typename Compare_ = std::less<Key_>,
           typename Traits_ =
-              btree_default_traits<Key_, std::pair<Key_, Data_>, 1024, 1024 >,
+          btree_default_traits<Key_, std::pair<Key_, Data_>, 1024, 1024 >,
           typename Alloc_ = std::allocator<std::pair<Key_, Data_> >,
-          bool concurrent = false>
+          bool concurrent = false,
+          bool early_unlock = false>
 class btree_map
 {
 public:
@@ -88,7 +89,7 @@ public:
 
     //! Implementation type of the btree_base
     typedef BTree<key_type, value_type, key_of_value, key_compare,
-                  traits, false, allocator_type, concurrent> btree_impl;
+                  traits, false, allocator_type, concurrent, early_unlock> btree_impl;
 
     //! Function class comparing two value_type pairs.
     typedef typename btree_impl::value_compare value_compare;

@@ -14,6 +14,8 @@ script_dir = os.path.dirname(__file__)
 btreemix_fast_compile = True
 leaf_fast_compile = True
 
+early_unlock_list = ["false", "true"]
+
 btreemix_leaf_slot_max_list = [32, 128, 256, 512]
 btreemix_inner_slot_max_list = [32, 64]
 btreemix_value_size_list = [64, 128, 256, 512]
@@ -22,7 +24,8 @@ leaf_slot_max_list = [32, 64, 128, 256, 512]
 leaf_value_size_list = [32, 64, 128, 256, 512]
 
 if btreemix_fast_compile:
-    btreemix_leaf_slot_max_list = [512] #, 4096, 2048, 1024, 512, 256, 128, 64, 32]
+    btreemix_leaf_slot_max_list = [32, 8192] #, 4096, 2048, 1024, 512, 256, 128, 64, 32]
+    btreemix_inner_slot_max_list = [16, 64]
     btreemix_value_size_list = [256]
 
 if leaf_fast_compile:
@@ -33,7 +36,7 @@ if leaf_fast_compile:
 
 # List of command formats to be included in the single file
 command_formats = [
-    'RUN_BTREEMIX({leaf_slot_max}, {inner_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n', # btreemix test
+    'RUN_BTREEMIX({leaf_slot_max}, {inner_slot_max}, {value_size}, {slice_size}, {slice_size_max}, {early_unlock});\n', # btreemix test
     # all rest belong to leaf tests
     'RUN_MAPLIZE({leaf_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
     'RUN_UPDATE({leaf_slot_max}, {value_size}, {slice_size}, {slice_size_max});\n',
@@ -132,7 +135,7 @@ void run_all_args() {
                 for value_size in value_size_list:
                     max_slice_size_exp = int(math.log2(leaf_slot_max// 2))
                     #slice_size_list = [2 ** i for i in range(2, max_slice_size_exp + 2)]
-                    slice_size_list = [16, 32, 64]
+                    slice_size_list = [8, 32]
                     for slice_size in slice_size_list:
                         #if slice_size < slot_max / 8: # minimum slice size
                         #    continue
@@ -142,15 +145,17 @@ void run_all_args() {
                             #if slice_size_max > slot_max: break
                             if sub_name == "btreemix":
                                 for inner_slot_max in btreemix_inner_slot_max_list:
-                                    line = command_format.format(leaf_slot_max=leaf_slot_max,
-                                                                 inner_slot_max=inner_slot_max,
-                                                                 value_size=value_size,
-                                                                 slice_size=slice_size,
-                                                                 slice_size_max = slice_size_max)
-                                    f.write('    ') # indentation
-                                    f.write(line)
-                                    lines += 1
-                                    total_lines += 1
+                                    for early_unlock in early_unlock_list:
+                                        line = command_format.format(leaf_slot_max=leaf_slot_max,
+                                                                    inner_slot_max=inner_slot_max,
+                                                                    value_size=value_size,
+                                                                    slice_size=slice_size,
+                                                                    slice_size_max = slice_size_max,
+                                                                    early_unlock=early_unlock)
+                                        f.write('    ') # indentation
+                                        f.write(line)
+                                        lines += 1
+                                        total_lines += 1
                             else:
                                 line = command_format.format(leaf_slot_max=leaf_slot_max,
                                                              value_size=value_size,
