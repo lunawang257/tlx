@@ -4521,6 +4521,9 @@ private:
         //! to remove the empty node.
         btree_fixmerge = 4,
 
+        btree_will_update_lastkey = 8,
+        btree_will_soon_underflow = 16,
+
         restart // XXX temp fix compile error, to be removed
     };
 
@@ -4747,8 +4750,10 @@ private:
                         }
                     }
 #endif
+#if 0
                     (*parent_lock)->read_unlock(cpu_id);
                     *parent_lock = nullptr;
+#endif
                 }
                 else { //pesimisstic
                     leaf->mutex_.write_lock();
@@ -4767,6 +4772,10 @@ private:
                 if (slot >= leaf->slotuse || !key_equal(key, leaf->key(slot))) {
                     TLX_BTREE_PRINT("Could not find key " << key << " to erase.");
                     if constexpr (concurrent) {
+                        if (optimism) {
+                            (*parent_lock)->read_unlock(cpu_id);
+                            *parent_lock = nullptr;
+                        }
                         leaf->mutex_.write_unlock();
                     }
                     return {btree_not_found, false};
@@ -4774,15 +4783,18 @@ private:
                 // in this case the parent needs to do something
                 // so in optimism mode we just fail back to the top
                 if constexpr (concurrent && optimism) {
-                    if (slot == leaf->slotuse - 1) {
+                    if (slot == leaf->slotuse - 1) { //delete the last key
                         leaf->mutex_.write_unlock();
-                        return {{}, true};
+                        return {btree_will_update_lastkey, true};
                     }
                     if (leaf->soon_underflow() &&
                         !(leaf == root_ && leaf->slotuse >= 2)) {
                         leaf->mutex_.write_unlock();
-                        return {{}, true};
+                        return {btree_will_soon_underflow, true};
                     }
+
+                    (*parent_lock)->read_unlock(cpu_id);
+                    *parent_lock = nullptr;
                 }
 
                 TLX_BTREE_PRINT(
@@ -4867,7 +4879,7 @@ private:
 #else
                         leaf->mutex_.read_unlock(cpu_id);
 #endif
-                        return {{}, true};
+                        return {btree_will_update_lastkey, true};
                     }
                     if (leaf->soon_underflow()) {
                         slice.lock.write_unlock();
@@ -4876,8 +4888,11 @@ private:
 #else
                         leaf->mutex_.read_unlock(cpu_id);
 #endif
-                        return {{}, true};
+                        return {btree_will_soon_underflow, true};
                     }
+
+                    (*parent_lock)->read_unlock(cpu_id);
+                    *parent_lock = nullptr;
                 }
 
 #if 0 //ndef NDEBUG
@@ -4998,8 +5013,6 @@ private:
                     assert_leaf_write_locked(left_leaf);
                     assert_leaf_write_locked(right_leaf);
                     assert_inner_write_locked(parent);
-                    assert_inner_write_locked(left_parent);
-                    assert_inner_write_locked(right_parent);
                 }
 
                 LOG_STR("fix underflow parent:" << parent
@@ -5040,10 +5053,13 @@ private:
                 else if ((left_leaf == nullptr || left_leaf->is_few()) &&
                          (right_leaf == nullptr || right_leaf->is_few()))
                 {
-                    if (left_parent == parent)
+                    if (left_parent == parent) {
                         myres |= merge_leaves(left_leaf, leaf, left_parent);
-                    else
+                    }
+                    else {
+                        assert_inner_write_locked(right_parent);
                         myres |= merge_leaves(leaf, right_leaf, right_parent);
+                    }
                 }
                 // case : the right leaf has extra data, so balance right with
                 // current
@@ -5053,8 +5069,10 @@ private:
                     if (right_parent == parent)
                         myres |= shift_left_leaf(
                             leaf, right_leaf, right_parent, parentslot);
-                    else
+                    else {
+                        assert_inner_write_locked(left_parent);
                         myres |= merge_leaves(left_leaf, leaf, left_parent);
+                    }
                 }
                 // case : the left leaf has extra data, so balance left with
                 // current
@@ -5064,28 +5082,36 @@ private:
                     if (left_parent == parent)
                         shift_right_leaf(
                             left_leaf, leaf, left_parent, parentslot - 1);
-                    else
+                    else {
+                        assert_inner_write_locked(right_parent);
                         myres |= merge_leaves(leaf, right_leaf, right_parent);
+                    }
                 }
                 // case : both the leaf and right leaves have extra data and our
                 // parent, choose the leaf with more data
                 else if (left_parent == right_parent)
                 {
-                    if (left_leaf->slotuse <= right_leaf->slotuse)
+                    if (left_leaf->slotuse <= right_leaf->slotuse) {
+                        assert_inner_write_locked(right_parent);
                         myres |= shift_left_leaf(
                             leaf, right_leaf, right_parent, parentslot);
-                    else
+                    }
+                    else {
+                        assert_inner_write_locked(left_parent);
                         shift_right_leaf(
                             left_leaf, leaf, left_parent, parentslot - 1);
+                    }
                 }
                 else
                 {
                     if (left_parent == parent)
                         shift_right_leaf(
                             left_leaf, leaf, left_parent, parentslot - 1);
-                    else
+                    else {
+                        assert_inner_write_locked(right_parent);
                         myres |= shift_left_leaf(
                             leaf, right_leaf, right_parent, parentslot);
+                    }
                 }
             }
             if constexpr (concurrent) {
@@ -5147,7 +5173,7 @@ private:
             if (slot == 0) {
                 myleft =
                     (left == nullptr) ? nullptr :
-                    static_cast<InnerNode*>(left)->childid[left->slotuse - 1];
+                    static_cast<InnerNode*>(left)->childid[left->slotuse];
                 myleft_parent = left_parent;
             }
             else {
@@ -5167,21 +5193,38 @@ private:
             }
 
             TLX_BTREE_PRINT("erase_one_descend into " << inner->childid[slot]);
+
+            bool try_lock_optimism = optimism;
             auto lock_p = &inner->mutex_;
             auto [result, try_again] = erase_one_descend<optimism>(
-                key,
-                inner->childid[slot],
+                key, inner->childid[slot],
                 myleft, myright,
                 myleft_parent, myright_parent,
                 inner, slot, &lock_p, cpu_id, desc_info_stack);
             if constexpr (concurrent && optimism) {
-              if (try_again) {
-                if (lock_p) {
-                    lock_p->read_unlock(cpu_id);
+                if (try_again) {
+                    if (lock_p && (inner->level == 1) &&
+                        ((result.has(btree_will_update_lastkey) && slot < inner->slotuse) ||
+                        (result.has(btree_will_soon_underflow) && !inner->is_few()))) {
+                        if (lock_p->try_upgrade_release_on_fail(cpu_id)) {
+                            try_lock_optimism = false;
+                            std::tie(result, try_again) = erase_one_descend<false>(
+                                key, inner->childid[slot],
+                                myleft, myright,
+                                myleft_parent, myright_parent,
+                                inner, slot, &lock_p, cpu_id, desc_info_stack);
+                        } else {
+                            log_retry(inner);
+                            return {{}, true};
+                        }
+                    } else {
+                        if (lock_p) {
+                            lock_p->read_unlock(cpu_id);
+                        }
+                        log_retry(inner);
+                        return {{}, true};
+                    }
                 }
-                log_retry(inner);
-                return {{}, true};
-              }
             }
 
             result_t myres = btree_ok;
@@ -5189,7 +5232,7 @@ private:
             if (result.has(btree_not_found))
             {
                 if (concurrent) {
-                    if (!optimism) {
+                    if (!try_lock_optimism) {
                         TLX_BTREE_ASSERT(lock_p);
                         TLX_BTREE_ASSERT(lock_p == &inner->mutex_);
                         inner->mutex_.write_unlock();
@@ -5285,7 +5328,7 @@ private:
 
             bool skip_smo = false;
             if constexpr (concurrent) {
-                if constexpr (optimism) {
+                if (try_lock_optimism) {
                     skip_smo = true;
                 }
             }
@@ -5294,8 +5337,6 @@ private:
             {
                 // case: the inner node is the root and has just one child. that
                 if constexpr (concurrent) {
-                    if (parent)
-                        assert_inner_write_locked(parent);
                     assert_inner_write_locked(inner);
 
                     if (left_inner) left_inner->mutex_.write_lock();
@@ -5320,7 +5361,7 @@ private:
 
                     inner->slotuse = 0;
                     if constexpr (concurrent) {
-                        if constexpr (!optimism) {
+                        if (!try_lock_optimism) {
                             TLX_BTREE_ASSERT(lock_p);
                             TLX_BTREE_ASSERT(lock_p == &inner->mutex_);
                             inner->mutex_.write_unlock();
@@ -5478,7 +5519,7 @@ private:
                 }
             }
             if constexpr (concurrent) {
-                if constexpr (!optimism) {
+                if (!try_lock_optimism) {
                     if (lock_p) {
                         lock_p->write_unlock();
                     }

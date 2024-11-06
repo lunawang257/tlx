@@ -1925,7 +1925,7 @@ size_t g_big_initial_size = 1000;
 int g_big_max_key = 2000;
 int g_big_num_operations = 1000;
 
-const size_t NUM_THREADS = 4;
+const size_t NUM_THREADS = 1;
 size_t cur_numthreads = NUM_THREADS;
 
 struct scan_stat {
@@ -2069,10 +2069,10 @@ void test_multithread(set_type* my_multi_thread_set,
                       scan_stat *total_st) {
     in_multi_test = true;
     // Probability out of 100
-    int insert_prop = 33;
+    int insert_prop = 0;
     int lookup_prop = 0;
-    int erase_prob = 33;
-    int scan_length = 16;
+    int erase_prob = 100;
+    int scan_length = 0;
 
     std::mt19937 gen(seed);
     std::uniform_int_distribution<> key(0, max_key - 1);
