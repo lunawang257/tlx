@@ -167,22 +167,22 @@ public:
 
     //! Default constructor initializing an empty B+ tree with the standard key
     //! comparison function
-    explicit btree_set(const allocator_type& alloc = allocator_type())
-        : tree_(alloc)
+    explicit btree_set(const allocator_type& alloc = allocator_type(), int lock_flags = 0)
+        : tree_(alloc, lock_flags)
     { }
 
     //! Constructor initializing an empty B+ tree with a special key comparison
     //! object
     explicit btree_set(const key_compare& kcf,
-                       const allocator_type& alloc = allocator_type())
-        : tree_(kcf, alloc)
+                       const allocator_type& alloc = allocator_type(), int lock_flags = 0)
+        : tree_(kcf, alloc, lock_flags)
     { }
 
     //! Constructor initializing a B+ tree with the range [first,last)
     template <class InputIterator>
     btree_set(InputIterator first, InputIterator last,
-              const allocator_type& alloc = allocator_type())
-        : tree_(alloc) {
+              const allocator_type& alloc = allocator_type(), int lock_flags = 0)
+        : tree_(alloc, lock_flags) {
         insert(first, last);
     }
 

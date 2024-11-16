@@ -1915,7 +1915,7 @@ set_type* g_test_set = nullptr;
 
 #include <tests/container/btree_fast_log.hpp>
 
-int MULTI_THREAD_PASSES = 1000;
+int MULTI_THREAD_PASSES = 10000;
 
 size_t g_initial_size = 50;
 int g_max_key = 100;
@@ -1925,7 +1925,7 @@ size_t g_big_initial_size = 1000;
 int g_big_max_key = 2000;
 int g_big_num_operations = 1000;
 
-const size_t NUM_THREADS = 1;
+const size_t NUM_THREADS = 4;
 size_t cur_numthreads = NUM_THREADS;
 
 struct scan_stat {
@@ -2593,8 +2593,10 @@ int main() {
         int single_thread_passes =
             std::min(1000, std::max(1, total_passes / 100));
 
+        int lock_flags = LOCK_FLAG_TRY_LOCK;
+
         for (int i = 0; i < total_passes; i++) {
-            set_type* my_multi_thread_set = new set_type;
+            set_type* my_multi_thread_set = new set_type(set_type::allocator_type(), lock_flags);
             g_test_set = my_multi_thread_set;
 
             switch (i % 3) {

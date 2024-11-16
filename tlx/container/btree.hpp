@@ -62,6 +62,11 @@ enum { // lock id in Mapl nodes
     MAPL_FREE_LIST_MTX = 65534 // free list mtx in mapl node
 };
 
+enum {
+    LOCK_FLAG_EARLY_UNLOCK = 1 << 0,
+    LOCK_FLAG_TRY_LOCK = 1 << 1,
+};
+
 // 0-100, if >30% locks waited, maplize the leaf. Unmaplize logic not done yet
 unsigned short maplize_threshold = 30;
 
@@ -198,8 +203,7 @@ template <typename Key, typename Value,
           typename Traits = btree_default_traits<Key, Value, 256, 1024>,
           bool Duplicates = false,
           typename Allocator = std::allocator<Value>,
-          bool concurrent = false,
-          bool early_unlock = false>
+          bool concurrent = false>
 class BTree
 {
 public:
@@ -390,6 +394,9 @@ private:
 
     //! Memory allocator.
     allocator_type allocator_;
+
+    //! Control locking behavior
+    int lock_flags_{0};
 
     //! \}
 
@@ -991,7 +998,6 @@ public:
 
         void read_lock(int cpuid __attribute__((unused)) = -1,
                        bool verify __attribute__((unused)) = false) {
-
             TLX_BTREE_ASSERT(numreader != UINT_GARBAGE);
             if constexpr (!concurrent) TLX_BTREE_ASSERT(false);
             if (!take_lock()) {
@@ -2417,9 +2423,9 @@ public:
 
     //! Default constructor initializing an empty B+ tree with the standard key
     //! comparison function.
-    explicit BTree(const allocator_type& alloc = allocator_type())
+    explicit BTree(const allocator_type& alloc = allocator_type(), int lock_flags = 0)
         : root_(nullptr), head_leaf_(nullptr), tail_leaf_(nullptr),
-          allocator_(alloc)
+          allocator_(alloc), lock_flags_(lock_flags)
     {
         init_lock();
     }
@@ -2427,9 +2433,9 @@ public:
     //! Constructor initializing an empty B+ tree with a special key
     //! comparison object.
     explicit BTree(const key_compare& kcf,
-                   const allocator_type& alloc = allocator_type())
+                   const allocator_type& alloc = allocator_type(), int lock_flags = 0)
         : root_(nullptr), head_leaf_(nullptr), tail_leaf_(nullptr),
-          key_less_(kcf), allocator_(alloc)
+          key_less_(kcf), allocator_(alloc), lock_flags_(lock_flags)
     {
         init_lock();
     }
@@ -2471,6 +2477,7 @@ public:
         std::swap(stats_, from.stats_);
         std::swap(key_less_, from.key_less_);
         std::swap(allocator_, from.allocator_);
+        std::swap(lock_flags_, from.lock_flags_);
     }
 
     //! \}
@@ -4623,7 +4630,7 @@ public:
               lock_p->read_unlock(cpu_id);
             }
             if (try_again) {
-                if (early_unlock) {
+                if (lock_flags_ & LOCK_FLAG_EARLY_UNLOCK) {
                     std::vector<descend_info> desc_info_vector;
                     return erase_one<false>(key, cpu_id, &desc_info_vector);
                 } else {
@@ -4870,7 +4877,7 @@ private:
 
                 // in this case the parent needs to do something
                 // so in optimism mode we just fail back to the top
-                if constexpr (concurrent &&optimism) {
+                if constexpr (concurrent && optimism) {
                     if (slicenum == leaf->mapl->numslices - 1
                         && ind == slice.slotuse - 1) { // delete the last item
                         slice.lock.write_unlock();
@@ -4924,7 +4931,7 @@ private:
                     }
                     const key_type& to_set = leaf->max_key();
 
-                    if constexpr (early_unlock) {
+                    if (lock_flags_ & LOCK_FLAG_EARLY_UNLOCK) {
                         TLX_BTREE_ASSERT(desc_info_stack);
                         for (auto it = desc_info_stack->rbegin(); it != desc_info_stack->rend(); ++it) {
                             descend_info& info = *it;
@@ -4978,7 +4985,7 @@ private:
                         TLX_BTREE_ASSERT(false);
                     }
 
-                    if constexpr (early_unlock) {
+                    if (lock_flags_ & LOCK_FLAG_EARLY_UNLOCK) {
                         TLX_BTREE_ASSERT(desc_info_stack);
                         bool found_normal = false;
                         for (auto it = desc_info_stack->rbegin(); it != desc_info_stack->rend(); ++it) {
@@ -5041,10 +5048,12 @@ private:
                     root_ = leaf = nullptr;
                     head_leaf_ = tail_leaf_ = nullptr;
 
-                    // will be decremented soon by insert_start()
-                    TLX_BTREE_ASSERT(size() == 1);
-                    TLX_BTREE_ASSERT(0 + stats_.leaves == 0);
-                    TLX_BTREE_ASSERT(0 + stats_.inner_nodes == 0);
+                    // will be decremented soon by erase_one()
+                    if constexpr (!concurrent) { // asserts may trigger due to race
+                        TLX_BTREE_ASSERT(size() == 1);
+                        TLX_BTREE_ASSERT(0 + stats_.leaves == 0);
+                        TLX_BTREE_ASSERT(0 + stats_.inner_nodes == 0);
+                    }
                     return {btree_ok, false};
                 }
                 // case : if both left and right leaves would underflow in case
@@ -5159,8 +5168,7 @@ private:
                 }
                 assert_inner_write_locked(inner);
 
-
-                if constexpr (early_unlock) {
+                if (lock_flags_ & LOCK_FLAG_EARLY_UNLOCK) {
                      if (parent){
                         TLX_BTREE_ASSERT(parent == desc_info_stack->back().inner);
                     }
@@ -5203,9 +5211,12 @@ private:
                 inner, slot, &lock_p, cpu_id, desc_info_stack);
             if constexpr (concurrent && optimism) {
                 if (try_again) {
-                    if (lock_p && (inner->level == 1) &&
-                        ((result.has(btree_will_update_lastkey) && slot < inner->slotuse) ||
+                    if ((lock_flags_ & LOCK_FLAG_TRY_LOCK) &&
+                        lock_p && (inner->level == 1) &&
+                        myleft_parent == inner && myright_parent == inner && // don't need locks other than inner
+                        ((result.has(btree_will_update_lastkey) && slot < inner->slotuse && !inner->is_few()) ||
                         (result.has(btree_will_soon_underflow) && !inner->is_few()))) {
+                        // try to upgrade parent lock to avoid locking everything from root
                         if (lock_p->try_upgrade_release_on_fail(cpu_id)) {
                             try_lock_optimism = false;
                             std::tie(result, try_again) = erase_one_descend<false>(

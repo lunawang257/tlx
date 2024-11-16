@@ -39,6 +39,7 @@ private:
     using MapType = SpeedTestT::test_map_type;
     using ValType = SpeedTestT::test_value_type; // pair of key and data
     using DataType = SpeedTestT::data_type; // data
+    using AllocType = SpeedTestT::allocator_type;
 
 public:
     double duration = 0.0;
@@ -77,8 +78,10 @@ public:
 
 public:
     Test_Set_MixedOp(size_t items,
-                    size_t n_threads = 1,
-                    const TestOption d_option = ZIPF) {
+                     int lock_flags,
+                     size_t n_threads = 1,
+                     const TestOption d_option = ZIPF)
+        : my_map(AllocType(), lock_flags){
 
         MAX_KEY = items * KEY_SPACE_FACTOR;
 
@@ -355,6 +358,7 @@ public:
 template <typename TestClass>
 void btreemix_runner_loop(size_t items,
                           const std::string& container_name,
+                          int lock_flags,
                           const int n_threads = 1,
                           const TestOption dist_option = ZIPF) {
 
@@ -394,7 +398,7 @@ void btreemix_runner_loop(size_t items,
         total_mapl_ct = total_unmapl_ct = total_mapl_ns = total_unmapl_ns = 0;
 
         // initialize test structures
-        TestClass test(items, n_threads, dist_option);
+        TestClass test(items, lock_flags, n_threads, dist_option);
 
         // run timed test procedure
         test.run(items, repeat_until);

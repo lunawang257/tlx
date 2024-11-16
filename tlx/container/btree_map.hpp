@@ -36,8 +36,7 @@ template <typename Key_, typename Data_,
           typename Traits_ =
           btree_default_traits<Key_, std::pair<Key_, Data_>, 1024, 1024 >,
           typename Alloc_ = std::allocator<std::pair<Key_, Data_> >,
-          bool concurrent = false,
-          bool early_unlock = false>
+          bool concurrent = false>
 class btree_map
 {
 public:
@@ -89,7 +88,7 @@ public:
 
     //! Implementation type of the btree_base
     typedef BTree<key_type, value_type, key_of_value, key_compare,
-                  traits, false, allocator_type, concurrent, early_unlock> btree_impl;
+                  traits, false, allocator_type, concurrent> btree_impl;
 
     //! Function class comparing two value_type pairs.
     typedef typename btree_impl::value_compare value_compare;
@@ -172,30 +171,30 @@ public:
 
     //! Default constructor initializing an empty B+ tree with the standard key
     //! comparison function
-    explicit btree_map(const allocator_type& alloc = allocator_type())
-        : tree_(alloc)
+    explicit btree_map(const allocator_type& alloc = allocator_type(), int lock_flags = 0)
+        : tree_(alloc, lock_flags)
     { }
 
     //! Constructor initializing an empty B+ tree with a special key
     //! comparison object
     explicit btree_map(const key_compare& kcf,
-                       const allocator_type& alloc = allocator_type())
-        : tree_(kcf, alloc)
+                       const allocator_type& alloc = allocator_type(), int lock_flags = 0)
+        : tree_(kcf, alloc, lock_flags)
     { }
 
     //! Constructor initializing a B+ tree with the range [first,last)
     template <class InputIterator>
     btree_map(InputIterator first, InputIterator last,
-              const allocator_type& alloc = allocator_type())
-        : tree_(first, last, alloc)
+              const allocator_type& alloc = allocator_type(), int lock_flags = 0)
+        : tree_(first, last, alloc, lock_flags)
     { }
 
     //! Constructor initializing a B+ tree with the range [first,last) and a
     //! special key comparison object
     template <class InputIterator>
     btree_map(InputIterator first, InputIterator last, const key_compare& kcf,
-              const allocator_type& alloc = allocator_type())
-        : tree_(first, last, kcf, alloc)
+              const allocator_type& alloc = allocator_type(), int lock_flags = 0)
+        : tree_(first, last, kcf, alloc, lock_flags)
     { }
 
     //! Frees up all used B+ tree memory pages

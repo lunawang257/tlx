@@ -9,7 +9,7 @@ const char* help_message = R"(
 Usage:
   -c --scan-prop [num]              Scan Proportion
   -d --dist [zipf|uniform]          Workload distribution
-  -e --early-unlock [0/1]           Whether run early-unlock for mapl erase
+  -e --early-unlock [0/1]           Whether run top-down early-unlock for mapl erase
   -h --help                         Show this help message
   -i --iteration [num]              Number of iterations
   -I --insert-prop [num]            Insert Proportion
@@ -28,6 +28,7 @@ Usage:
   -S --slice-size [num]             Slice Size
   -t --num-threads [num]            Number of threads
   -T --maplize-threshhold [num]     Maplize Proportion
+  -y --try-lock                     Whether try to lock parent during erase for better concurrency
   -v --val-size [num]               Value size
 )";
 
@@ -54,7 +55,9 @@ int slice_size = 0;
 int slice_size_max = 0;
 int is_mapl = 0;
 int early_unlock = 0;
+int try_lock = 0;
 int num_threads = 0;
+int lock_flags = 0;
 std::string test_option = "";
 TestOption dist_option = ZIPF;
 bool test_invoked = false;
@@ -81,6 +84,7 @@ int main(int argc, char* argv[]) {
         {"slice-size", required_argument, nullptr, 'S'},
         {"num-threads", required_argument, nullptr, 't'},
         {"maplize-threshhold", required_argument, nullptr, 'T'},
+        {"try-lock", no_argument, nullptr, 'y'},
         {"val-size", required_argument, nullptr, 'v'},
         {nullptr, 0, nullptr, 0} // End of options
     };
@@ -89,7 +93,7 @@ int main(int argc, char* argv[]) {
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "c:d:e:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "c:d:e:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:y", long_options, &option_index)) != -1) {
         switch (c) {
         case 'c':
             SCAN_PROP = atol(optarg);
@@ -172,6 +176,9 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Invalid maplize threshold " << optarg << " must be 0-100\n";
             }
             break;
+        case 'y':
+            try_lock = true;
+            break;
         case 'v':
             val_size = std::atoi(optarg);
             break;
@@ -187,6 +194,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (early_unlock) {
+        lock_flags |= LOCK_FLAG_EARLY_UNLOCK;
+    }
+    if (try_lock) {
+        lock_flags |= LOCK_FLAG_TRY_LOCK;
+    }
+
     std::cout << "slot_max=" << slot_max << "\t"
               << "inner_max=" << inner_max << "\t"
               << "val_size=" << val_size << "\t"
@@ -197,6 +211,7 @@ int main(int argc, char* argv[]) {
               << "NUM_ITERATIONS=" << NUM_ITERATIONS << "\t"
               << "is_mapl=" << is_mapl << "\t"
               << "early_unlock=" << early_unlock << "\t"
+              << "try_lock=" << try_lock << "\t"
               << "num_threads=" << num_threads << "\t"
               << "start_repeat=" << std::setprecision(2) << start_repeat << "\t"
               << "maplize_threshold=" << maplize_threshold << "\t"
@@ -271,15 +286,13 @@ int main(int argc, char* argv[]) {
                      inner_slots,                                       \
                      size,                                              \
                      slice,                                             \
-                     slice_max,                                         \
-                     unlock)                                            \
+                     slice_max)                                         \
     if (testOptions.contains(BTREEMIX) &&                               \
         slot_max == (leaf_slots) &&                                     \
         inner_max == (inner_slots) &&                                   \
         val_size == (size) &&                                           \
         slice_size == (slice) &&                                        \
-        slice_size_max == (slice_max) &&                                \
-        (early_unlock != 0) == (unlock)) {                              \
+        slice_size_max == (slice_max)) {                                \
             std::stringstream ss;                                       \
             ss << "treemix" << "\t"                                     \
                << leaf_slots << "\t"                                    \
@@ -288,6 +301,7 @@ int main(int argc, char* argv[]) {
                << slice << "\t"                                         \
                << slice_max << "\t"                                     \
                << early_unlock << "\t"                                  \
+               << try_lock << "\t"                                      \
                << num_threads << "\t"                                   \
                << maplize_threshold;                                    \
             btreemix_runner_loop<                                       \
@@ -296,10 +310,10 @@ int main(int argc, char* argv[]) {
                     inner_slots,                                        \
                     size,                                               \
                     slice,                                              \
-                    slice_max,                                          \
-                    unlock>>>(                                          \
+                    slice_max>>>(                                       \
                     NUM_ITERATIONS,                                     \
                     ss.str(),                                           \
+                    lock_flags,                                         \
                     num_threads,                                        \
                     dist_option);                                       \
         test_invoked = true;                                            \
@@ -326,6 +340,7 @@ int main(int argc, char* argv[]) {
                   << "slice_size=" << slice_size << "\t"
                   << "slice_size_max=" << slice_size_max << "\t"
                   << "early_unlock=" << early_unlock << "\t"
+                  << "try_lock=" << try_lock << "\t"
                   << std::endl;
     }
 

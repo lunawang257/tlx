@@ -23,6 +23,7 @@ public:
 
     using test_btree_type = typename test_set_type::btree_impl;
     using test_leaf_type = typename test_btree_type::LeafNode;
+    using test_alloc_type = typename test_set_type::allocator_type;
 };
 
 #endif //#define TLX_BTREE_FAST_LOG_HEADER

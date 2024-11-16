@@ -63,8 +63,7 @@ struct SpeedTestType {
                                         key_compare,
                                         traits,
                                         allocator_type,
-                                        true, //concurrent
-                                        early_unlock>;
+                                        true>;
 
     using test_value_type = typename test_map_type::value_type;
     using test_btree_type = typename test_map_type::btree_impl;
