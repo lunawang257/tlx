@@ -71,6 +71,8 @@ fi
 echo Max CPU is $NUMA_0_MAX_THREAD
 N=$((25*1000*1000))
 
+innerMax=64
+tryLock=1
 COMMON_REPEAT=0.1
 SCAN_REPEAT=0.01 # scan is too slow, repeat less
 # shellcheck disable=SC2043
@@ -90,6 +92,10 @@ if [ "$paperMode" == "0" ]; then
         "25 25 25 100"
     )
 fi
+
+props=(
+    "0     0  0   0"    # all delete
+)
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 
@@ -149,6 +155,7 @@ for prop_str in "${props[@]}" ; do
                             cmd="$prog \
 --test btreemix \
 --slot-max $slotMax \
+--inner-max $innerMax \
 --val-size $valSize \
 --slice-size $sliceSize \
 --slice-size-max $sliceSizeMax \
@@ -159,6 +166,7 @@ for prop_str in "${props[@]}" ; do
 -L $lookupProp \
 --scan-prop $scanProp \
 --scan-len $scanLen \
+--try-lock $tryLock \
 --dist $dist \
 --repeats $repeat"
                             if [[ $thread -le "$NUMA_0_MAX_THREAD" ]]; then

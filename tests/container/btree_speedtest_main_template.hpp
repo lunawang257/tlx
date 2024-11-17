@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
         {"slice-size", required_argument, nullptr, 'S'},
         {"num-threads", required_argument, nullptr, 't'},
         {"maplize-threshhold", required_argument, nullptr, 'T'},
-        {"try-lock", no_argument, nullptr, 'y'},
+        {"try-lock", required_argument, nullptr, 'y'},
         {"val-size", required_argument, nullptr, 'v'},
         {nullptr, 0, nullptr, 0} // End of options
     };
@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "c:d:e:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:y", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "c:d:e:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:y:", long_options, &option_index)) != -1) {
         switch (c) {
         case 'c':
             SCAN_PROP = atol(optarg);
@@ -177,7 +177,11 @@ int main(int argc, char* argv[]) {
             }
             break;
         case 'y':
-            try_lock = true;
+            try_lock = atoi(optarg); // Convert argument to integer
+            if (try_lock != 0 && try_lock != 1) {
+                fprintf(stderr, "Error: early_unlock option must be 0 or 1.\n");
+                return 1;
+            }
             break;
         case 'v':
             val_size = std::atoi(optarg);

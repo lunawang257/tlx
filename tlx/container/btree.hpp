@@ -80,12 +80,26 @@ struct ThreadLocalMaplStat {
     uint64_t total_mapl_ct = 0;
     uint64_t total_unmapl_ct = 0;  // Corrected from 'total_mapl_ct' to 'total_unmapl_ct'
 
+    // erase lock related stats
+    uint64_t total_erase = 0;
+    uint64_t total_erase_need_pess = 0; // leaf needs to merge/rebalance or update last key
+    uint64_t total_erase_try_lock = 0; // parent of leaf can use try lock
+    uint64_t total_erase_try_lock_ok = 0; // parent of leaf try-lock succeeded
+    uint64_t total_erase_has_same_parent = 0; // left and right sibling have the same parent has the cur node
+    uint64_t total_erase_wont_update_last_key = 0;
+    uint64_t total_erase_wont_underflow = 0;
+
     // reset() function to set all values to 0
     void reset() {
         total_mapl_ns = std::chrono::duration<uint64_t, std::nano>::zero();
         total_unmapl_ns = std::chrono::duration<uint64_t, std::nano>::zero();
         total_mapl_ct = 0;
         total_unmapl_ct = 0;
+
+        total_erase = 0;
+        total_erase_need_pess = 0;
+        total_erase_try_lock = 0;
+        total_erase_try_lock_ok = 0;
     }
 };
 thread_local ThreadLocalMaplStat localMaplStat;
@@ -4595,6 +4609,7 @@ public:
                    std::vector<descend_info>* desc_info_stack = nullptr) {
         TLX_BTREE_PRINT("BTree::erase_one(" << key <<
                         ") on btree size " << size());
+        ++localMaplStat.total_erase;
         if constexpr (concurrent) {
             if constexpr (optimism) {
                 if (cpu_id == -1) {
@@ -5211,13 +5226,32 @@ private:
                 inner, slot, &lock_p, cpu_id, desc_info_stack);
             if constexpr (concurrent && optimism) {
                 if (try_again) {
+                    bool is_last_level_inner = (inner->level == 1);
+                    bool has_same_parent = (myleft_parent == inner && myright_parent == inner);
+                    bool wont_update_last_key = result.has(btree_will_update_lastkey) && slot < inner->slotuse;
+                    bool wont_underflow = !inner->is_few();
+
+                    if (is_last_level_inner) {
+                        ++localMaplStat.total_erase_need_pess;
+                        if (has_same_parent) {
+                            ++localMaplStat.total_erase_has_same_parent;
+                        }
+                        if (wont_update_last_key) {
+                            ++localMaplStat.total_erase_wont_update_last_key;
+                        }
+                        if (wont_underflow) {
+                            ++localMaplStat.total_erase_wont_underflow;
+                        }
+                    }
                     if ((lock_flags_ & LOCK_FLAG_TRY_LOCK) &&
-                        lock_p && (inner->level == 1) &&
-                        myleft_parent == inner && myright_parent == inner && // don't need locks other than inner
-                        ((result.has(btree_will_update_lastkey) && slot < inner->slotuse && !inner->is_few()) ||
-                        (result.has(btree_will_soon_underflow) && !inner->is_few()))) {
+                        lock_p && is_last_level_inner &&
+                        has_same_parent && // don't need locks other than inner
+                        wont_underflow &&
+                        wont_update_last_key) {
                         // try to upgrade parent lock to avoid locking everything from root
+                        ++localMaplStat.total_erase_try_lock;
                         if (lock_p->try_upgrade_release_on_fail(cpu_id)) {
+                            ++localMaplStat.total_erase_try_lock_ok;
                             try_lock_optimism = false;
                             std::tie(result, try_again) = erase_one_descend<false>(
                                 key, inner->childid[slot],

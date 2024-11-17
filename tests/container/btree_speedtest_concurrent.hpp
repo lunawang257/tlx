@@ -70,6 +70,15 @@ public:
         uint64_t total_unmapl_ct = 0;
         uint64_t total_mapl_ns = 0;
         uint64_t total_unmapl_ns = 0;
+
+        // erase lock related stats
+        uint64_t total_erase = 0;
+        uint64_t total_erase_need_pess = 0;
+        uint64_t total_erase_try_lock = 0;
+        uint64_t total_erase_try_lock_ok = 0;
+        uint64_t total_erase_has_same_parent = 0;
+        uint64_t total_erase_wont_update_last_key = 0;
+        uint64_t total_erase_wont_underflow = 0;
     };
 
     std::vector<thread_state> thread_states;
@@ -325,6 +334,14 @@ private:
         thread_states[thread_id].total_unmapl_ns = localMaplStat.total_unmapl_ns.count();
         thread_states[thread_id].total_mapl_ct = localMaplStat.total_mapl_ct;
         thread_states[thread_id].total_unmapl_ct = localMaplStat.total_unmapl_ct;
+
+        thread_states[thread_id].total_erase = localMaplStat.total_erase;
+        thread_states[thread_id].total_erase_need_pess = localMaplStat.total_erase_need_pess;
+        thread_states[thread_id].total_erase_try_lock = localMaplStat.total_erase_try_lock;
+        thread_states[thread_id].total_erase_try_lock_ok = localMaplStat.total_erase_try_lock_ok;
+        thread_states[thread_id].total_erase_has_same_parent = localMaplStat.total_erase_has_same_parent;
+        thread_states[thread_id].total_erase_wont_update_last_key = localMaplStat.total_erase_wont_update_last_key;
+        thread_states[thread_id].total_erase_wont_underflow = localMaplStat.total_erase_wont_underflow;
     }
 
 public:
@@ -382,6 +399,14 @@ void btreemix_runner_loop(size_t items,
     uint64_t total_mapl_ns = 0;
     uint64_t total_unmapl_ns = 0;
 
+    uint64_t total_erase = 0;
+    uint64_t total_erase_need_pess = 0;
+    uint64_t total_erase_try_lock = 0;
+    uint64_t total_erase_try_lock_ok = 0;
+    uint64_t total_erase_has_same_parent = 0;
+    uint64_t total_erase_wont_update_last_key = 0;
+    uint64_t total_erase_wont_underflow = 0;
+
     unsigned short start_height = 0, end_height = 0;
 
     do {
@@ -426,6 +451,15 @@ void btreemix_runner_loop(size_t items,
             total_unmapl_ct += ts.total_unmapl_ct;
             total_mapl_ns += ts.total_mapl_ns;
             total_unmapl_ns += ts.total_unmapl_ns;
+
+            // erase related stats
+            total_erase += ts.total_erase;
+            total_erase_need_pess += ts.total_erase_need_pess;
+            total_erase_try_lock += ts.total_erase_try_lock;
+            total_erase_try_lock_ok += ts.total_erase_try_lock_ok;
+            total_erase_has_same_parent += ts.total_erase_has_same_parent;
+            total_erase_wont_update_last_key += ts.total_erase_wont_update_last_key;
+            total_erase_wont_underflow += ts.total_erase_wont_underflow;
         }
 
         auto stat = test.my_map.get_stats();
@@ -511,7 +545,13 @@ void btreemix_runner_loop(size_t items,
               << std::endl;
 #endif
 
-    std::cout << "Test\tSlotMax\tInnerSlots\tValSize\tSliceSz\tSlcSzMx\tUnlock\tThreads\tMplThrh\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct(%)\tMaplPct(%)\tMaplRd(%)\tMaplWt(%)\tLfRdLk(ns)\tLfWtLk(ns)\tInRdLk(ns)\tInWtLk(ns)\tTMaplT(ms)\tTMaplC\tTUMaplT(ms)\tTUMaplC\titms\trpts\tDrtion\n"
+    std::cout << "Test\tSlotMax\tInnSlot\tValSize\tSliceSz\tSlcSzMx\tErlyULk\tTryLock\tThreads\tMplThrh" // container_name
+              << "\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct\tMaplPct\tMaplRd%"
+              << "\tMaplWt%\tLfRLkns\tLfWLkns\tInRLkns\tInWLkns\tMaplTms\tMaplCnt\tUMplTms\tUMplCnt"
+              << "\titem(M)\trepeats\tDurtion"
+              << "\tRmCt\tRmLkPrt\tRmTryLk\tRmTrLk1"
+              << "\tRmSmPrt\tRm!UpKy\tR!Udflw"
+              << "\n"
               << container_name << "\t"
               << start_height << "\t"
               << end_height << "\t"
@@ -529,11 +569,20 @@ void btreemix_runner_loop(size_t items,
               << std::fixed << std::setprecision(1) << avg_leaf_write_lock_time << "\t"
               << std::fixed << std::setprecision(1) << avg_inner_read_lock_time << "\t"
               << std::fixed << std::setprecision(1) << avg_inner_write_lock_time << "\t"
-              << std::setprecision(4) << total_mapl_ns * 1.0 / 1e6 << "\t"
+              << std::setprecision(2) << total_mapl_ns * 1.0 / 1e6 << "\t"
               << total_mapl_ct << "\t"
-              << std::setprecision(4) << total_unmapl_ns * 1.0 / 1e6 << "\t"
+              << std::setprecision(2) << total_unmapl_ns * 1.0 / 1e6 << "\t"
               << total_unmapl_ct << "\t"
-              << items << "\t" << std::setprecision(2) << start_repeat << "\t" << duration
+              << std::setprecision(2) << items / 1e6 << "\t"
+              << std::setprecision(2) << start_repeat << "\t"
+              << duration << "\t"
+              << total_erase << "\t"
+              << total_erase_need_pess << "\t"
+              << total_erase_try_lock << "\t"
+              << total_erase_try_lock_ok << "\t"
+              << total_erase_has_same_parent << "\t"
+              << total_erase_wont_update_last_key << "\t"
+              << total_erase_wont_underflow
               << std::endl;
 }
 
