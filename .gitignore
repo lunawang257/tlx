@@ -2,3 +2,4 @@ build
 /.vscode
 *~
 tests/container/btree_speedtest_*_options.hpp
+cscope.*
