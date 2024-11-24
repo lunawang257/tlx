@@ -141,24 +141,27 @@ for prop_str in "${props[@]}" ; do
                             fi
                         fi
 
-                        for thread in 32 28 24 20 16 12 8 4 2 1 ; do
+                        #for thread in 32 28 24 20 16 12 8 4 2 1 ; do
+                        for thread in 4 ; do
                             if [[ $thread -gt "$MAX_THREAD" ]]; then
                                 continue
                             fi
-                            printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
-                            runName="SlotMax-$slotMax-ValSize-$valSize-SliceSz-$sliceSize"
-                            runName="${runName}-SlcSzMx-$sliceSizeMax-Thread-$thread"
-                            runName="${runName}-MplThrh-$maplize_threshold-Dist-$dist"
-                            runName="${runName}-InsertP-$insertProp-LookupP-$lookupProp"
-                            runName="${runName}-ScanProp-$scanProp-ScanLen-$scanLen"
-                            oneResult="$outPath/all-res/${base}-$ts-$runName.txt"
-                            cmd="$prog \
+                            for earlyUnlock in 0 1 ; do
+                                printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
+                                runName="SlotMax-$slotMax-ValSize-$valSize-SliceSz-$sliceSize"
+                                runName="${runName}-SlcSzMx-$sliceSizeMax-Thread-$thread"
+                                runName="${runName}-MplThrh-$maplize_threshold-Dist-$dist"
+                                runName="${runName}-InsertP-$insertProp-LookupP-$lookupProp"
+                                runName="${runName}-ScanProp-$scanProp-ScanLen-$scanLen"
+                                oneResult="$outPath/all-res/${base}-$ts-$runName.txt"
+                                cmd="$prog \
 --test btreemix \
 --slot-max $slotMax \
 --inner-max $innerMax \
 --val-size $valSize \
 --slice-size $sliceSize \
 --slice-size-max $sliceSizeMax \
+--early-unlock $earlyUnlock \
 --iteration $N \
 --num-threads $thread \
 --maplize-threshhold $maplize_threshold \
@@ -169,35 +172,36 @@ for prop_str in "${props[@]}" ; do
 --try-lock $tryLock \
 --dist $dist \
 --repeats $repeat"
-                            if [[ $thread -le "$NUMA_0_MAX_THREAD" ]]; then
-                                if [ "$(uname -s)" == "Linux" ]; then
-                                    cmd="numactl -N -0 -m 0 $cmd"
+                                if [[ $thread -le "$NUMA_0_MAX_THREAD" ]]; then
+                                    if [ "$(uname -s)" == "Linux" ]; then
+                                        cmd="numactl -N -0 -m 0 $cmd"
+                                    fi
                                 fi
-                            fi
-                            echo "$cmd > $oneResult"
-                            if [ "$dryrun" != "1" ] ; then
-                                eval "$cmd" > "$oneResult"
-                                if [ ! -f "$out" ]; then
-                                    tail -2 "$oneResult"
-                                    tail -2 "$oneResult" > "$out"
-                                else
-                                    tail -1 "$oneResult"
-                                    tail -1 "$oneResult" >> "$out"
+                                echo "$cmd > $oneResult"
+                                if [ "$dryrun" != "1" ] ; then
+                                    eval "$cmd" > "$oneResult"
+                                    if [ ! -f "$out" ]; then
+                                        tail -2 "$oneResult"
+                                        tail -2 "$oneResult" > "$out"
+                                    else
+                                        tail -1 "$oneResult"
+                                        tail -1 "$oneResult" >> "$out"
+                                    fi
+                                    ## generate perf profile on Linux
+                                    #if [ "$(uname -s)" == "Linux" ]; then
+                                    #    gmonOutName="${ts}-gmon-$runName.txt"
+                                    #    longGmon="${outPath}/all-res/${gmonOutName}"
+                                    #    shortGmon="${outPath}/${gmonOutName}"
+                                    #    #echo "longGmon=$longGmon"
+                                    #    #echo "shortGmon=$shortGmon"
+                                    #    gprof "$prog" gmon.out > "$longGmon"
+                                    #    "${SCRIPT_DIR}/filter_gmon.py" < "$longGmon" > "$shortGmon"
+                                    #fi
                                 fi
-                                ## generate perf profile on Linux
-                                #if [ "$(uname -s)" == "Linux" ]; then
-                                #    gmonOutName="${ts}-gmon-$runName.txt"
-                                #    longGmon="${outPath}/all-res/${gmonOutName}"
-                                #    shortGmon="${outPath}/${gmonOutName}"
-                                #    #echo "longGmon=$longGmon"
-                                #    #echo "shortGmon=$shortGmon"
-                                #    gprof "$prog" gmon.out > "$longGmon"
-                                #    "${SCRIPT_DIR}/filter_gmon.py" < "$longGmon" > "$shortGmon"
-                                #fi
-                            fi
-                            if [ "$paperMode" == "0" ]; then # non-paper mode, only run one thread
-                                break
-                            fi
+                                if [ "$paperMode" == "0" ]; then # non-paper mode, only run one thread
+                                    break
+                                fi
+                            done # for earlyUnlock
                         done # for threads
                         if [ "$paperMode" != "0" ]; then # paper mode, only run one sliceSize
                             break
