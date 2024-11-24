@@ -57,7 +57,7 @@ int is_mapl = 0;
 int early_unlock = 0;
 int try_lock = 0;
 int num_threads = 0;
-int lock_flags = 0;
+int g_lock_flags = 0;
 std::string test_option = "";
 TestOption dist_option = ZIPF;
 bool test_invoked = false;
@@ -199,10 +199,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (early_unlock) {
-        lock_flags |= LOCK_FLAG_EARLY_UNLOCK;
+        g_lock_flags |= LOCK_FLAG_EARLY_UNLOCK;
     }
     if (try_lock) {
-        lock_flags |= LOCK_FLAG_TRY_LOCK;
+        g_lock_flags |= LOCK_FLAG_TRY_LOCK;
     }
 
     std::cout << "slot_max=" << slot_max << "\t"
@@ -317,7 +317,7 @@ int main(int argc, char* argv[]) {
                     slice_max>>>(                                       \
                     NUM_ITERATIONS,                                     \
                     ss.str(),                                           \
-                    lock_flags,                                         \
+                    g_lock_flags,                                       \
                     num_threads,                                        \
                     dist_option);                                       \
         test_invoked = true;                                            \
