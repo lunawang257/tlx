@@ -98,9 +98,10 @@ if [ "$paperMode" == "0" ]; then
     )
 fi
 
-props=(
-    "0     0  0   0"    # all delete
-)
+# override to test only these workloads
+#props=(
+#    "0     0  0   0"    # all delete
+#)
 
 prog="$SCRIPT_DIR/../build/Release/tests/tlx_container_btree_speedtest_btreemix"
 
@@ -146,8 +147,7 @@ for prop_str in "${props[@]}" ; do
                             fi
                         fi
 
-                        #for thread in 32 28 24 20 16 12 8 4 2 1 ; do
-                        for thread in 4 ; do
+                        for thread in 32 28 24 20 16 12 8 4 2 1 ; do
                             if [[ $thread -gt "$MAX_THREAD" ]]; then
                                 continue
                             fi
