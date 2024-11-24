@@ -25,7 +25,7 @@ else
 fi
 
 paperMode=0 # find best config (slotMax, sliceSize) for each tree
-paperMode=1 # calculate results for all threads with best config for each tree
+#paperMode=1 # calculate results for all threads with best config for each tree
 
 if [ "$paperMode" != "0" ]; then
     echo paper mode
@@ -124,8 +124,8 @@ for prop_str in "${props[@]}" ; do
         for dist in uniform zipf ; do
             for maplize_threshold in 0 100 ; do
                 # shellcheck disable=SC2043
-                for slotMax in 16384 8192 ; do #4096 2048 1024 512 256 128 64 32 ; do
-                    startSliceSize=16
+                for slotMax in 16384 8192 4096 2048 1024 512 256 128 64 32 ; do
+                    startSliceSize=$slotMax
                     for ((sliceSize=startSliceSize;sliceSize<=128;sliceSize=sliceSize*2)) ; do
                         if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "$startSliceSize" ]]; then
                             continue
@@ -212,6 +212,7 @@ for prop_str in "${props[@]}" ; do
                         if [ "$paperMode" != "0" ]; then # paper mode, only run one sliceSize
                             break
                         fi
+                        break;
                     done # for sliceSize
                     if [ "$paperMode" != "0" ]; then # paper mode, only run one slotMax
                         break
