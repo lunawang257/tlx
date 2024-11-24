@@ -126,13 +126,14 @@ for prop_str in "${props[@]}" ; do
                 # shellcheck disable=SC2043
                 for slotMax in 16384 8192 4096 2048 1024 512 256 128 64 32 ; do
                     startSliceSize=$slotMax
-                    for ((sliceSize=startSliceSize;sliceSize<=128;sliceSize=sliceSize*2)) ; do
+                    #for ((sliceSize=startSliceSize;sliceSize<=128;sliceSize=sliceSize*2)) ; do
+                    for sliceSize in $startSliceSize; do
                         if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "$startSliceSize" ]]; then
                             continue
                         fi
-                        if [[ "$sliceSize" -ge "$slotMax" ]]; then
-                            continue
-                        fi
+                        #if [[ "$sliceSize" -ge "$slotMax" ]]; then
+                        #    continue
+                        #fi
                         sliceSizeMax=$(( sliceSize + 1 ))
 
                         if [ "$paperMode" != "0" ]; then
@@ -204,10 +205,10 @@ for prop_str in "${props[@]}" ; do
                                     #    "${SCRIPT_DIR}/filter_gmon.py" < "$longGmon" > "$shortGmon"
                                     #fi
                                 fi
-                                if [ "$paperMode" == "0" ]; then # non-paper mode, only run one thread
-                                    break
-                                fi
                             done # for earlyUnlock
+                            if [ "$paperMode" == "0" ]; then # non-paper mode, only run one thread
+                                break
+                            fi
                         done # for threads
                         if [ "$paperMode" != "0" ]; then # paper mode, only run one sliceSize
                             break
