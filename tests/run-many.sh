@@ -50,6 +50,11 @@ if [ "$paperMode" != "0" ]; then
     BEST_MAPL_SLOT_MAX=8192
     BEST_MAPL_SLICE_SIZE=32
     BEST_MAPL_SLICE_SIZE_MAX=33
+
+    # COW B-tree (simulate with single slice MAPL)
+    BEST_MAPL_SLOT_MAX=64
+    BEST_MAPL_SLICE_SIZE=64
+    BEST_MAPL_SLICE_SIZE_MAX=65
 else
     echo non-paper mode
 fi
@@ -146,7 +151,8 @@ for prop_str in "${props[@]}" ; do
                             if [[ $thread -gt "$MAX_THREAD" ]]; then
                                 continue
                             fi
-                            for earlyUnlock in 0 1 ; do
+                            #for earlyUnlock in 0 1 ; do
+                            for earlyUnlock in 0 ; do
                                 printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
                                 runName="SlotMax-$slotMax-ValSize-$valSize-SliceSz-$sliceSize"
                                 runName="${runName}-SlcSzMx-$sliceSizeMax-Thread-$thread"
