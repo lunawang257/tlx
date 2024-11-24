@@ -77,7 +77,7 @@ echo Max CPU is $NUMA_0_MAX_THREAD
 N=$((25*1000*1000))
 
 innerMax=64
-tryLock=1
+tryLock=0
 COMMON_REPEAT=0.1
 SCAN_REPEAT=0.01 # scan is too slow, repeat less
 # shellcheck disable=SC2043
