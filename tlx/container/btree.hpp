@@ -1429,7 +1429,9 @@ public:
         }
 
         bool should_maplize_based_on_contention() {
-            return maplize_threshold == 0 && node::slotuse >= 2 * slice_size;
+            return maplize_threshold == 0;
+
+            // disabled
             TLX_BTREE_ASSERT(!mapl);
             int percent = mutex_.con_tracker.percent_waited();
             return percent >= maplize_threshold && node::slotuse >= 2 * slice_size;
