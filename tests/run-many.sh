@@ -52,9 +52,9 @@ if [ "$paperMode" != "0" ]; then
     BEST_MAPL_SLICE_SIZE_MAX=33
 
     # COW B-tree (simulate with single slice MAPL)
-    BEST_MAPL_SLOT_MAX=64
-    BEST_MAPL_SLICE_SIZE=64
-    BEST_MAPL_SLICE_SIZE_MAX=65
+    BEST_MAPL_SLOT_MAX=8192
+    BEST_MAPL_SLICE_SIZE=8192
+    BEST_MAPL_SLICE_SIZE_MAX=8193
 else
     echo non-paper mode
 fi
