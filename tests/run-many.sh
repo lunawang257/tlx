@@ -25,7 +25,7 @@ else
 fi
 
 paperMode=0 # find best config (slotMax, sliceSize) for each tree
-#paperMode=1 # calculate results for all threads with best config for each tree
+paperMode=1 # calculate results for all threads with best config for each tree
 
 if [ "$paperMode" != "0" ]; then
     echo paper mode
@@ -83,6 +83,7 @@ SCAN_REPEAT=0.01 # scan is too slow, repeat less
 # shellcheck disable=SC2043
 props=(
     #ins fnd  scn len repeat
+    "25   25   25 100"  # balanced
     "100   0    0   0"  # all insert
     "0   100    0   0"  # all lookup (YCSB-C)
     "0   100  100 100"  # all scan
