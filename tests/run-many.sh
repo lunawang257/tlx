@@ -136,9 +136,8 @@ for prop_str in "${props[@]}" ; do
             for maplize_threshold in 0 100 ; do
                 # shellcheck disable=SC2043
                 for slotMax in 16384 8192 4096 2048 1024 512 256 128 64 32 ; do
-                    startSliceSize=$slotMax
-                    #for ((sliceSize=startSliceSize;sliceSize<=128;sliceSize=sliceSize*2)) ; do
-                    for sliceSize in $startSliceSize; do
+                    startSliceSize=32
+                    for ((sliceSize=startSliceSize;sliceSize<=128;sliceSize=sliceSize*2)) ; do
                         if [[ "$maplize_threshold" -eq "100" && "$sliceSize" -ne "$startSliceSize" ]]; then
                             continue
                         fi
