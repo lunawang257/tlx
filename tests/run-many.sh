@@ -54,6 +54,9 @@ if [ "$paperMode" != "0" ]; then
 
     # Linux results with balanced
     BEST_BTREE_SLOT_MAX=64
+    BEST_BTREE_SLICE_SIZE=64
+    BEST_BTREE_SLICE_SIZE_MAX=65
+
     BEST_MAPL_SLOT_MAX=8192
     BEST_MAPL_SLICE_SIZE=32
     BEST_MAPL_SLICE_SIZE_MAX=33
@@ -151,8 +154,8 @@ for prop_str in "${props[@]}" ; do
                                 sliceSizeMax=$BEST_MAPL_SLICE_SIZE_MAX
                             else # B-tree
                                 slotMax=$BEST_BTREE_SLOT_MAX
-                                sliceSize=$BEST_MAPL_SLICE_SIZE
-                                sliceSizeMax=$BEST_MAPL_SLICE_SIZE_MAX
+                                sliceSize=$BEST_BTREE_SLICE_SIZE
+                                sliceSizeMax=$BEST_BTREE_SLICE_SIZE_MAX
                             fi
                         fi
 
