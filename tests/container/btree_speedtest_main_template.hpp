@@ -58,6 +58,7 @@ int early_unlock = 0;
 int try_lock = 0;
 int num_threads = 0;
 int g_lock_flags = 0;
+int check_only = 0;
 std::string test_option = "";
 TestOption dist_option = ZIPF;
 bool test_invoked = false;
@@ -68,6 +69,7 @@ int main(int argc, char* argv[]) {
     // Define long options
     static struct option long_options[] = {
         {"scan-prop", required_argument, nullptr, 'c'},
+        {"check-only", required_argument, nullptr, 'C'},
         {"dist", required_argument, nullptr, 'd'},
         {"early-unlock", required_argument, nullptr, 'e'},
         {"help", no_argument, nullptr, 'h'},
@@ -93,10 +95,14 @@ int main(int argc, char* argv[]) {
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "c:d:e:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:y:", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "c:C:d:e:m:p:i:s:S:v:h:m:M:n:t:T:h:r:I:L:l:y:",
+                            long_options, &option_index)) != -1) {
         switch (c) {
         case 'c':
             SCAN_PROP = atol(optarg);
+            break;
+        case 'C':
+            check_only = atol(optarg);
             break;
         case 'd': { // dist
             dist_option = stringToTestOption(optarg);
@@ -308,18 +314,20 @@ int main(int argc, char* argv[]) {
                << try_lock << "\t"                                      \
                << num_threads << "\t"                                   \
                << maplize_threshold;                                    \
-            btreemix_runner_loop<                                       \
-                Test_Set_MixedOp<SpeedTestType<                         \
-                    leaf_slots,                                         \
-                    inner_slots,                                        \
-                    size,                                               \
-                    slice,                                              \
-                    slice_max>>>(                                       \
-                    NUM_ITERATIONS,                                     \
-                    ss.str(),                                           \
-                    g_lock_flags,                                       \
-                    num_threads,                                        \
-                    dist_option);                                       \
+            if (!check_only) {                                          \
+                btreemix_runner_loop<                                   \
+                    Test_Set_MixedOp<SpeedTestType<                     \
+                        leaf_slots,                                     \
+                        inner_slots,                                    \
+                        size,                                           \
+                        slice,                                          \
+                        slice_max>>>(                                   \
+                        NUM_ITERATIONS,                                 \
+                        ss.str(),                                       \
+                        g_lock_flags,                                   \
+                        num_threads,                                    \
+                        dist_option);                                   \
+            }                                                           \
         test_invoked = true;                                            \
     }
 
@@ -346,6 +354,7 @@ int main(int argc, char* argv[]) {
                   << "early_unlock=" << early_unlock << "\t"
                   << "try_lock=" << try_lock << "\t"
                   << std::endl;
+        return 1;
     }
 
     return 0;

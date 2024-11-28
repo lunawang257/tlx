@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: run-many.sh [-n] [output-dir-name] [baseName]
+# Usage: run-many.sh [-n] [-C] [output-dir-name] [baseName]
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
@@ -8,6 +8,13 @@ if [ "$1" == "-n" ]; then
     shift
 else
     dryrun=0
+fi
+
+if [ "$1" == "-C" ]; then
+    check=1
+    shift
+else
+    check=0
 fi
 
 if [ "$1" != "" ]; then
@@ -163,6 +170,7 @@ for prop_str in "${props[@]}" ; do
                                 runName="${runName}-ScanProp-$scanProp-ScanLen-$scanLen"
                                 oneResult="$outPath/all-res/${base}-$ts-$runName.txt"
                                 cmd="$prog \
+--check-only $check \
 --test btreemix \
 --slot-max $slotMax \
 --inner-max $innerMax \
@@ -188,6 +196,10 @@ for prop_str in "${props[@]}" ; do
                                 echo "$cmd > $oneResult"
                                 if [ "$dryrun" != "1" ] ; then
                                     eval "$cmd" > "$oneResult"
+                                    if [ "$?" != "0" ]; then
+                                        echo "Wrong param above."
+                                        exit 1
+                                    fi
                                     if [ ! -f "$out" ]; then
                                         tail -2 "$oneResult"
                                         tail -2 "$oneResult" > "$out"
