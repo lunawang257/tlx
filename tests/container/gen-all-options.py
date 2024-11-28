@@ -23,7 +23,7 @@ leaf_value_size_list = [32, 64, 128, 256, 512]
 
 if btreemix_fast_compile:
     btreemix_leaf_slot_max_list = [8192, 4096, 2048, 1024, 512, 256, 128, 64, 32]
-    btreemix_inner_slot_max_list = [64]
+    btreemix_inner_slot_max_list = [64, 8192]
     btreemix_value_size_list = [256]
 
 if leaf_fast_compile:

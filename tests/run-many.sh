@@ -162,6 +162,7 @@ for prop_str in "${props[@]}" ; do
                             fi
                             #for earlyUnlock in 0 1 ; do
                             for earlyUnlock in 0 ; do
+                                innerMax=$slotMax
                                 printf '%02d:%02d: ' "$(( SECONDS/60 ))" "$(( SECONDS%60 ))"
                                 runName="SlotMax-$slotMax-ValSize-$valSize-SliceSz-$sliceSize"
                                 runName="${runName}-SlcSzMx-$sliceSizeMax-Thread-$thread"
