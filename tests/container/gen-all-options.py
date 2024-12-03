@@ -119,11 +119,7 @@ def main():
         new_names.append((old_name, new_name))
         with open(new_name, 'w') as f:
             lines = 0
-            f.write('''// DO NOT EDIT! please change gen-leaf-cmd.py to edit
-void run_all_args() {
-''')
             sub_name_upper = sub_name.upper()
-            f.write(f'    testOptions.insert({sub_name_upper});\n')
             if sub_name == "btreemix":
                 leaf_slot_max_list = btreemix_leaf_slot_max_list
                 value_size_list = btreemix_value_size_list
@@ -157,11 +153,9 @@ void run_all_args() {
                                                              value_size=value_size,
                                                              slice_size=slice_size,
                                                              slice_size_max = slice_size_max)
-                                f.write('    ') # indentation
                                 f.write(line)
                                 lines += 1
                                 total_lines += 1
-            f.write('}\n')
 
     # update old file only if it has changed so Makefile doesn't build unchanged ones
     for name_pair in new_names:

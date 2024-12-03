@@ -94,12 +94,12 @@ SCAN_REPEAT=0.01 # scan is too slow, repeat less
 props=(
     #ins fnd  scn len repeat
     "25   25   25 100"  # balanced
-    "100   0    0   0"  # all insert
-    "0   100    0   0"  # all lookup (YCSB-C)
-    "0   100  100 100"  # all scan
-    "50   50    0   0"  # YCSB-A
-    "5    95    0   0"  # YCSB-B
-    "5     0   95 100"  # YCSB-E
+    #"100   0    0   0"  # all insert
+    #"0   100    0   0"  # all lookup (YCSB-C)
+    #"0   100  100 100"  # all scan
+    #"50   50    0   0"  # YCSB-A
+    #"5    95    0   0"  # YCSB-B
+    #"5     0   95 100"  # YCSB-E
     #"0     0  0   0"    # all delete
 )
 if [ "$paperMode" == "0" ]; then

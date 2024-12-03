@@ -354,7 +354,25 @@ int main(int argc, char* argv[]) {
                   << "early_unlock=" << early_unlock << "\t"
                   << "try_lock=" << try_lock << "\t"
                   << std::endl;
-        return 1;
+
+        if (testOptions.contains(BTREEMIX)) {
+            std::cout
+                << "\nAdd the following line to"
+                << " btree_speedtest_btreemix_options.hpp"
+                << " and rebuild with tests/build_test.sh\n\n";
+
+            std::stringstream ss;
+            ss << "RUN_BTREEMIX("
+               << slot_max << ", "
+               << inner_max << ", "
+               << val_size << ", "
+               << slice_size << ", "
+               << slice_size_max << ")\n";
+
+            std::cout << ss.str() << "\n";
+
+            return 1;
+        }
     }
 
     return 0;
