@@ -184,8 +184,8 @@ for prop_str in "${props[@]}" ; do
 --iteration $N \
 --num-threads $thread \
 --maplize-threshhold $maplize_threshold \
--I $insertProp \
--L $lookupProp \
+--insert-prop $insertProp \
+--lookup-prop $lookupProp \
 --scan-prop $scanProp \
 --scan-len $scanLen \
 --try-lock $tryLock \

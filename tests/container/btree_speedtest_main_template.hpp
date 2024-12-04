@@ -359,7 +359,7 @@ int main(int argc, char* argv[]) {
             std::cout
                 << "\nAdd the following line to"
                 << " btree_speedtest_btreemix_options.hpp"
-                << " and rebuild with tests/build_test.sh\n\n";
+                << " and rebuild with 'tests/build_test.sh -b'\n\n";
 
             std::stringstream ss;
             ss << "RUN_BTREEMIX("

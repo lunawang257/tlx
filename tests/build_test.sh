@@ -18,8 +18,15 @@ function RunBuild()
     return 0
 }
 
-echo "Generate microbenchmark speed test sources"
-"${ScriptDir}/container/gen-all-options.py"
+if [ "$1" == "-b" ]; then
+    buildOnly=1 # do not generate all options
+    shift
+fi
+
+if [ "$buildOnly" != "1" ]; then
+    echo "Generate microbenchmark speed test sources"
+    "${ScriptDir}/container/gen-all-options.py"
+fi
 
 echo "Output in file $OutFile"
 prev_length=0
