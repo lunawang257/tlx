@@ -493,7 +493,7 @@ def printResults(valSize, allResults):
     with open(outNameAll, 'w') as f:
         f.write(gTitle + '\n')
         for res in allResults:
-            f.write(res['orig-result'])
+            f.write(res['orig-result'] + '\n')
     prt(f'All rsults in {outNameAll}')
 
 def autopilot(valSize):
