@@ -20,7 +20,7 @@ import sys
 from datetime import timedelta
 
 gOutDir = '.'
-gIteration = 4000000 #25 * 1000 * 1000
+gIteration = 25 * 1000 * 1000
 
 gCommonRepeat = 0.1
 gScanRepeat = 0.01 # scan is too slow, repeat less
@@ -161,39 +161,21 @@ def copyIfDifferent(newName, oldName):
         #print(f"Copied {newName} to {oldName} which does not exist.")
 
 def getCpuInfo():
+    global gCpuPerNuma
     osName = platform.system()
     if osName == "Darwin":
         gOS = MACOS
+        gCpuPerNuma = os.cpu_count()
     elif osName == "Linux":
         gOS = LINUX
+        cmd = "numactl --hardware | awk '/node 0 cpus:/ {print NF-3}'"
+        rc, out = runCmd(cmd)
+        if rc != 0:
+            print(f"Command failed to get CPU per NUMA node:\n{cmd}")
+            sys.exit(1)
+        gCpuPerNuma = int(out)
     else:
         raise Exception(f"Unknown OS {osName}")
-
-    # Get the number of CPUs
-    numCpus = os.cpu_count()
-
-    # Get the number of NUMA nodes
-    if gOS == "Linux":
-        try:
-            result = subprocess.run(
-                ['lscpu'],
-                stdout=subprocess.PIPE,
-                stderr=STDOUT,
-                text=True,
-                check=True,
-            )
-            numaNodes = 0
-            for line in result.stdout.splitlines():
-                if line.startswith("NUMA node(s):"):
-                    numaNodes = int(line.split(":")[1].strip())
-                    break
-        except Exception as e:
-            numaNodes = 1
-    else:
-        # NUMA nodes are typically not a concern for MacOS
-        numaNodes = 1
-
-    gCpuPerNuma = numCpus / numCpus
 
 def genAllRunOpt(valSize, findBest=True,
                  bestBtreeParam=None, bestMapleParam=None):
@@ -429,6 +411,8 @@ def autopilot(valSize):
     printResults(valSize, results)
 
 def main():
+    getCpuInfo()
+
     parser = argparse.ArgumentParser(
         description="autopilot.py -v <valSize> and -d <dir> arguments.")
 
