@@ -332,7 +332,11 @@ def runCmd(cmd, timeout=None):
         stdout = result.stdout
     except subprocess.TimeoutExpired:
         timedOut = True
+        rc = 0
         stop = time.time()
+    assert timedOut or stdout != ""
+    if rc != 0:
+        raise Exception(f"Command failed with {rc}:\n{cmd}\n{stdout}")
     return rc, stdout, stop - start, timedOut
 
 def buildBtreeMixOpt(params):
@@ -368,6 +372,7 @@ def runTests(params, findBest=False):
         'maple': 7200,
         '1-slice': 7200,
     }
+    numTimeOut = 0
     for p in params:
         cur += 1
         if gOS == LINUX:
@@ -401,7 +406,8 @@ def runTests(params, findBest=False):
             f'maxMops={maxMops:.1f} ' + \
             f'minRunTime={minRunTimes["btree"]:.1f}(bt), ' + \
             f'{minRunTimes["maple"]:.1f}(mapl), ' + \
-            f'{minRunTimes["1-slice"]:.1f}(1-slc)'
+            f'{minRunTimes["1-slice"]:.1f}(1-slc) ' + \
+            f'numTimeOut={numTimeOut}'
 
         prevLineLen = prtProgress(
             total, cur, testStartTime, prevLineLen, paramStr)
@@ -417,6 +423,7 @@ def runTests(params, findBest=False):
         if timedOut:
             #print('')
             #prt(f'minRunTime={minRunTime * 2}, timed out: {cmd}')
+            numTimeOut += 1
             continue
 
         if findBest: # update min runtime
