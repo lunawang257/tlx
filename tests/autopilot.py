@@ -178,8 +178,43 @@ def getCpuInfo():
     else:
         raise Exception(f"Unknown OS {osName}")
 
+def makeParams(
+        slotMax=None, innerMax=None, valSize=None,
+        sliceSize=None, sliceSizeMax=None,
+        earlyUnlock=None, iteration=None,
+        thread=None, maplizeThreshold=None,
+        opProp=None, tryLock=None, dist=None, repeat=None):
+    param = {}
+    param['check-only'] = 0
+    param['test'] = 'btreemix'
+    param['slot-max'] = slotMax
+    param['inner-max'] = innerMax
+    param['val-size'] = valSize
+    param['slice-size'] = sliceSize
+    param['slice-size-max'] = sliceSizeMax
+    param['early-unlock'] = earlyUnlock
+    param['iteration'] = iteration
+    param['num-threads'] = thread
+    param['maplize-threshhold'] = maplizeThreshold
+    param['insert-prop'] = opProp['insertProp']
+    param['lookup-prop'] = opProp['lookupProp']
+    param['scan-prop'] = opProp['scanProp']
+    param['scan-len'] = opProp['scanLen']
+    param['try-lock'] = tryLock
+    param['dist'] = dist
+    param['repeats'] = repeat
+
+    compileParam = {}
+    compileParam['slot-max'] = slotMax
+    compileParam['inner-max'] = innerMax
+    compileParam['val-size'] = valSize
+    compileParam['slice-size'] = sliceSize
+    compileParam['slice-size-max'] = sliceSizeMax
+
+    return param, compileParam
+
 def genAllRunOpt(valSize, findBest=True,
-                 bestBtreeParam=None, bestMapleParam=None):
+                 bestBtreeParam=None, bestMapleParam=None, best1SliceParam=None):
     runParams = []
     compileParams = []
     seenCompileParams = set()
@@ -226,7 +261,6 @@ def genAllRunOpt(valSize, findBest=True,
                     else:
                         allInnerMax = [bestBtreeParam['InnSlot']]
                 for innerMax in allInnerMax:
-                    sliceSize = 32
                     if not findBest:
                         if maplizeThreshold == 0:
                             allSliceSizes = [bestMapleParam['SliceSz']]
@@ -238,38 +272,49 @@ def genAllRunOpt(valSize, findBest=True,
                             sliceSize = slotMax # for 1-slice test
                         sliceSizeMax = sliceSize + 1
                         for thread in allThreads:
-                            param = {}
-                            param['check-only'] = 0
-                            param['test'] = 'btreemix'
-                            param['slot-max'] = slotMax
-                            param['inner-max'] = innerMax
-                            param['val-size'] = valSize
-                            param['slice-size'] = sliceSize
-                            param['slice-size-max'] = sliceSizeMax
-                            param['early-unlock'] = earlyUnlock
-                            param['iteration'] = gIteration
-                            param['num-threads'] = thread
-                            param['maplize-threshhold'] = maplizeThreshold
-                            param['insert-prop'] = opProp['insertProp']
-                            param['lookup-prop'] = opProp['lookupProp']
-                            param['scan-prop'] = opProp['scanProp']
-                            param['scan-len'] = opProp['scanLen']
-                            param['try-lock'] = tryLock
-                            param['dist'] = dist
-                            param['repeats'] = repeat
-                            runParams.append(param)
+                            param, compileParam = makeParams(
+                                slotMax=slotMax, innerMax=innerMax,
+                                valSize=valSize, sliceSize=sliceSize,
+                                sliceSizeMax=sliceSizeMax,
+                                earlyUnlock=earlyUnlock, iteration=gIteration,
+                                thread=thread, maplizeThreshold=maplizeThreshold,
+                                opProp=opProp, tryLock=tryLock, dist=dist,
+                                repeat=repeat)
 
-                            compileParam = {}
-                            compileParam['slot-max'] = slotMax
-                            compileParam['inner-max'] = innerMax
-                            compileParam['val-size'] = valSize
-                            compileParam['slice-size'] = sliceSize
-                            compileParam['slice-size-max'] = sliceSizeMax
+                            runParams.append(param)
 
                             frozenItem = frozenset(compileParam.items())
                             if frozenItem not in seenCompileParams:
                                 seenCompileParams.add(frozenItem)
                                 compileParams.append(compileParam)
+
+    if not findBest: # run balanced test for 1-slice
+        opProp = gBalanced
+        if opProp['scanProp'] > 0:
+            repeat = gScanRepeat
+        else:
+            repeat = gCommonRepeat
+        maplizeThreshold = 0
+        slotMax = best1SliceParam['SlotMax']
+        innerMax = best1SliceParam['InnSlot']
+        sliceSize = best1SliceParam['SliceSz']
+        assert sliceSize == slotMax # this is a 1-slice test
+        sliceSizeMax = sliceSize + 1
+        for thread in allThreads:
+            param, compileParam = makeParams(
+                slotMax=slotMax, innerMax=innerMax,
+                valSize=valSize, sliceSize=sliceSize,
+                sliceSizeMax=sliceSizeMax,
+                earlyUnlock=earlyUnlock, iteration=gIteration,
+                thread=thread, maplizeThreshold=maplizeThreshold,
+                opProp=opProp, tryLock=tryLock, dist=dist,
+                repeat=repeat)
+
+            runParams.append(param)
+            frozenItem = frozenset(compileParam.items())
+            if frozenItem not in seenCompileParams:
+                seenCompileParams.add(frozenItem)
+                compileParams.append(compileParam)
 
     return runParams, compileParams
 
@@ -354,9 +399,9 @@ def runTests(params, findBest=False):
             f'inner={p["inner-max"]} ' + \
             f'slice={p["slice-size"]} ' + \
             f'maxMops={maxMops:.1f} ' + \
-            f'minRunTime={minRunTimes["btree"]:.0f}(bt), ' + \
-            f'{minRunTimes["maple"]:.0f}(mapl), ' + \
-            f'{minRunTimes["1-slice"]:.0f}(1-slc)'
+            f'minRunTime={minRunTimes["btree"]:.1f}(bt), ' + \
+            f'{minRunTimes["maple"]:.1f}(mapl), ' + \
+            f'{minRunTimes["1-slice"]:.1f}(1-slc)'
 
         prevLineLen = prtProgress(
             total, cur, testStartTime, prevLineLen, paramStr)
@@ -370,8 +415,8 @@ def runTests(params, findBest=False):
 
         rc, out, runTime, timedOut = runCmd(cmd, timeout=minRunTime * 2)
         if timedOut:
-            print('')
-            prt(f'minRunTime={minRunTime}, timed out: {cmd}')
+            #print('')
+            #prt(f'minRunTime={minRunTime * 2}, timed out: {cmd}')
             continue
 
         if findBest: # update min runtime
@@ -406,8 +451,8 @@ def runTests(params, findBest=False):
     return allResults
 
 def findBestParam(results):
-    bestMapleParam = {'Mops': -1}
     bestBtreeParam = {'Mops': -1}
+    bestMapleParam = {'Mops': -1}
     best1SliceParam = {'Mops': -1}
 
     for res in results:
@@ -421,7 +466,7 @@ def findBestParam(results):
         else:
             if bestBtreeParam['Mops'] < res['Mops']:
                 bestBtreeParam = res
-    return bestMapleParam, best1SliceParam, bestBtreeParam
+    return bestBtreeParam, bestMapleParam, best1SliceParam
 
 def autoFindBestParam(valSize):
     runParams, compileParams = genAllRunOpt(valSize, findBest=True)
@@ -429,17 +474,17 @@ def autoFindBestParam(valSize):
 
     prt(f'val={valSize} find best param')
     results = runTests(runParams, findBest=True)
-    bestMapleParam, best1SliceParam, bestBtreeParam = findBestParam(results)
-    return bestMapleParam, best1SliceParam, bestBtreeParam
+    bestBtreeParam, bestMapleParam, best1SliceParam = findBestParam(results)
+    return bestBtreeParam, bestMapleParam, best1SliceParam
 
-def printBestParam(valSize, bestMapleParam, bestBtreeParam):
+def printBestParam(valSize, bestBtreeParam, bestMapleParam, best1SliceParam):
     outNameBest = os.path.join(gScriptDir, gOutDir,
                                f'val-{valSize}-best-param.txt')
     with open(outNameBest, 'w') as f:
         f.write(gTitle + '\n')
+        f.write(bestBtreeParam['orig-result'] + '\n')
         f.write(bestMapleParam['orig-result'] + '\n')
         f.write(best1SliceParam['orig-result'] + '\n')
-        f.write(bestBtreeParam['orig-result'] + '\n')
     prt(f'Best params in {outNameBest}')
 
 def printResults(valSize, allResults):
@@ -452,12 +497,12 @@ def printResults(valSize, allResults):
     prt(f'All rsults in {outNameAll}')
 
 def autopilot(valSize):
-    bestMapleParam, bestBtreeParam = autoFindBestParam(valSize)
-    printBestParam(valSize, bestMapleParam, bestBtreeParam)
+    bestBtreeParam, bestMapleParam, best1SliceParam = autoFindBestParam(valSize)
+    printBestParam(valSize, bestBtreeParam, bestMapleParam, best1SliceParam)
 
     runParams, compileParams = genAllRunOpt(
-        valSize, findBest=False, bestBtreeParam = bestBtreeParam,
-        bestMapleParam = bestMapleParam)
+        valSize, findBest=False, bestBtreeParam=bestBtreeParam,
+        bestMapleParam=bestMapleParam, best1SliceParam=best1SliceParam)
 
     prt(f'val={valSize} run all workloads with best param')
     results = runTests(runParams)
@@ -470,14 +515,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="autopilot.py -v <valSize> and -d <dir> arguments.")
 
-    parser.add_argument("-v", type=int, action="append",
+    global gIteration
+    parser.add_argument("-d", "--outdir", type=str, help="Output directory",
+                        default=".")
+    parser.add_argument("-i", "--iterations", type=int, help=f"Run Iterations",
+                        default=gIteration)
+    parser.add_argument("-v", "--valsize", type=int, action="append",
                         help="Value sizes, can specify multiple times")
-    parser.add_argument("-d", type=str, help="Output directory")
 
     args = parser.parse_args()
 
-    gOutDir = args.d
-    valSizes = args.v
+    gOutDir = args.outdir
+    gIteration = args.iterations
+    valSizes = args.valsize
 
     #valSizes = [128]
 
