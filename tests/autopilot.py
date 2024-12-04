@@ -28,6 +28,7 @@ gScanRepeat = 0.01 # scan is too slow, repeat less
 gStartTime = time.time()
 gScriptDir = os.path.dirname(__file__)
 
+# 'Test\tSlotMax\tInnSlot\tValSize\tSliceSz\tSlcSzMx\tErlyULk\tTryLock\tThreads\tMplThrh\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct\tMaplPct\tMaplRd%\tMaplWt%\tLfRLkns\tLfWLkns\tInRLkns\tInWLkns\tMaplTms\tMaplCnt\tUMplTms\tUMplCnt\titem(M)\trepeats\tDurtion\tRmCt\tRmLkPrt\tRmTryLk\tRmTrLk1\tRmSmPrt\tRm!UpKy\tR!Udflw'
 gTitle = None
 
 LINUX = 0
@@ -169,7 +170,7 @@ def getCpuInfo():
     elif osName == "Linux":
         gOS = LINUX
         cmd = "numactl --hardware | awk '/node 0 cpus:/ {print NF-3}'"
-        rc, out = runCmd(cmd)
+        rc, out, _, _ = runCmd(cmd)
         if rc != 0:
             print(f"Command failed to get CPU per NUMA node:\n{cmd}")
             sys.exit(1)
@@ -411,7 +412,7 @@ def findBestParam(results):
 
     for res in results:
         if res['MplThrh'] == 0: # MAPLe
-            if res['slice-size'] == res['slot-max']:
+            if res['SliceSz'] == res['SlotMax']:
                 if best1SliceParam['Mops'] < res['Mops']:
                     best1SliceParam = res
             else:
