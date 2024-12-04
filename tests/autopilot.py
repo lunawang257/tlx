@@ -195,6 +195,7 @@ def genAllRunOpt(valSize, findBest=True,
         while sliceSize <= 128:
             allSliceSizes.append(sliceSize)
             sliceSize *= 2
+        allSliceSizes.append(-1) # means 1-slice
     else:
         allThreads = [1, 2]
         for th in range(4, gCpuPerNuma + 1, 4):
@@ -230,7 +231,10 @@ def genAllRunOpt(valSize, findBest=True,
                             allSliceSizes = [bestMapleParam['SliceSz']]
                         else:
                             allSliceSizes = [bestBtreeParam['SliceSz']]
-                    for sliceSize in allSliceSizes:
+                    for slcSize in allSliceSizes:
+                        sliceSize = slcSize
+                        if sliceSize == -1:
+                            sliceSize = slotMax # for 1-slice test
                         sliceSizeMax = sliceSize + 1
                         for thread in allThreads:
                             param = {}
@@ -268,11 +272,22 @@ def genAllRunOpt(valSize, findBest=True,
 
     return runParams, compileParams
 
-def runCmd(cmd):
-    result = subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, cwd=gScriptDir, shell=True)
-    return result.returncode, result.stdout
+def runCmd(cmd, timeout=None):
+    timedOut = False
+    rc = 0
+    stdout = ''
+    try:
+        start = time.time()
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, cwd=gScriptDir, shell=True, timeout=timeout)
+        stop = time.time()
+        rc = result.returncode
+        stdout = result.stdout
+    except subprocess.TimeoutExpired:
+        timedOut = True
+        stop = time.time()
+    return rc, stdout, stop - start, timedOut
 
 def buildBtreeMixOpt(params):
     oldName = os.path.join(
@@ -290,18 +305,23 @@ def buildBtreeMixOpt(params):
     copyIfDifferent(newName, oldName)
 
     prt('Build to find best param')
-    rc, out = runCmd('./build_test.sh -b')
+    rc, out, _, _ = runCmd('./build_test.sh -b')
     if rc != 0:
         prt('Build failed with error:\n', out)
         sys.exit(1)
 
-def runTests(params):
+def runTests(params, findBest=False):
     allResults = []
     total = len(params)
     cur = 0
     testStartTime = time.time()
     prevLineLen = 0
     maxMops = -1
+    minRunTimes = {
+        'btree': 7200,
+        'maple': 7200,
+        '1-slice': 7200,
+    }
     for p in params:
         cur += 1
         if gOS == LINUX:
@@ -332,11 +352,38 @@ def runTests(params):
             f'slots={p["slot-max"]} ' + \
             f'inner={p["inner-max"]} ' + \
             f'slice={p["slice-size"]} ' + \
-            f'maxMops={maxMops}'
+            f'maxMops={maxMops:.1f} ' + \
+            f'minRunTime={minRunTimes["btree"]:.0f}(bt), ' + \
+            f'{minRunTimes["maple"]:.0f}(mapl), ' + \
+            f'{minRunTimes["1-slice"]:.0f}(1-slc)'
+
         prevLineLen = prtProgress(
             total, cur, testStartTime, prevLineLen, paramStr)
 
-        rc, out = runCmd(cmd)
+        if p['maplize-threshhold'] == 100:
+            minRunTime = minRunTimes['btree']
+        elif p['slice-size'] == p['slot-max']:
+            minRunTime = minRunTimes['1-slice']
+        else:
+            minRunTime = minRunTimes['maple']
+
+        rc, out, runTime, timedOut = runCmd(cmd, timeout=minRunTime * 2)
+        if timedOut:
+            print('')
+            prt(f'minRunTime={minRunTime}, timed out: {cmd}')
+            continue
+
+        if findBest: # update min runtime
+            if p['maplize-threshhold'] == 100:
+                if minRunTimes['btree'] > runTime:
+                    minRunTimes['btree'] = runTime
+            elif p['slice-size'] == p['slot-max']:
+                if minRunTimes['1-slice'] > runTime:
+                    minRunTimes['1-slice'] = runTime
+            else:
+                if minRunTimes['maple'] > runTime:
+                    minRunTimes['maple'] = runTime
+
         if rc != 0:
             prt(f'Command failed with {rc}:\n' + cmd + "\n" + out)
             exit(1)
@@ -360,24 +407,29 @@ def runTests(params):
 def findBestParam(results):
     bestMapleParam = {'Mops': -1}
     bestBtreeParam = {'Mops': -1}
+    best1SliceParam = {'Mops': -1}
 
     for res in results:
         if res['MplThrh'] == 0: # MAPLe
-            if bestMapleParam['Mops'] < res['Mops']:
-                bestMapleParam = res
+            if res['slice-size'] == res['slot-max']:
+                if best1SliceParam['Mops'] < res['Mops']:
+                    best1SliceParam = res
+            else:
+                if bestMapleParam['Mops'] < res['Mops']:
+                    bestMapleParam = res
         else:
             if bestBtreeParam['Mops'] < res['Mops']:
                 bestBtreeParam = res
-    return bestMapleParam, bestBtreeParam
+    return bestMapleParam, best1SliceParam, bestBtreeParam
 
 def autoFindBestParam(valSize):
     runParams, compileParams = genAllRunOpt(valSize, findBest=True)
     buildBtreeMixOpt(compileParams)
 
     prt(f'val={valSize} find best param')
-    results = runTests(runParams)
-    bestMapleParam, bestBtreeParam = findBestParam(results)
-    return bestMapleParam, bestBtreeParam
+    results = runTests(runParams, findBest=True)
+    bestMapleParam, best1SliceParam, bestBtreeParam = findBestParam(results)
+    return bestMapleParam, best1SliceParam, bestBtreeParam
 
 def printBestParam(valSize, bestMapleParam, bestBtreeParam):
     outNameBest = os.path.join(gScriptDir, gOutDir,
@@ -385,6 +437,7 @@ def printBestParam(valSize, bestMapleParam, bestBtreeParam):
     with open(outNameBest, 'w') as f:
         f.write(gTitle + '\n')
         f.write(bestMapleParam['orig-result'] + '\n')
+        f.write(best1SliceParam['orig-result'] + '\n')
         f.write(bestBtreeParam['orig-result'] + '\n')
     prt(f'Best params in {outNameBest}')
 
