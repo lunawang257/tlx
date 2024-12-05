@@ -28,6 +28,8 @@ gScanRepeat = 0.01 # scan is too slow, repeat less
 gStartTime = time.time()
 gScriptDir = os.path.dirname(__file__)
 
+gFast = False
+
 # 'Test\tSlotMax\tInnSlot\tValSize\tSliceSz\tSlcSzMx\tErlyULk\tTryLock\tThreads\tMplThrh\tSHght\tEHght\tDist\tInsertP\tLookupP\tScnP\tScnLen\tMops\tWaitPct\tMaplPct\tMaplRd%\tMaplWt%\tLfRLkns\tLfWLkns\tInRLkns\tInWLkns\tMaplTms\tMaplCnt\tUMplTms\tUMplCnt\titem(M)\trepeats\tDurtion\tRmCt\tRmLkPrt\tRmTryLk\tRmTrLk1\tRmSmPrt\tRm!UpKy\tR!Udflw'
 gTitle = None
 
@@ -288,10 +290,13 @@ def genAllRunOpt(valSize, findBest=True,
         allSliceSizes.append(-1) # means 1-slice
     else:
         allDist = ['uniform', 'zipf']
-        allThreads = [1, 2]
-        for th in range(4, gCpuPerNuma + 1, 4):
-            allThreads.append(th)
         opProps = gAllWorkloads
+        if gFast:
+            allThreads = [gCpuPerNuma]
+        else:
+            allThreads = [1, 2]
+            for th in range(4, gCpuPerNuma + 1, 4):
+                allThreads.append(th)
 
     for opProp in opProps:
         if opProp['scanProp'] > 0:
@@ -454,11 +459,14 @@ def runTests(params, findBest=False):
             f'slots={p["slot-max"]} ' + \
             f'inner={p["inner-max"]} ' + \
             f'slice={p["slice-size"]} ' + \
-            f'maxMops={maxMops:.1f} ' + \
-            f'minRunTime={minRunTimes["btree"]:.1f}(bt), ' + \
-            f'{minRunTimes["maple"]:.1f}(mapl), ' + \
-            f'{minRunTimes["1-slice"]:.1f}(1-slc) ' + \
-            f'numTimeOut={numTimeOut}'
+            f'maxMops={maxMops:.1f} '
+
+        if findBest:
+            paramStr += \
+                f'minRunTime={minRunTimes["btree"]:.1f}(bt), ' + \
+                f'{minRunTimes["maple"]:.1f}(mapl), ' + \
+                f'{minRunTimes["1-slice"]:.1f}(1-slc) ' + \
+                f'numTimeOut={numTimeOut}'
 
         prevLineLen = prtProgress(
             total, cur, testStartTime, prevLineLen, paramStr)
@@ -572,14 +580,17 @@ def autopilot(valSize):
     printResults(outNameAll, results)
 
 def main():
+    global gOutDir, gFast, gIteration
+
     getCpuInfo()
 
     parser = argparse.ArgumentParser(
         description="autopilot.py -v <valSize> and -d <dir> arguments.")
 
-    global gIteration
     parser.add_argument("-d", "--outdir", type=str, help="Output directory",
                         default=".")
+    parser.add_argument("-f", "--fast", action='store_true',
+                        help="If given, only run the maximum thread count")
     parser.add_argument("-i", "--iterations", type=int, help=f"Run Iterations",
                         default=gIteration)
     parser.add_argument("-v", "--valsize", type=int, action="append",
@@ -587,8 +598,8 @@ def main():
 
     args = parser.parse_args()
 
-    global gOutDir
     gOutDir = args.outdir
+    gFast = args.fast
     gIteration = args.iterations
     valSizes = args.valsize
 
