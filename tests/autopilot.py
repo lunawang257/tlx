@@ -44,6 +44,13 @@ gBalanced = {
     'scanLen': 100
 }
 
+gBalanced = {
+    'insertProp': 15,
+    'lookupProp': 50,
+    'scanProp': 20,
+    'scanLen': 100
+}
+
 gAllInsert = {
     'insertProp': 100,
     'lookupProp': 0,
@@ -213,11 +220,58 @@ def makeParams(
 
     return param, compileParam
 
+def addNewParam(compileParams, seenCompileParams, compileParam):
+    frozenItem = frozenset(compileParam.items())
+    if frozenItem not in seenCompileParams:
+        seenCompileParams.add(frozenItem)
+        compileParams.append(compileParam)
+
+def addGuessedBestParam(runParams, compileParams, seenCompileParams, valSize):
+    # MAPLe best param
+    param, compileParam = makeParams(
+        slotMax=8192, innerMax=8192,
+        valSize=valSize, sliceSize=32,
+        sliceSizeMax=33,
+        earlyUnlock=0, iteration=gIteration,
+        thread=gCpuPerNuma, maplizeThreshold=0,
+        opProp=gBalanced, tryLock=0, dist='uniform',
+        repeat=0.01)
+    runParams.append(param)
+    addNewParam(compileParams, seenCompileParams, compileParam)
+
+    # 1-slice best param
+    param, compileParam = makeParams(
+        slotMax=4096, innerMax=4096,
+        valSize=valSize, sliceSize=4096,
+        sliceSizeMax=4097,
+        earlyUnlock=0, iteration=gIteration,
+        thread=gCpuPerNuma, maplizeThreshold=0,
+        opProp=gBalanced, tryLock=0, dist='uniform',
+        repeat=0.01)
+    runParams.append(param)
+    addNewParam(compileParams, seenCompileParams, compileParam)
+
+    # B-tree best param
+    param, compileParam = makeParams(
+        slotMax=128, innerMax=64,
+        valSize=valSize, sliceSize=32,
+        sliceSizeMax=33,
+        earlyUnlock=0, iteration=gIteration,
+        thread=gCpuPerNuma, maplizeThreshold=100,
+        opProp=gBalanced, tryLock=0, dist='uniform',
+        repeat=0.01)
+    runParams.append(param)
+    addNewParam(compileParams, seenCompileParams, compileParam)
+
 def genAllRunOpt(valSize, findBest=True,
                  bestBtreeParam=None, bestMapleParam=None, best1SliceParam=None):
     runParams = []
     compileParams = []
     seenCompileParams = set()
+
+    # this can speed up other runs significantly
+    addGuessedBestParam(runParams, compileParams, seenCompileParams, valSize)
+
     earlyUnlock = 0
     tryLock = 0
     if findBest:
@@ -284,11 +338,8 @@ def genAllRunOpt(valSize, findBest=True,
                                     repeat=repeat)
 
                                 runParams.append(param)
-
-                                frozenItem = frozenset(compileParam.items())
-                                if frozenItem not in seenCompileParams:
-                                    seenCompileParams.add(frozenItem)
-                                    compileParams.append(compileParam)
+                                addNewParam(compileParams, seenCompileParams,
+                                            compileParam)
 
     if not findBest: # run balanced test for 1-slice
         opProp = gBalanced
@@ -314,10 +365,7 @@ def genAllRunOpt(valSize, findBest=True,
                     repeat=repeat)
 
                 runParams.append(param)
-                frozenItem = frozenset(compileParam.items())
-                if frozenItem not in seenCompileParams:
-                    seenCompileParams.add(frozenItem)
-                    compileParams.append(compileParam)
+                addNewParam(compileParams, seenCompileParams, compileParam)
 
     return runParams, compileParams
 
@@ -422,7 +470,7 @@ def runTests(params, findBest=False):
         else:
             minRunTime = minRunTimes['maple']
 
-        rc, out, runTime, timedOut = runCmd(cmd, timeout=minRunTime * 1.5)
+        rc, out, runTime, timedOut = runCmd(cmd, timeout=minRunTime * 2)
         if timedOut:
             #print('')
             #prt(f'minRunTime={minRunTime * 2}, timed out: {cmd}')
