@@ -272,7 +272,8 @@ def genAllRunOpt(valSize, findBest=True,
     seenCompileParams = set()
 
     # this can speed up other runs significantly
-    addGuessedBestParam(runParams, compileParams, seenCompileParams, valSize)
+    if findBest:
+        addGuessedBestParam(runParams, compileParams, seenCompileParams, valSize)
 
     earlyUnlock = 0
     tryLock = 0
