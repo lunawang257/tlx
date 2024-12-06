@@ -508,6 +508,7 @@ def runTests(params, findBest=False):
         global gTitle
         if gTitle is None:
             gTitle = lastLines[0]
+        res['orig-cmd'] = cmd
         res['orig-result'] = lastLines[1]
         if maxMops < res['Mops']:
             maxMops = res['Mops']
@@ -543,7 +544,7 @@ def autoFindBestParam(valSize):
     results = runTests(runParams, findBest=True)
 
     outName = os.path.join(gScriptDir, gOutDir,
-                           f'val-{valSize}-find-best-raw.txt')
+                           f'val-{valSize}-find-best-raw')
     printResults(outName, results)
 
     bestBtreeParam, bestMapleParam, best1SliceParam = findBestParam(results)
@@ -559,11 +560,17 @@ def printBestParam(valSize, bestBtreeParam, bestMapleParam, best1SliceParam):
         f.write(best1SliceParam['orig-result'] + '\n')
     prt(f'Best params in {outNameBest}')
 
-def printResults(outName, allResults):
-    with open(outName, 'w') as f:
+def printResults(outNameBase, allResults):
+    resOutName = outNameBase + ".txt"
+    cmdOutName = outNameBase + ".cmd"
+    with open(resOutName, 'w') as f:
         f.write(gTitle + '\n')
         for res in allResults:
             f.write(res['orig-result'] + '\n')
+    with open(cmdOutName, 'w') as f:
+        f.write('Full Command Line\n')
+        for res in allResults:
+            f.write(res['orig-cmd'] + '\n')
 
 def autopilot(valSize):
     bestBtreeParam, bestMapleParam, best1SliceParam = autoFindBestParam(valSize)
@@ -577,7 +584,7 @@ def autopilot(valSize):
     results = runTests(runParams)
 
     outNameAll = os.path.join(gScriptDir, gOutDir,
-                              f'val-{valSize}-all.txt')
+                              f'val-{valSize}-all')
     printResults(outNameAll, results)
 
 def main():
