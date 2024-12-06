@@ -489,34 +489,36 @@ def runTests(params, findBest=False):
             #print('')
             #prt(f'minRunTime={minRunTime * 2}, timed out: {cmd}')
             numTimeOut += 1
-            continue
+            res = {'orig-cmd': f'Timedout: {cmd}',
+                   'orig-result': f'Timedout: {cmd}',
+                   'timedout': True}
+        else:
+            if findBest: # update min runtime
+                if p['maplize-threshhold'] == 100:
+                    if minRunTimes['btree'] > runTime:
+                        minRunTimes['btree'] = runTime
+                elif p['slice-size'] == p['slot-max']:
+                    if minRunTimes['1-slice'] > runTime:
+                        minRunTimes['1-slice'] = runTime
+                else:
+                    if minRunTimes['maple'] > runTime:
+                        minRunTimes['maple'] = runTime
 
-        if findBest: # update min runtime
-            if p['maplize-threshhold'] == 100:
-                if minRunTimes['btree'] > runTime:
-                    minRunTimes['btree'] = runTime
-            elif p['slice-size'] == p['slot-max']:
-                if minRunTimes['1-slice'] > runTime:
-                    minRunTimes['1-slice'] = runTime
-            else:
-                if minRunTimes['maple'] > runTime:
-                    minRunTimes['maple'] = runTime
-
-        if rc != 0:
-            prt(f'Command failed with {rc}:\n' + cmd + "\n" + out)
-            exit(1)
-        lastLines = out.splitlines()[-2:]
-        keys = lastLines[0].split('\t')
-        vals = lastLines[1].split('\t')
-        convVals = [convert(v) for v in vals]
-        res = dict(zip(keys, convVals))
-        global gTitle
-        if gTitle is None:
-            gTitle = lastLines[0]
-        res['orig-cmd'] = cmd
-        res['orig-result'] = lastLines[1]
-        if maxMops < res['Mops']:
-            maxMops = res['Mops']
+            if rc != 0:
+                prt(f'Command failed with {rc}:\n' + cmd + "\n" + out)
+                exit(1)
+            lastLines = out.splitlines()[-2:]
+            keys = lastLines[0].split('\t')
+            vals = lastLines[1].split('\t')
+            convVals = [convert(v) for v in vals]
+            res = dict(zip(keys, convVals))
+            global gTitle
+            if gTitle is None:
+                gTitle = lastLines[0]
+            res['orig-cmd'] = cmd
+            res['orig-result'] = lastLines[1]
+            if maxMops < res['Mops']:
+                maxMops = res['Mops']
         allResults.append(res)
 
     print('\n')
@@ -529,6 +531,8 @@ def findBestParam(results):
     best1SliceParam = {'Mops': -1}
 
     for res in results:
+        if 'timedout' in res:
+            continue
         if res['MplThrh'] == 0: # MAPLe
             if res['SliceSz'] == res['SlotMax']:
                 if best1SliceParam['Mops'] < res['Mops']:
