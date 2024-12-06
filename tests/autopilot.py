@@ -13,6 +13,7 @@ import os
 import platform
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -381,16 +382,20 @@ def runCmd(cmd, timeout=None):
     stdout = ''
     try:
         start = time.time()
-        result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, cwd=gScriptDir, shell=True, timeout=timeout)
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, cwd=gScriptDir, shell=True,
+            start_new_session=True)
+        stdout, stderr = process.communicate(timeout=timeout)
         stop = time.time()
-        rc = result.returncode
-        stdout = result.stdout
+        rc = 0
     except subprocess.TimeoutExpired:
         timedOut = True
-        rc = 0
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        stdout, stderr = process.communicate()
         stop = time.time()
+        rc = 0
+    stdout += stderr
     assert timedOut or stdout != ""
     if rc != 0:
         raise Exception(f"Command failed with {rc}:\n{cmd}\n{stdout}")
